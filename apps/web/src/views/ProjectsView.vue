@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { FolderGit2, Globe, Pencil, Plus } from "lucide-vue-next";
+import { FileText, FolderGit2, Globe, ListChecks, Pencil, Plus } from "lucide-vue-next";
 import type { Project } from "@agent-office/shared";
+import BriefPanel from "../components/BriefPanel.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SidePanel from "../components/SidePanel.vue";
 import { api } from "../api/http.ts";
@@ -10,6 +11,8 @@ const projects = ref<Project[]>([]);
 const editing = ref<string | null>(null); // project id, "new", or null
 const error = ref("");
 const form = reactive({ slug: "", name: "", live_url: "", repo_url: "", enabled: true });
+/** Project whose brief / feature log is open. */
+const briefOf = ref<{ project: Project; tab: "brief" | "features" } | null>(null);
 
 const load = async () => (projects.value = (await api.projects()).projects);
 onMounted(load);
@@ -43,7 +46,7 @@ const host = (u: string) => {
 
 <template>
   <div>
-    <PageHeader sign="Work" title="Projects" description="Your products. Tester checks each live site; Coder works in each repo. Briefs, feature log and drafts arrive in Phase 4.">
+    <PageHeader sign="Work" title="Projects" description="Your products. Tester checks each live site, Coder works in each repo, Marketing writes from each brief.">
       <button class="btn btn-primary" @click="edit(null)"><Plus :size="16" /> New project</button>
     </PageHeader>
 
@@ -68,11 +71,19 @@ const host = (u: string) => {
             <span v-else class="text-signal">No repo yet · Coder can't work here</span>
           </div>
         </dl>
+        <div class="mt-4 flex gap-2 border-t border-line pt-3">
+          <button class="btn btn-sm" @click="briefOf = { project: p, tab: 'brief' }">
+            <FileText :size="13" /> Brief<span v-if="!p.brief_path" class="text-signal">· empty</span>
+          </button>
+          <button class="btn btn-sm" @click="briefOf = { project: p, tab: 'features' }"><ListChecks :size="13" /> Feature log</button>
+        </div>
       </article>
       <div v-if="!projects.length" class="rounded-lg border border-dashed border-line px-6 py-10 text-center text-sm text-muted md:col-span-2 xl:col-span-3">
         No projects yet. Add ekadkahwin, Sewa Kamera, JomBelajar… with their live site and repo.
       </div>
     </div>
+
+    <BriefPanel v-if="briefOf" :key="briefOf.project.id + briefOf.tab" :project="briefOf.project" :tab="briefOf.tab" @close="briefOf = null; load()" />
 
     <SidePanel v-if="editing" :sign="editing === 'new' ? 'New project' : 'Edit project'" :title="form.name || 'Project'" @close="editing = null">
       <form id="proj-form" class="space-y-4" @submit.prevent="save">

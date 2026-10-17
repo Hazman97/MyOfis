@@ -6,7 +6,9 @@ export interface FakeGitea {
   url: string;
   token: string;
   issues: { number: number; title: string; body: string; labels: string[] }[];
-  pulls: { number: number; head: string; base: string; title: string; body: string }[];
+  pulls: { number: number; head: string; base: string; title: string; body: string; merged_sha?: string }[];
+  /** Mark a PR as merged (as if the owner clicked Merge in Gitea). */
+  merge(number: number, sha?: string): void;
   comments: { number: number; body: string }[];
   statuses: Record<string, string>;
   requests: { method: string; path: string; auth: string | null }[];
@@ -62,7 +64,7 @@ async function gitHttpBackend(req: Request, url: URL, gitRoot: string): Promise<
 }
 
 export function startFakeGitea(token = "gitea-test-token-0123456789", opts: { gitRoot?: string } = {}): FakeGitea {
-  const state: Omit<FakeGitea, "url" | "stop" | "token"> = { issues: [], pulls: [], comments: [], statuses: {}, requests: [] };
+  const state: Omit<FakeGitea, "url" | "stop" | "token" | "merge"> = { issues: [], pulls: [], comments: [], statuses: {}, requests: [] };
   let next = 1;
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -87,6 +89,24 @@ export function startFakeGitea(token = "gitea-test-token-0123456789", opts: { gi
         const list = state.issues.filter((i) => !label || i.labels.includes(label));
         return Response.json(list.map((i) => ({ ...i, html_url: html(`issues/${i.number}`), labels: i.labels.map((name) => ({ name })) })));
       }
+      if (req.method === "GET" && rest === "pulls") {
+        const want = url.searchParams.get("state") ?? "open";
+        const list = state.pulls.filter((p) => (want === "closed" ? !!p.merged_sha : want === "open" ? !p.merged_sha : true));
+        return Response.json(
+          list.map((p) => ({
+            number: p.number,
+            title: p.title,
+            body: p.body,
+            html_url: html(`pulls/${p.number}`),
+            state: p.merged_sha ? "closed" : "open",
+            merged: !!p.merged_sha,
+            merged_at: p.merged_sha ? new Date().toISOString() : null,
+            merge_commit_sha: p.merged_sha ?? null,
+            head: { ref: p.head },
+            base: { ref: p.base },
+          })),
+        );
+      }
       if (req.method === "POST" && rest === "pulls") {
         const b = (await req.json()) as { head: string; base: string; title: string; body: string };
         if (state.pulls.some((p) => p.head === b.head)) return Response.json({ message: "pull request already exists" }, { status: 409 });
@@ -109,5 +129,10 @@ export function startFakeGitea(token = "gitea-test-token-0123456789", opts: { gi
       return Response.json({ message: "not found" }, { status: 404 });
     },
   });
-  return Object.assign(state, { url: `http://127.0.0.1:${server.port}`, token, stop: () => void server.stop(true) });
+  const merge = (number: number, sha = "abc123merge") => {
+    const pr = state.pulls.find((p) => p.number === number);
+    if (!pr) throw new Error(`no PR #${number}`);
+    pr.merged_sha = sha;
+  };
+  return Object.assign(state, { url: `http://127.0.0.1:${server.port}`, token, merge, stop: () => void server.stop(true) });
 }

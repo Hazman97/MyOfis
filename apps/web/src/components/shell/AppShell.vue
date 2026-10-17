@@ -1,7 +1,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { Bot, Building2, CalendarClock, Ellipsis, FolderGit2, Inbox, LogOut, Pause, Play, Plus, Server, Settings2, X } from "lucide-vue-next";
+import {
+  Bot,
+  Building2,
+  CalendarClock,
+  Ellipsis,
+  FilePenLine,
+  FolderGit2,
+  Inbox,
+  LogOut,
+  MessagesSquare,
+  Pause,
+  Play,
+  Plus,
+  Server,
+  Settings2,
+  X,
+} from "lucide-vue-next";
 import BrandMark from "./BrandMark.vue";
 import { api } from "../../api/http.ts";
 import { resetAuthCheck } from "../../router.ts";
@@ -13,6 +29,8 @@ const route = useRoute();
 const router = useRouter();
 
 const pending = computed(() => Object.keys(office.state.pending_approvals).length);
+const drafts = computed(() => Object.keys(office.state.pending_drafts ?? {}).length);
+const badgeOf = (item: { badge?: "approvals" | "drafts" }) => (item.badge === "approvals" ? pending.value : item.badge === "drafts" ? drafts.value : 0);
 const runners = computed(() => Object.values(office.state.runners));
 const runnersOnline = computed(() => runners.value.filter((r) => r.online).length);
 const confirmPause = ref(false);
@@ -24,15 +42,24 @@ interface NavItem {
   label: string;
   icon: typeof Bot;
   exact?: boolean;
-  badge?: boolean;
+  badge?: "approvals" | "drafts";
 }
 const groups: { sign: string; items: NavItem[] }[] = [
-  { sign: "Office", items: [{ to: "/", label: "Office", icon: Building2, exact: true }, { to: "/approvals", label: "Approvals", icon: Inbox, badge: true }] },
+  {
+    sign: "Office",
+    items: [
+      { to: "/", label: "Office", icon: Building2, exact: true },
+      { to: "/chat", label: "Chat", icon: MessagesSquare },
+      { to: "/approvals", label: "Approvals", icon: Inbox, badge: "approvals" },
+    ],
+  },
   { sign: "Team", items: [{ to: "/agents", label: "Agents", icon: Bot }, { to: "/schedules", label: "Schedules", icon: CalendarClock }] },
-  { sign: "Work", items: [{ to: "/projects", label: "Projects", icon: FolderGit2 }] },
+  { sign: "Work", items: [{ to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
   { sign: "System", items: [{ to: "/runners", label: "Runners", icon: Server }, { to: "/settings", label: "Settings", icon: Settings2 }] },
 ];
-const moreItems = [
+const moreItems: NavItem[] = [
+  { to: "/chat", label: "Chat", icon: MessagesSquare },
+  { to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" },
   { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/projects", label: "Projects", icon: FolderGit2 },
   { to: "/runners", label: "Runners", icon: Server },
@@ -83,7 +110,7 @@ async function logout() {
           >
             <component :is="item.icon" :size="17" :stroke-width="1.8" :class="isActive(item.to, item.exact) ? 'text-accent' : 'text-faint group-hover:text-muted'" />
             <span class="flex-1">{{ item.label }}</span>
-            <span v-if="item.badge && pending" class="rounded-full bg-signal px-1.5 font-mono text-[11px] leading-4.5 font-medium text-white">{{ pending }}</span>
+            <span v-if="badgeOf(item)" class="rounded-full bg-signal px-1.5 font-mono text-[11px] leading-4.5 font-medium text-white">{{ badgeOf(item) }}</span>
           </RouterLink>
         </div>
       </nav>
@@ -162,8 +189,9 @@ async function logout() {
       <RouterLink to="/agents" class="flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium" :class="isActive('/agents') ? 'text-accent' : 'text-muted'">
         <Bot :size="20" :stroke-width="1.8" />Agents
       </RouterLink>
-      <button class="flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-muted" @click="moreOpen = true">
+      <button class="relative flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-muted" @click="moreOpen = true">
         <Ellipsis :size="20" :stroke-width="1.8" />More
+        <span v-if="drafts" class="absolute top-1 left-1/2 ml-2 rounded-full bg-signal px-1.5 font-mono text-[10px] leading-4 text-white">{{ drafts }}</span>
       </button>
     </nav>
 
@@ -177,7 +205,8 @@ async function logout() {
         </div>
         <div class="grid grid-cols-2 gap-2">
           <RouterLink v-for="m in moreItems" :key="m.to" :to="m.to" class="flex items-center gap-2 rounded-lg border border-line px-3 py-3 text-sm font-medium">
-            <component :is="m.icon" :size="18" class="text-accent" />{{ m.label }}
+            <component :is="m.icon" :size="18" class="text-accent" /><span class="flex-1">{{ m.label }}</span>
+            <span v-if="badgeOf(m)" class="rounded-full bg-signal px-1.5 font-mono text-[11px] leading-4.5 text-white">{{ badgeOf(m) }}</span>
           </RouterLink>
         </div>
         <button class="btn btn-ghost mt-3 w-full text-muted" @click="logout"><LogOut :size="15" /> Log out</button>

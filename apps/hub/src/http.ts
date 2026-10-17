@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { setCookie, deleteCookie } from "hono/cookie";
@@ -10,6 +10,9 @@ import { z, ZodError } from "zod";
 import {
   AgentInput,
   AgentPatch,
+  DraftDecision,
+  EXAMPLE_BRIEF,
+  FeatureNoteInput,
   JobInput,
   PROVIDER_PRESETS,
   ProjectInput,
@@ -24,6 +27,7 @@ import { hashToken, keyHint, normalizeCode, pairingCode, randomToken } from "./c
 import { agents, approvals, jobs, pairingCodes, projects, providers, runners, runs, schedules } from "./db/schema.ts";
 import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import type { Integrations } from "./integrations.ts";
+import type { TelegramBot } from "./telegram.ts";
 import {
   HttpError,
   getAgent,
@@ -68,7 +72,7 @@ const intParam = (v: string | undefined, fallback: number, max: number) => {
   return Number.isInteger(n) && n >= 0 ? Math.min(n, max) : fallback;
 };
 
-export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Scheduler, integrations: Integrations): Hono {
+export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Scheduler, integrations: Integrations, telegram: TelegramBot): Hono {
   const { db, store, secrets, config } = hub;
   const app = new Hono();
   const publicOrigin = new URL(config.publicBaseUrl).origin;
@@ -183,7 +187,16 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
 
   // integrations (Gitea). The token is write-only, like provider keys.
-  api.get("/settings/integrations", (c) => c.json({ gitea: integrations.giteaPublic() }));
+  api.get("/settings/integrations", (c) => c.json({ gitea: integrations.giteaPublic(), telegram: integrations.telegramPublic() }));
+  api.put("/settings/integrations/telegram", async (c) => c.json({ telegram: integrations.setTelegram(await c.req.json()) }));
+  api.post("/settings/integrations/telegram/test", async (c) => {
+    try {
+      await telegram.test();
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ ok: false, error: (err as Error).message });
+    }
+  });
   api.put("/settings/integrations/gitea", async (c) => c.json({ gitea: integrations.setGitea(await c.req.json()) }));
   api.post("/settings/integrations/gitea/test", async (c) => {
     const cfg = integrations.gitea();
@@ -257,6 +270,81 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const changes = Object.fromEntries(Object.entries(patch).filter(([k]) => k in raw));
     const row = db.update(projects).set(changes).where(eq(projects.id, id)).returning().get();
     return c.json({ project: row });
+  });
+
+  // project briefs (projects/<slug>/brief.yaml) and the feature log
+  api.get("/projects/:id/brief", (c) => {
+    const p = hub.content.project(c.req.param("id"));
+    return c.json({ brief: hub.content.readBrief(p), example: EXAMPLE_BRIEF, path: `projects/${p.slug}/brief.yaml` });
+  });
+  api.put("/projects/:id/brief", async (c) => {
+    const p = hub.content.project(c.req.param("id"));
+    return c.json({ brief: hub.content.writeBrief(p, await c.req.json()) });
+  });
+  api.get("/projects/:id/features", (c) => {
+    const p = hub.content.project(c.req.param("id"));
+    return c.json({ features: hub.content.features(p.id) });
+  });
+  api.post("/projects/:id/features", async (c) => {
+    const p = hub.content.project(c.req.param("id"));
+    const note = FeatureNoteInput.parse(await c.req.json());
+    return c.json({ feature: hub.addFeature(p.id, { title: note.title, user_facing_note: note.user_facing_note, source_pr_url: note.source_pr_url ?? null }) }, 201);
+  });
+
+  // content drafts: Marketing's output, never published by the system
+  api.get("/drafts", (c) => {
+    const status = c.req.query("status");
+    return c.json({ drafts: hub.content.listDrafts({ status: status === "pending" || status === "decided" ? status : undefined, project_id: c.req.query("project_id") || undefined }) });
+  });
+  api.post("/drafts/:id/decide", async (c) => {
+    const decision = DraftDecision.parse(await c.req.json());
+    return c.json({ draft: hub.content.decideDraft(c.req.param("id"), decision) });
+  });
+
+  // chat with an agent (each message is a "chat" job; replies are the run's text)
+  api.post("/chat", async (c) => {
+    const body = z
+      .object({ agent_id: z.string().min(1), text: z.string().trim().min(1).max(8000), thread_id: z.string().regex(/^cht_[a-z0-9]+$/).nullish(), project_id: z.string().nullish() })
+      .parse(await c.req.json());
+    const { job, thread_id } = hub.chat(body);
+    return c.json({ job, thread_id }, 201);
+  });
+  api.get("/chat/threads", (c) => {
+    const agentId = c.req.query("agent_id");
+    if (!agentId) throw new HttpError(400, "agent_id is required");
+    const rows = db
+      .select({ input: jobs.input, title: jobs.title, created_at: jobs.created_at })
+      .from(jobs)
+      .where(and(eq(jobs.agent_id, agentId), eq(jobs.type, "chat")))
+      .orderBy(desc(jobs.created_at))
+      .limit(500)
+      .all();
+    const threads = new Map<string, { thread_id: string; title: string; last_at: string; first_at: string; messages: number }>();
+    for (const r of rows) {
+      const id = typeof r.input.thread_id === "string" ? r.input.thread_id : null;
+      if (!id) continue;
+      const t = threads.get(id);
+      if (t) {
+        t.messages++;
+        t.first_at = r.created_at;
+        t.title = r.title;
+      } else threads.set(id, { thread_id: id, title: r.title, last_at: r.created_at, first_at: r.created_at, messages: 1 });
+    }
+    return c.json({ threads: [...threads.values()].slice(0, 50) });
+  });
+  api.get("/chat/threads/:id", (c) => {
+    const rows = hub.chatJobs(c.req.param("id"));
+    return c.json({
+      messages: rows.map((j) => ({
+        job_id: j.id,
+        agent_id: j.agent_id,
+        text: String(j.input.text ?? j.title),
+        created_at: j.created_at,
+        status: j.status,
+        run_id: hub.store.state.jobs[j.id]?.run_ids.at(-1) ?? null,
+        reply: hub.chatReply(j),
+      })),
+    });
   });
 
   // schedules

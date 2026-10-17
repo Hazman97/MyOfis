@@ -120,6 +120,7 @@ export const FeatureNoteInput = z.object({
   source_pr_url: z.string().url().nullable().default(null),
 });
 export type FeatureNoteInput = z.input<typeof FeatureNoteInput>;
+export type FeatureNoteData = z.output<typeof FeatureNoteInput>;
 
 export const FeatureNote = FeatureNoteInput.extend({
   id: z.string(),

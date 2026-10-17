@@ -1,5 +1,5 @@
 import type { RunAssignment, RunnerEventBody } from "@agent-office/shared";
-import type { FeatureNoteInput } from "@agent-office/shared";
+import type { FeatureNoteData } from "@agent-office/shared";
 import type { ApprovalRequest, DraftRequest, HandoffRequest } from "@agent-office/tools";
 
 export interface RunContext {
@@ -17,7 +17,7 @@ export interface RunContext {
   /** Send a content draft to the hub (Marketing). */
   saveDraft(req: DraftRequest): void;
   /** Send a released-feature note to the hub (Coder). */
-  addFeatureNote(req: { project_id: string; note: FeatureNoteInput }): void;
+  addFeatureNote(req: { project_id: string; note: FeatureNoteData }): void;
   /** Runner-owned folder (outside the workspace) for this agent's screenshot baselines. */
   baselineDir: string | null;
 }

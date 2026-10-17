@@ -56,6 +56,13 @@ const CATEGORY_LOOK: Record<ToolCategory, { zone?: string; pose: Pose; bubble: B
   meeting: { zone: "meeting_room", pose: "sit", bubble: "chat", screen: "idle" },
 };
 
+/** Tools that send the character somewhere specific, overriding their category (spec §8.4: read the brief at the file cabinets). */
+const TOOL_LOOK: Record<string, { zone: string; pose: Pose; bubble: BubbleKind; screen: ScreenKind }> = {
+  read_brief: { zone: "file_cabinets", pose: "stand", bubble: "book", screen: "idle" },
+  read_feature_log: { zone: "file_cabinets", pose: "stand", bubble: "book", screen: "idle" },
+  read_past_drafts: { zone: "file_cabinets", pose: "stand", bubble: "book", screen: "idle" },
+};
+
 export interface IntentContext {
   /** Desk place id assigned to this agent, or null when there are more agents than desks. */
   desk: string | null;
@@ -77,7 +84,7 @@ export function steadyIntent(agent: AgentInfo, view: AgentView | undefined, ctx:
   if (view?.activity === "waiting_approval") return { present: true, target: desk, pose: "hand", bubble: "alert", screen: ctx.runnerOnline ? "alert" : "off" };
 
   if (view?.activity === "working") {
-    const look = CATEGORY_LOOK[view.last_tool_category ?? "think"];
+    const look = (view.last_tool && TOOL_LOOK[view.last_tool]) || CATEGORY_LOOK[view.last_tool_category ?? "think"];
     const screen = ctx.runnerOnline ? look.screen : "off";
     // no tool used yet: just sitting with the job, unless it is thinking out loud
     const bubble = view.thinking ? "think" : view.last_tool_category ? look.bubble : null;
@@ -105,6 +112,10 @@ export function momentSteps(m: AgentMoment, targetDesk: (slug: string) => string
       return [{ ...base, target: { here: true }, effect: "dizzy", bubble: "fail", hold: 3500 }];
     case "pr_opened":
       return [{ ...base, target: { zone: "notice_board" }, bubble: "pr", hold: 1500, onArrive: "pin_note" }];
+    case "feature_pinned":
+      return [{ ...base, target: { zone: "notice_board" }, carrying: true, bubble: "check", hold: 1500, onArrive: "pin_note" }];
+    case "draft_pinned":
+      return [{ ...base, target: { zone: "whiteboard" }, carrying: true, bubble: "check", hold: 1000 }];
     case "handoff": {
       const desk = m.to_agent ? targetDesk(m.to_agent) : null;
       if (!desk) return [];

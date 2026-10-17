@@ -100,6 +100,21 @@ describe("office brain", () => {
     expect(o.char(qa.id)).toMatchObject({ seated: false, bubble: "search" });
   });
 
+  test("Marketing reads the brief at the file cabinets and pins drafts on the whiteboard", () => {
+    const o = new Office([qa]);
+    o.job(qa.id, "j1");
+    o.start(qa.id, "r1", "j1");
+    o.emit({ type: "agent.tool_call", payload: { call_id: "c1", tool: "read_brief", category: "read_docs", args: {} } }, { run_id: "r1", agent_id: qa.id });
+    o.run(CATCH_UP_MS);
+    expect(layout.places.find((p) => p.id === o.place(qa.id))?.zone).toBe("file_cabinets");
+    expect(o.char(qa.id)?.bubble).toBe("book");
+    o.emit({ type: "draft.created", payload: { draft_id: "d1", project_id: "p1", platform: "tiktok", kind: "caption" } }, { run_id: "r1", agent_id: qa.id });
+    o.run(200);
+    expect(o.char(qa.id)?.carrying).toBe(true);
+    for (let t = 200; t < CATCH_UP_MS && o.char(qa.id)?.moving; t += 50) o.run(50);
+    expect(layout.places.find((p) => p.id === o.place(qa.id))?.zone).toBe("whiteboard");
+  });
+
   test("needs approval: hand up with a clickable alert, back to work when decided", () => {
     const o = new Office([qa]);
     o.job(qa.id, "j1");
@@ -350,6 +365,8 @@ describe("reactions table", () => {
       ],
       "agent.handoff": [working, (o) => o.emit({ type: "agent.handoff", payload: { from_agent: "qa-bot", to_agent: "dev-bot", new_job_id: "j2", reason: "r" } }, meta)],
       "artifact.created": [working, (o) => o.emit({ type: "artifact.created", payload: { kind: "pr", title: "#1" } }, meta)],
+      "feature.released": [working, (o) => o.emit({ type: "feature.released", payload: { project_id: "p1", feature_log_id: "f1" } }, meta)],
+      "draft.created": [working, (o) => o.emit({ type: "draft.created", payload: { draft_id: "d1", project_id: "p1", platform: "instagram", kind: "caption" } }, meta)],
       "budget.exceeded": [() => {}, (o) => o.emit({ type: "budget.exceeded", payload: { agent_id: qa.id, used: 2, budget: 1 } })],
       "agent.idle": [working, (o) => o.emit({ type: "agent.idle", payload: { agent_id: qa.id } })],
     };

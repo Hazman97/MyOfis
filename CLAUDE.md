@@ -32,6 +32,16 @@
 - Integer zoom only (pixel-perfect); the default rounds up when ≥ 60% of the next step fits, then you pan. 30 fps when the window is blurred (Phaser `fps.limit` + `_limitRate` toggled), paused when hidden (Phaser default).
 - The design system lives in `apps/web/src/style.css` (tokens + `@theme inline`; light + dark). Screenshot check: `node apps/web/scripts/shots.mjs` (Node + Playwright; set `MSYS_NO_PATHCONV=1` when calling from Git Bash).
 
+## Decisions taken beyond the spec (Phase 4)
+- **Briefs live in `projects/<slug>/brief.yaml`** (`PROJECTS_DIR`), Zod-validated (`ProjectBrief` in packages/shared/src/marketing.ts). Extra fields beyond spec §9: `call_to_action`, `facts`, `style_notes`. A hand-edited invalid file returns 409; agents just see "no brief".
+- **Marketing's knowledge comes only from `RunAssignment.project_context`** (briefs, feature log, decided drafts), sent only to agents with `read_brief`/`save_draft`… tools. `save_draft` refuses failed self-checks, phrases quoted in `do_not`, and 12-word copies of `good_examples`. Drafts reach the hub via the sequenced `run.draft` message; the hub caps 30 drafts per run.
+- A `style_guide` draft, once approved, becomes the brief's `style_notes` (owner's request: analyse a writing style, then write like it). Approving with a changed body records `edited` and keeps `original_body`.
+- **Merged PRs are found by polling Gitea** (`ReleaseWatcher`, every 5 min) because the hub is local-only. The first look at a project only records existing merges. A `feature_note` job runs with a fixed prompt (`FEATURE_NOTE_PROMPT`) and only `gitea_ci_status` + `add_feature_note`, never OpenCode. `feature.released` queues a Tester `feature_screenshot` job (its screenshot lands on the log entry) and a Marketing `announcement` job.
+- **Chat** (owner request) = jobs of type `chat` with `input.thread_id` and `input.history` (last 10 exchanges); no new tables. The reply is the run's output from the reducer state. Built-in **English Coach** agent (owner request) for speaking practice; browser speech-to-text and read-aloud are in apps/web/src/speech.ts.
+- **Telegram** (`apps/hub/src/telegram.ts`): long polling (no public URL needed); token encrypted in `settings`; callback data `a:<approval>:<y|n>:<hmac12>`; only the owner's chat id is obeyed; `/id` answers anyone (setup). `TELEGRAM_API_BASE` points tests at a fake.
+- **Budgets**: `daily_token_budget` 0 = no limit. Over budget → `budget.exceeded` once per day, jobs stay queued, the runtime stops early (`budget_left_tokens`), and the sweep emits `agent.idle` after midnight KL or when the budget is raised.
+- Newly seeded agents take the provider + model most existing agents use (the owner's choice) before the old ranking.
+
 ## Commands
 - `bun install` — install
 - `bun run dev` — hub + web (Vite on :5180 proxies to hub on :8787)

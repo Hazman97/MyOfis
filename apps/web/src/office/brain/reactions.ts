@@ -17,15 +17,16 @@ export const REACTIONS: Record<EventType, string | null> = {
   "run.failed": "the agent looks dizzy, then goes to the pantry; the monitor shows a red cross",
   "agent.thinking": "a … thinking bubble",
   "agent.message": "the thinking bubble clears and the agent keeps working",
-  "agent.tool_call": "typing for code/shell/git/write, a browser bubble, the library for search/read_docs, the meeting room for meeting",
+  "agent.tool_call":
+    "typing for code/shell/git/write, a browser bubble, the library for search/read_docs, the file cabinets for briefs, the meeting room for meeting",
   "agent.tool_result": null, // the next tool call or message shows what happened next
   "agent.needs_approval": "hand up with a pulsing, clickable !",
   "approval.decided": "hand down, back to work",
   "agent.handoff": "the agent walks a document over to the other agent's desk",
   "artifact.created": "a new PR is pinned on the notice board (other artifacts: nothing)",
-  "feature.released": null, // marketing features land in Phase 4
-  "draft.created": null, // Phase 4
-  "draft.decided": null, // Phase 4
+  "feature.released": "the agent who wrote the release note pins it on the notice board",
+  "draft.created": "Marketing carries the draft to the whiteboard and pins it there",
+  "draft.decided": null, // the owner's decision happens in the drafts inbox; nothing moves in the office
   "budget.exceeded": "the agent walks out through the entrance",
   "agent.idle": "the agent goes back to the pantry",
 };

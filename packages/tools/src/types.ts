@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type {
   AgentConfig,
   DraftKind,
-  FeatureNoteInput,
+  FeatureNoteData,
   PermissionLevel,
   Platform,
   ProjectContext,
@@ -65,7 +65,7 @@ export interface ToolContext {
   /** Hand a content draft to the hub for the owner's review (sequenced, applied once). */
   saveDraft(req: DraftRequest): void;
   /** Record a released feature (hub writes the feature log and emits feature.released). */
-  addFeatureNote(req: { project_id: string; note: FeatureNoteInput }): void;
+  addFeatureNote(req: { project_id: string; note: FeatureNoteData }): void;
 }
 
 export interface DraftRequest {

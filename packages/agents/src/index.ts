@@ -1,6 +1,7 @@
 import type { AgentInput, ScheduleInput } from "@agent-office/shared";
 import { coderAgent } from "./coder.ts";
 import { echoAgent } from "./echo.ts";
+import { englishCoachAgent } from "./englishCoach.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
 import { pakGuardAgent, pakGuardSchedule } from "./pakGuard.ts";
 import { testerAgent, testerSchedule } from "./tester.ts";
@@ -10,6 +11,7 @@ export { pakGuardAgent, PAK_GUARD_PROMPT } from "./pakGuard.ts";
 export { testerAgent, TESTER_PROMPT } from "./tester.ts";
 export { coderAgent, CODER_PROMPT, FEATURE_NOTE_PROMPT } from "./coder.ts";
 export { marketingAgent, MARKETING_PROMPT } from "./marketing.ts";
+export { englishCoachAgent, ENGLISH_COACH_PROMPT } from "./englishCoach.ts";
 
 export interface BuiltinAgent {
   agent: AgentInput;
@@ -26,4 +28,5 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: testerAgent, needsLlm: true, schedules: (id) => [testerSchedule(id)] },
   { agent: coderAgent, needsLlm: true },
   { agent: marketingAgent, needsLlm: true, schedules: (id) => [marketingSchedule(id)] },
+  { agent: englishCoachAgent, needsLlm: true },
 ];

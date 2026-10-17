@@ -1,9 +1,15 @@
 import type {
   Agent,
   AgentEvent,
+  ContentDraft,
+  DraftDecision,
+  FeatureNote,
+  FeatureNoteInput,
   Job,
   OfficeState,
   Project,
+  ProjectBrief,
+  ProjectBriefInput,
   ProviderPreset,
   ProviderPublic,
   Run,
@@ -34,6 +40,31 @@ export interface GiteaSettings {
   url: string;
   has_token: boolean;
   token_hint: string | null;
+}
+
+export interface TelegramSettings {
+  has_token: boolean;
+  token_hint: string | null;
+  chat_id: string;
+  enabled: boolean;
+}
+
+export interface ChatThread {
+  thread_id: string;
+  title: string;
+  first_at: string;
+  last_at: string;
+  messages: number;
+}
+
+export interface ChatMessage {
+  job_id: string;
+  agent_id: string;
+  text: string;
+  created_at: string;
+  status: Job["status"];
+  run_id: string | null;
+  reply: string | null;
 }
 
 export class ApiError extends Error {
@@ -81,7 +112,7 @@ export const api = {
   updateAgent: (id: string, body: Partial<Agent>) => request<{ agent: Agent }>(`/agents/${id}`, { method: "PATCH", body }),
 
   jobs: () => request<{ jobs: Job[] }>("/jobs"),
-  createJob: (body: { agent_id: string; project_id?: string | null; title: string; input: Record<string, unknown> }) =>
+  createJob: (body: { agent_id: string; project_id?: string | null; title: string; type?: string; input: Record<string, unknown> }) =>
     request<{ job: Job }>("/jobs", { body }),
   cancelJob: (id: string) => request<{ ok: true }>(`/jobs/${id}/cancel`, { method: "POST" }),
 
@@ -94,7 +125,10 @@ export const api = {
 
   tools: () => request<{ tools: ToolInfo[] }>("/tools"),
 
-  integrations: () => request<{ gitea: GiteaSettings }>("/settings/integrations"),
+  integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings }>("/settings/integrations"),
+  saveTelegram: (body: { token?: string; chat_id?: string; enabled?: boolean }) =>
+    request<{ telegram: TelegramSettings }>("/settings/integrations/telegram", { method: "PUT", body }),
+  testTelegram: () => request<{ ok: boolean; error?: string }>("/settings/integrations/telegram/test", { method: "POST" }),
   saveGitea: (body: { url: string; token?: string }) =>
     request<{ gitea: GiteaSettings }>("/settings/integrations/gitea", { method: "PUT", body }),
   testGitea: () =>
@@ -104,6 +138,22 @@ export const api = {
   createProject: (body: Record<string, unknown>) => request<{ project: Project }>("/projects", { body }),
   updateProject: (id: string, body: Record<string, unknown>) =>
     request<{ project: Project }>(`/projects/${id}`, { method: "PATCH", body }),
+  brief: (projectId: string) => request<{ brief: ProjectBrief | null; example: ProjectBriefInput; path: string }>(`/projects/${projectId}/brief`),
+  saveBrief: (projectId: string, brief: ProjectBriefInput) =>
+    request<{ brief: ProjectBrief }>(`/projects/${projectId}/brief`, { method: "PUT", body: brief }),
+  features: (projectId: string) => request<{ features: FeatureNote[] }>(`/projects/${projectId}/features`),
+  addFeature: (projectId: string, note: FeatureNoteInput) => request<{ feature: FeatureNote }>(`/projects/${projectId}/features`, { body: note }),
+
+  drafts: (q: { status?: "pending" | "decided"; project_id?: string } = {}) => {
+    const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
+    return request<{ drafts: ContentDraft[] }>(`/drafts${qs.size ? `?${qs}` : ""}`);
+  },
+  decideDraft: (id: string, decision: DraftDecision) => request<{ draft: ContentDraft }>(`/drafts/${id}/decide`, { body: decision }),
+
+  chat: (body: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null }) =>
+    request<{ job: Job; thread_id: string }>("/chat", { body }),
+  chatThreads: (agentId: string) => request<{ threads: ChatThread[] }>(`/chat/threads?agent_id=${encodeURIComponent(agentId)}`),
+  chatThread: (threadId: string) => request<{ messages: ChatMessage[] }>(`/chat/threads/${threadId}`),
 
   schedules: () => request<{ schedules: Schedule[] }>("/schedules"),
   createSchedule: (body: Record<string, unknown>) => request<{ schedule: Schedule }>("/schedules", { body }),

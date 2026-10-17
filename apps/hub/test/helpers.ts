@@ -65,9 +65,9 @@ export class WebClient {
   }
 }
 
-export async function createTestEnv(timings: Parameters<typeof startHub>[1] = {}): Promise<TestEnv> {
+export async function createTestEnv(timings: Parameters<typeof startHub>[1] = {}, config: Partial<HubConfig> = {}): Promise<TestEnv> {
   const dir = mkdtempSync(join(tmpdir(), "agent-office-"));
-  const hub = startHub(testConfig(dir), { sweepMs: 50, ...timings });
+  const hub = startHub({ ...testConfig(dir), ...config }, { sweepMs: 50, ...timings });
   const runners: RunnerClient[] = [];
   const webs: WebClient[] = [];
 

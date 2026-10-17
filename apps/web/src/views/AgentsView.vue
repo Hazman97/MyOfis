@@ -142,7 +142,7 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
         <div class="mt-3 mb-4" :title="`${tokensToday(a)} of ${a.daily_token_budget} tokens today`">
           <div class="mb-1 flex justify-between text-[11px] text-faint">
             <span>Tokens today</span>
-            <span class="font-mono tabular-nums">{{ fmtTokens(tokensToday(a)) }} / {{ fmtTokens(a.daily_token_budget) }}</span>
+            <span class="font-mono tabular-nums">{{ fmtTokens(tokensToday(a)) }} / {{ a.daily_token_budget ? fmtTokens(a.daily_token_budget) : "no limit" }}</span>
           </div>
           <div class="h-1.5 overflow-hidden rounded-full bg-surface-2">
             <div class="h-full rounded-full" :class="pct(a) > 85 ? 'bg-signal' : 'bg-accent'" :style="{ width: `${pct(a)}%` }" />
@@ -255,7 +255,11 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
             <textarea id="ag-prompt" v-model="form.system_prompt" class="input min-h-56 font-mono text-xs leading-relaxed" />
           </div>
           <div class="grid gap-3 sm:grid-cols-3">
-            <div><label class="label" for="ag-budget">Daily token budget</label><input id="ag-budget" v-model.number="form.daily_token_budget" type="number" min="0" step="1000" class="input font-mono" /></div>
+            <div>
+              <label class="label" for="ag-budget">Daily token budget · 0 = no limit</label>
+              <input id="ag-budget" v-model.number="form.daily_token_budget" type="number" min="0" step="1000" class="input font-mono" />
+              <p class="mt-1 text-xs text-faint">When it runs out the agent goes home; its jobs wait until tomorrow (Malaysia time).</p>
+            </div>
             <div><label class="label" for="ag-steps">Max steps per run</label><input id="ag-steps" v-model.number="form.max_steps" type="number" min="1" max="200" class="input font-mono" /></div>
             <label class="flex items-center gap-2 self-end pb-2 text-sm"><input v-model="form.enabled" type="checkbox" class="accent-accent" /> Enabled</label>
           </div>

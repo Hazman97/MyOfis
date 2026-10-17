@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watchEffect } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import type { Project } from "@agent-office/shared";
+import { MARKETING_JOB_TYPES, type Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import PageHeader from "../components/PageHeader.vue";
 import { api } from "../api/http.ts";
@@ -11,7 +11,10 @@ const office = useOffice();
 const router = useRouter();
 const route = useRoute();
 
-const agentId = ref(typeof route.query.agent === "string" ? route.query.agent : "");
+/** ?agent= takes a slug or an id. */
+const wanted = typeof route.query.agent === "string" ? route.query.agent : "";
+const agentId = ref("");
+const jobType = ref("caption");
 const projectId = ref("");
 const projects = ref<Project[]>([]);
 const title = ref("");
@@ -25,15 +28,27 @@ onMounted(async () => {
 });
 const enabledAgents = computed(() => office.agents.filter((a) => a.enabled));
 watchEffect(() => {
-  if (!agentId.value && enabledAgents.value[0]) agentId.value = enabledAgents.value[0].id;
+  if (agentId.value) return;
+  const pick = enabledAgents.value.find((a) => a.slug === wanted || a.id === wanted) ?? enabledAgents.value[0];
+  if (pick) agentId.value = pick.id;
 });
 const agent = computed(() => office.agentById[agentId.value]);
+const isMarketing = computed(() => !!agent.value?.tools.includes("save_draft"));
+const marketingType = computed(() => MARKETING_JOB_TYPES.find((t) => t.type === jobType.value));
 const needsRepo = computed(() => agent.value?.config.runtime === "opencode");
 const project = computed(() => projects.value.find((p) => p.id === projectId.value));
 
 const plan = computed(() => {
   const a = agent.value;
   if (!a) return [];
+  if (isMarketing.value) {
+    return [
+      "Reads the project brief, feature log and your past feedback",
+      "Writes, then checks facts, claims and tone itself",
+      "Every piece lands in Drafts: nothing is posted",
+      "You approve, edit or reject; your edits teach it your style",
+    ];
+  }
   if (a.config.runtime === "opencode") {
     return [
       "Clones the project's repo and makes a new branch",
@@ -63,7 +78,12 @@ async function submit() {
     const { job } = await api.createJob({
       agent_id: agentId.value,
       project_id: projectId.value || null,
-      title: title.value.trim() || (asJson.value ? "JSON job" : text.value.trim().slice(0, 60)) || "Untitled job",
+      title:
+        title.value.trim() ||
+        (isMarketing.value && marketingType.value ? `${marketingType.value.label}: ${text.value.trim().slice(0, 50)}` : "") ||
+        (asJson.value ? "JSON job" : text.value.trim().slice(0, 60)) ||
+        "Untitled job",
+      type: isMarketing.value ? jobType.value : undefined,
       input,
     });
     // Wait briefly for the run to start so we can jump straight to its live log.
@@ -106,14 +126,38 @@ async function submit() {
           </div>
         </fieldset>
 
+        <fieldset v-if="isMarketing">
+          <legend class="label">Kind of work</legend>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="t in MARKETING_JOB_TYPES"
+              :key="t.type"
+              type="button"
+              class="chip cursor-pointer px-2.5 py-1"
+              :class="jobType === t.type ? 'border-accent bg-accent-soft text-accent' : 'hover:bg-surface-2'"
+              :aria-pressed="jobType === t.type"
+              @click="jobType = t.type"
+            >
+              {{ t.label }}
+            </button>
+          </div>
+          <p v-if="marketingType" class="mt-2 text-xs text-muted">
+            Example:
+            <button type="button" class="text-left text-accent hover:underline" @click="text = marketingType.example">“{{ marketingType.example }}”</button>
+          </p>
+        </fieldset>
+
         <div class="grid gap-4 sm:grid-cols-2">
           <div>
-            <label class="label" for="project">Project {{ needsRepo ? "· needed" : "· optional" }}</label>
-            <select id="project" v-model="projectId" class="input" :required="needsRepo">
+            <label class="label" for="project">Project {{ needsRepo || isMarketing ? "· needed" : "· optional" }}</label>
+            <select id="project" v-model="projectId" class="input" :required="needsRepo || (isMarketing && jobType !== 'content_calendar')">
               <option value="">No project</option>
               <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
             <p v-if="needsRepo && project && !project.repo_url" class="mt-1 text-xs text-signal">This project has no repo URL yet. Add one on the Projects page first.</p>
+            <p v-if="isMarketing && project && !project.brief_path" class="mt-1 text-xs text-signal">
+              No brief yet: Marketing will write general copy without prices. Fill in the brief on the Projects page.
+            </p>
           </div>
           <div>
             <label class="label" for="title">Title · optional</label>
@@ -129,7 +173,13 @@ async function submit() {
             class="input min-h-44 leading-relaxed"
             :class="asJson && 'font-mono text-xs'"
             required
-            :placeholder="needsRepo ? 'Describe the bug or change. Include the page, what you expected and what happened.' : 'Describe the task or paste the text to work on…'"
+            :placeholder="
+              needsRepo
+                ? 'Describe the bug or change. Include the page, what you expected and what happened.'
+                : isMarketing
+                  ? 'What to write, for which platform, any angle or promo. Paste example posts here if you want their style.'
+                  : 'Describe the task or paste the text to work on…'
+            "
           />
           <details class="mt-2 text-xs text-muted">
             <summary class="cursor-pointer hover:text-fg">Advanced</summary>

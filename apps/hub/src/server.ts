@@ -2,6 +2,7 @@ import type { Server, ServerWebSocket } from "bun";
 import { eq } from "drizzle-orm";
 import { HubToWeb, PROTOCOL_VERSION, RunnerToHub, WebToHub, parseMessage, type HubToRunner } from "@agent-office/shared";
 import { createAuthenticator } from "./auth.ts";
+import { Content } from "./content.ts";
 import { Hub, TIMINGS, type RunnerConn } from "./core.ts";
 import { Secrets, hashToken } from "./crypto.ts";
 import { openDb } from "./db/client.ts";
@@ -10,6 +11,8 @@ import type { HubConfig } from "./env.ts";
 import { EventStore } from "./events.ts";
 import { createHttpApp } from "./http.ts";
 import { Integrations } from "./integrations.ts";
+import { ReleaseWatcher } from "./releases.ts";
+import { TelegramBot } from "./telegram.ts";
 import { Scheduler } from "./scheduler.ts";
 import { seed } from "./seed.ts";
 import { LocalStorage } from "./storage.ts";
@@ -26,10 +29,15 @@ export interface HubServer {
   port: number;
   hub: Hub;
   scheduler: Scheduler;
+  releases: ReleaseWatcher;
+  telegram: TelegramBot;
   stop(): Promise<void>;
 }
 
-export function startHub(config: HubConfig, opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number } = {}): HubServer {
+export function startHub(
+  config: HubConfig,
+  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number } = {},
+): HubServer {
   const { db, sqlite } = openDb(config.databasePath);
   const secrets = new Secrets(config.secretsKey);
   const storage = new LocalStorage(config.filesDir);
@@ -40,12 +48,18 @@ export function startHub(config: HubConfig, opts: { timings?: Partial<typeof TIM
   seed(db, config, secrets);
   const integrations = new Integrations(db, secrets);
   integrations.seedFromEnv(config.seed.giteaUrl, config.seed.giteaToken);
+  integrations.seedTelegramFromEnv(config.seed.telegramToken, config.seed.telegramChatId);
   hub.integrations = integrations;
   hub.storage = storage;
+  hub.content = new Content(db, store, config.projectsDir);
   hub.boot();
   const scheduler = new Scheduler(hub);
   scheduler.start();
-  const app = createHttpApp(hub, auth, scheduler, integrations);
+  const releases = new ReleaseWatcher(hub, integrations, opts.releasePollMs);
+  releases.start();
+  const telegram = new TelegramBot(hub, integrations, config.telegramApiBase, config.secretsKey);
+  telegram.start();
+  const app = createHttpApp(hub, auth, scheduler, integrations, telegram);
 
   const sendWeb = (ws: ServerWebSocket<SocketData>, msg: HubToWeb) => ws.send(JSON.stringify(msg));
 
@@ -150,9 +164,13 @@ export function startHub(config: HubConfig, opts: { timings?: Partial<typeof TIM
     port: server.port ?? config.port,
     hub,
     scheduler,
+    releases,
+    telegram,
     async stop() {
       clearInterval(sweep);
       scheduler.stop();
+      releases.stop();
+      telegram.stop();
       hub.shutdown();
       // Bun 1.3.x: stop(true) never resolves once the server itself has closed a WebSocket
       // (revoke / heartbeat timeout). Connections are closed regardless, so cap the wait.

@@ -2,10 +2,17 @@
 
 A personal AI agent orchestration system for a single owner. You create agents, give them jobs, approve risky actions, and watch them work in a pixel-art office. The full spec is in [SPEC.md](SPEC.md).
 
-**Status: Phase 3 done (awaiting owner sign-off).**
+**Status: Phase 4 done (awaiting owner sign-off).**
+- **Marketing + chat (Phase 4):**
+  - project briefs, a Marketing agent that writes drafts (it never posts), and a drafts inbox where your edits and feedback become its style memory;
+  - the feature log (merged PR → Coder's note → Tester screenshot + Marketing announcements);
+  - chat with any agent, including an **English Coach** for speaking practice;
+  - Telegram approvals and reports, and daily token budgets.
 - **Office view (Phase 3):** a pixel-art office (Phaser) where each agent is a character that walks, sits, types, raises a hand for approvals and carries finished work to your desk. Click a character to see its job, live log and budget. The rest of the app was redesigned at the same time.
 - **Agents (Phase 2):** Pak Guard (health report), Tester (real-browser smoke tests, screenshots, visual diff) and Coder (OpenCode → branch → PR), with tool permissions, approvals, handoffs, schedules and projects.
-- **Acceptance test:** `apps/hub/test/acceptance.test.ts` proves the Phase 2 criteria end to end: the nightly Tester finds a broken page, hands off to Coder, Coder opens a PR on a branch, and a dangerous command waits for approval.
+- **Acceptance tests:**
+  - `apps/hub/test/acceptance.test.ts` (Phase 2): the nightly Tester finds a broken page and hands off to Coder. Coder opens a PR on a branch, and a dangerous command waits for approval.
+  - `apps/hub/test/acceptance-phase4.test.ts` (Phase 4): a merged PR produces a feature note, a Tester screenshot and Marketing drafts, all waiting for you.
 
 ```
  browser ──HTTP + WS (same origin)──▶ hub (Hono + Bun, SQLite) ◀──WS (runner dials out)── runner(s)
@@ -128,9 +135,69 @@ The dashboard opens on **Office**. Switch to **Board** (team cards + kanban) at 
 
 **Art.** All art is drawn in code (`apps/web/src/office/art/`), so no licence questions. The hub serves the built files from `maps/` (`MAPS_DIR`). To re-skin the office, replace those files; see [maps/README.md](maps/README.md). After changing the art code, rebuild with `bun run --cwd apps/web office:assets`.
 
-## Add a project
+## Projects, briefs and Marketing
 
-Coming in Phase 4 (briefs, feature log, Marketing agent).
+**Projects → Brief** is everything Marketing may know about a product. It is saved as `projects/<slug>/brief.yaml` and holds:
+- what it is, who it is for, prices, location, call to action and other facts;
+- tone, and the language per platform (Manglish / Bahasa Melayu / English);
+- things never to say: words in "quotes" are blocked word for word;
+- **example posts you like**, and **style notes**.
+
+Marketing reads only the brief, the feature log and its past drafts. It has no repo access. Before saving each draft it checks itself: facts from the brief, only released features, no overclaims, and the right tone. The tools also refuse:
+- drafts that use a forbidden phrase;
+- drafts that copy an example post word for word (12+ words in a row).
+
+**New job → Marketing → Kind of work** offers these job types:
+- captions (3 variants);
+- short-video script;
+- weekly content calendar;
+- landing page copy;
+- seasonal promo;
+- comment/DM replies;
+- A/B hooks;
+- feature announcement;
+- **writing-style analysis**: it studies the example posts and writes a style guide; approving it fills the brief's style notes.
+
+**Drafts** is the inbox. You can edit in place, then **Approve**, which is saved as *edited* with the original kept, or **Reject** with feedback. **Copy** puts the text on your clipboard. Your decisions are fed back to Marketing on later jobs. Nothing is ever published by Agent Office.
+
+**Feature log:**
+1. When one of Coder's pull requests (branches `agent/…`, `fix/…`, `feat/…`) is merged in Gitea, the hub notices it within 5 minutes. It polls Gitea, so no webhook or public URL is needed.
+2. The hub asks Coder for a plain-language note. Coder checks CI and writes it to `feature_log` and `projects/<slug>/FEATURES.md`.
+3. That note triggers a Tester screenshot and Marketing announcement drafts.
+
+You can also add a note yourself in **Projects → Feature log**.
+
+## Chat
+
+**Chat** talks to any agent. Each message is a small job, so it shows in the office, counts toward the budget and still asks for approvals. Earlier messages in the thread go along with each new one.
+- **Marketing:** ask for posts in plain words; whatever it writes lands in Drafts.
+- **Coach (English speaking partner):**
+  - Practises unscripted conversation: free talk, interviews with unexpected follow-ups, work situations, pitches and quick drills.
+  - Each reply answers you, asks a follow-up, then lists **More natural:** fixes and one **Useful phrase**.
+  - Press 🎤 to *speak* your answer. This uses your browser's speech-to-text: Chrome and Edge send the audio to their speech service. Tick **Read aloud** to hear replies.
+
+## Telegram
+
+**Settings → Integrations → Telegram:**
+1. Create a bot with @BotFather and paste its token.
+2. Send `/id` to your bot and paste the chat id it replies with.
+3. Press **Send test**.
+
+You then get the following messages:
+- approvals with ✅/❌ buttons (signed, and only your chat is accepted);
+- morning and nightly reports;
+- failures;
+- new drafts;
+- budget alerts.
+
+Send `/status` for a summary. The bot uses long polling, so it works while the hub runs on 127.0.0.1.
+
+## Budgets
+
+Each agent has a daily token budget (Agents → Edit; `0` = no limit). When the budget runs out:
+- the run stops early;
+- the agent "goes home" in the office;
+- its jobs wait until midnight (Malaysia time) or until you raise the budget.
 
 ## Kill switch
 
@@ -139,7 +206,7 @@ Coming in Phase 4 (briefs, feature log, Marketing agent).
 ## Tests & checks
 
 ```sh
-bun test              # schemas, reducer, tools, hub↔runner loop, Phase 2 acceptance, office art + character brain
+bun test              # schemas, reducer, tools, hub↔runner loop, Phase 2 + 4 acceptance, drafts, Telegram, office art + brain
 bun run typecheck     # strict TS across all workspaces (incl. vue-tsc)
 node apps/web/scripts/shots.mjs --out shots --routes "/,/agents" --variants desktop-light,phone-dark   # screenshots (dev server running)
 ```
@@ -154,7 +221,8 @@ apps/runner   Runner daemon: pairing, outbound WS, workspaces, runtimes (Vercel 
 apps/web      Vue 3 + Pinia + Tailwind UI; src/office = pixel art, map, character brain, Phaser scene
 maps/         Office map (Tiled .tmj), tileset and sprite atlases (built from code, served by the hub)
 packages/shared  Zod schemas: entities, events, protocol, reducer, pricing, presets, redaction
-packages/agents  Agent definitions (data + system prompts)
+packages/agents  Agent definitions (data + system prompts): Echo, Pak Guard, Tester, Coder, Marketing, English Coach
+projects/        One folder per project: brief.yaml + FEATURES.md (written by the hub)
 packages/tools   Tool layer (Phase 2)
 ```
 

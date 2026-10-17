@@ -19,6 +19,9 @@ const tone: Record<string, string> = {
   approved: "bg-accent-soft text-accent",
   rejected: "bg-danger-soft text-danger",
   expired: "bg-surface-2 text-faint",
+  draft: "bg-signal-soft text-signal",
+  edited: "bg-review-soft text-review",
+  published: "bg-accent-soft text-accent",
 };
 const label = computed(() => (props.status === "waiting_approval" ? "needs you" : props.status));
 const live = computed(() => ["running", "working", "waiting_approval"].includes(props.status));

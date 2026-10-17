@@ -1,4 +1,4 @@
-import { AgentConfig, type FeatureNoteInput, type PermissionLevel, type ProjectContext, type RunnerEventBody } from "@agent-office/shared";
+import { AgentConfig, type FeatureNoteData, type PermissionLevel, type ProjectContext, type RunnerEventBody } from "@agent-office/shared";
 import type { ApprovalRequest, DraftRequest, GiteaConfig, HandoffRequest, HandoffTarget, ToolContext } from "../src/index.ts";
 
 export function makeCtx(
@@ -20,7 +20,7 @@ export function makeCtx(
   const handoffs: HandoffRequest[] = [];
   const uploads: string[] = [];
   const drafts: DraftRequest[] = [];
-  const features: { project_id: string; note: FeatureNoteInput }[] = [];
+  const features: { project_id: string; note: FeatureNoteData }[] = [];
   const ctx: ToolContext = {
     workspace,
     config: AgentConfig.parse({ shell_allowlist: opts.allow ?? [], http_allowlist: opts.httpAllow ?? [] }),

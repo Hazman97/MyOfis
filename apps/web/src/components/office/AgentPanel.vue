@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { MessageSquarePlus, Pause, Play, Square } from "lucide-vue-next";
+import { MessageSquarePlus, MessagesSquare, Pause, Play, Square } from "lucide-vue-next";
 import { dayKey, type AgentEvent } from "@agent-office/shared";
 import AgentAvatar from "../AgentAvatar.vue";
 import ApprovalCard from "../ApprovalCard.vue";
@@ -166,7 +166,8 @@ const togglePause = () =>
     </div>
 
     <template #footer>
-      <RouterLink v-if="agent" :to="{ path: '/jobs/new', query: { agent: agent.slug } }" class="btn btn-primary"><MessageSquarePlus :size="15" /> Give a job</RouterLink>
+      <RouterLink v-if="agent" :to="{ path: '/chat', query: { agent: agent.slug } }" class="btn btn-primary"><MessagesSquare :size="15" /> Chat</RouterLink>
+      <RouterLink v-if="agent" :to="{ path: '/jobs/new', query: { agent: agent.slug } }" class="btn"><MessageSquarePlus :size="15" /> Job</RouterLink>
       <ConfirmButton v-if="running" confirm-label="Cancel run?" @confirm="cancelRun"><Square :size="13" /> Cancel run</ConfirmButton>
       <button v-if="agent" class="btn ml-auto" @click="togglePause">
         <component :is="agent.enabled ? Pause : Play" :size="14" /> {{ agent.enabled ? "Pause agent" : "Enable" }}
