@@ -1,0 +1,48 @@
+import type { RunAssignment, RunnerEventBody } from "@agent-office/shared";
+import type { FeatureNoteInput } from "@agent-office/shared";
+import type { ApprovalRequest, DraftRequest, HandoffRequest } from "@agent-office/tools";
+
+export interface RunContext {
+  assignment: RunAssignment;
+  /** Absolute path of this run's private working directory. */
+  workspace: string;
+  signal: AbortSignal;
+  emit(event: RunnerEventBody): void;
+  /** Ask the owner (via the hub). Resolves true on approve; rejects if the run is cancelled. */
+  requestApproval(req: ApprovalRequest): Promise<boolean>;
+  /** Queue a job for another agent (sent through the hub). */
+  handoff(req: HandoffRequest): void;
+  /** Upload a file to the hub for the owner to view; returns its storage path. */
+  uploadArtifact(name: string, data: Uint8Array, contentType: string): Promise<string>;
+  /** Send a content draft to the hub (Marketing). */
+  saveDraft(req: DraftRequest): void;
+  /** Send a released-feature note to the hub (Coder). */
+  addFeatureNote(req: { project_id: string; note: FeatureNoteInput }): void;
+  /** Runner-owned folder (outside the workspace) for this agent's screenshot baselines. */
+  baselineDir: string | null;
+}
+
+export interface RunResult {
+  tokens_in: number;
+  tokens_out: number;
+}
+
+/** Throw this to fail a run while still reporting the tokens it already used. */
+export class RunError extends Error {
+  constructor(
+    message: string,
+    readonly tokens: RunResult,
+    override readonly cause?: unknown,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * One execution strategy (Vercel AI SDK tool loop, mock echo).
+ * Throw to fail the run; if `signal` is aborted the run is reported as cancelled.
+ */
+export interface AgentRuntime {
+  readonly id: string;
+  execute(ctx: RunContext): Promise<RunResult>;
+}

@@ -1,0 +1,201 @@
+@import "tailwindcss";
+
+/*
+ * Agent Office design system.
+ * Concept: a small office floor seen from above. Office green = agents at work,
+ * amber = the notice board (things waiting for the owner), red = trouble.
+ * Neutrals carry a slight green bias. Pixel face (Silkscreen) only for small
+ * "signage" labels; IBM Plex for everything people read.
+ */
+:root {
+  --bg: #f2f4f1;
+  --surface: #ffffff;
+  --surface-2: #e9eee9;
+  --sunken: #e2e8e3;
+  --fg: #16211d;
+  --muted: #5a6a63;
+  --faint: #8a9a92;
+  --line: #d6ded8;
+  --line-strong: #b8c5bd;
+  --accent: #0f7a5c;
+  --accent-hover: #0b6248;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcefe6;
+  --signal: #b25c08;
+  --signal-soft: #fbecd9;
+  --danger: #b4232f;
+  --danger-soft: #f9e1e3;
+  --info: #1d6b98;
+  --info-soft: #dbeaf4;
+  --review: #876000;
+  --review-soft: #f5ead0;
+  --shadow: 0 1px 2px rgb(22 33 29 / 0.06), 0 4px 16px -8px rgb(22 33 29 / 0.12);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1613;
+    --surface: #151f1b;
+    --surface-2: #1b2823;
+    --sunken: #0b120f;
+    --fg: #e3ebe7;
+    --muted: #93a59d;
+    --faint: #6c7f77;
+    --line: #26352f;
+    --line-strong: #35483f;
+    --accent: #3fc296;
+    --accent-hover: #5fd3ab;
+    --accent-ink: #052119;
+    --accent-soft: #143528;
+    --signal: #f0a04b;
+    --signal-soft: #392812;
+    --danger: #ff7a85;
+    --danger-soft: #3c191e;
+    --info: #63b6e8;
+    --info-soft: #13293a;
+    --review: #e9c46a;
+    --review-soft: #342b11;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1613;
+  --surface: #151f1b;
+  --surface-2: #1b2823;
+  --sunken: #0b120f;
+  --fg: #e3ebe7;
+  --muted: #93a59d;
+  --faint: #6c7f77;
+  --line: #26352f;
+  --line-strong: #35483f;
+  --accent: #3fc296;
+  --accent-hover: #5fd3ab;
+  --accent-ink: #052119;
+  --accent-soft: #143528;
+  --signal: #f0a04b;
+  --signal-soft: #392812;
+  --danger: #ff7a85;
+  --danger-soft: #3c191e;
+  --info: #63b6e8;
+  --info-soft: #13293a;
+  --review: #e9c46a;
+  --review-soft: #342b11;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-sunken: var(--sunken);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-review: var(--review);
+  --color-review-soft: var(--review-soft);
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --font-pixel: "Silkscreen", "Courier New", monospace;
+  --shadow-card: var(--shadow);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg font-sans text-fg antialiased;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--accent-soft);
+  }
+  code {
+    @apply rounded bg-sunken px-1 py-0.5 font-mono text-[0.85em];
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Surfaces */
+  .card {
+    @apply rounded-lg border border-line bg-surface;
+  }
+  .card-raised {
+    @apply rounded-lg border border-line bg-surface shadow-card;
+  }
+
+  /* Signage label: tiny pixel caps, used sparingly (section eyebrows, groups). */
+  .sign {
+    @apply font-pixel text-[10px] uppercase tracking-[0.08em] text-faint;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-muted;
+  }
+  .muted {
+    @apply text-muted;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 text-sm font-medium whitespace-nowrap text-fg transition-colors
+      hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply h-7 px-2 text-xs;
+  }
+  .btn-primary {
+    @apply border-accent bg-accent text-accent-ink hover:border-accent-hover hover:bg-accent-hover;
+  }
+  .btn-danger {
+    @apply border-danger/40 text-danger hover:bg-danger-soft;
+  }
+  .btn-signal {
+    @apply border-signal bg-signal text-white hover:opacity-90;
+  }
+  .btn-ghost {
+    @apply border-transparent bg-transparent hover:bg-surface-2;
+  }
+
+  /* Forms */
+  .input {
+    @apply w-full rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm text-fg outline-none placeholder:text-faint
+      focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+
+  /* Chips / status pills */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 text-xs font-medium whitespace-nowrap text-muted;
+  }
+}

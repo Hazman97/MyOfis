@@ -1,0 +1,23 @@
+{
+  "name": "@agent-office/hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@agent-office/agents": "workspace:*",
+    "@agent-office/shared": "workspace:*",
+    "@agent-office/tools": "workspace:*",
+    "croner": "10.0.1",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.13",
+    "ulid": "3.0.2",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11"
+  }
+}

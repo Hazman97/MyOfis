@@ -1,0 +1,16 @@
+{
+  "name": "@agent-office/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@agent-office/shared": "workspace:*",
+    "@agent-office/tools": "workspace:*",
+    "@ai-sdk/anthropic": "4.0.81",
+    "@ai-sdk/google": "4.0.98",
+    "@ai-sdk/openai": "4.0.95",
+    "@ai-sdk/openai-compatible": "3.0.70",
+    "ai": "7.0.142",
+    "zod": "4.6.7"
+  }
+}

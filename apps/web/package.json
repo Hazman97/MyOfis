@@ -1,0 +1,35 @@
+{
+  "name": "@agent-office/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "office:assets": "bun scripts/build-office-assets.ts"
+  },
+  "dependencies": {
+    "@agent-office/shared": "workspace:*",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
+    "@fontsource/silkscreen": "5.3.0",
+    "easystarjs": "0.4.4",
+    "lucide-vue-next": "1.0.0",
+    "phaser": "3.90.0",
+    "pinia": "4.1.0",
+    "vue": "3.5.44",
+    "vue-router": "5.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/pngjs": "6.0.5",
+    "@vitejs/plugin-vue": "6.0.10",
+    "playwright": "1.64.1",
+    "pngjs": "7.0.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vue-tsc": "3.3.13"
+  }
+}
