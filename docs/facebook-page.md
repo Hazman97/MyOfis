@@ -59,6 +59,5 @@ Threads posts are text (up to 500 characters) or text + photo. Photos also go th
 > ⚠️ Long-lived Threads tokens last about **60 days**. When posting starts failing with a token error, generate a new one and paste it again.
 
 ## TikTok and YouTube
-Planned:
-- **YouTube / Shorts**: through Google's API, with video upload.
-- **TikTok**: through a browser agent that uses a logged-in Chrome and stops before **Post** until you approve.
+- **Videos are ready today**: Editor cuts and exports TikTok FHD / Reels / Shorts on your PC (docs/video-editor.md). Download the video from the draft and post it yourself.
+- **Planned**: posting through the TikTok Content Posting API and the YouTube Data API, once their developer apps are set up.

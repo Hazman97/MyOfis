@@ -69,6 +69,7 @@ export const DraftKind = z.enum([
   "announcement",
   "style_guide",
   "web_post",
+  "video",
   "other",
 ]);
 export type DraftKind = z.infer<typeof DraftKind>;
@@ -90,6 +91,8 @@ export const WebPost = z.object({
   video_url: z.string().url().or(z.literal("")).default(""),
   /** An image the owner sent in chat (uploads table), used as the cover. */
   cover_upload_id: z.string().max(64).nullable().default(null),
+  /** A finished video (Editor's render or the owner's own clip) to post with a caption. */
+  video_upload_id: z.string().max(64).nullable().default(null),
 });
 export type WebPost = z.infer<typeof WebPost>;
 
@@ -103,6 +106,7 @@ export const WebPostEdit = z.object({
   location: z.string().max(200).optional(),
   video_url: z.string().url().or(z.literal("")).optional(),
   cover_upload_id: z.string().max(64).nullable().optional(),
+  video_upload_id: z.string().max(64).nullable().optional(),
 });
 export type WebPostEdit = z.infer<typeof WebPostEdit>;
 

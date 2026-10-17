@@ -254,7 +254,11 @@ async function decide(decision: "approve" | "reject") {
       </div>
       <p class="text-xs text-info sm:col-span-2">Approving publishes this post to the website.</p>
     </div>
-    <div v-if="!isWebPost && draft.meta?.cover_upload_id" class="px-4 pt-2.5">
+    <div v-if="!isWebPost && draft.meta?.video_upload_id" class="px-4 pt-2.5 space-y-1.5">
+      <video :src="api.uploadUrl(draft.meta.video_upload_id)" controls preload="metadata" playsinline class="max-h-96 w-auto max-w-full rounded-lg border border-line bg-black shadow-sm" aria-label="Video for this caption" />
+      <a :href="api.uploadUrl(draft.meta.video_upload_id, true)" class="btn btn-sm" download>Download video</a>
+    </div>
+    <div v-else-if="!isWebPost && draft.meta?.cover_upload_id" class="px-4 pt-2.5">
       <img :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Photo for this caption" class="max-h-52 w-auto max-w-full rounded-lg border border-line object-cover shadow-sm" />
     </div>
     <div v-if="!editable && isWebPost && draft.meta" class="px-4 pt-2.5 space-y-2">

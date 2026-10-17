@@ -25,6 +25,10 @@ export interface RunContext {
   webSearch(query: string, count: number): Promise<WebSearchResult[]>;
   /** Bytes of a photo the owner attached to this job. */
   fetchUpload(id: string): Promise<Uint8Array>;
+  /** Save an attached file (a video) to `dest`, streamed. */
+  downloadUpload(id: string, dest: string): Promise<void>;
+  /** Send a finished video to the hub in parts; returns the new upload. */
+  uploadVideo(path: string, name: string): Promise<{ id: string; size: number }>;
   /** Data a project's website shares with Agent Office (through the hub, which holds its secret). */
   siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
   webPost(action: "update" | "take_down", draftId: string, edits: { title?: string; body?: string; meta?: Record<string, unknown> }): Promise<unknown>;

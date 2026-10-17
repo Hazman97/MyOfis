@@ -125,11 +125,14 @@ onMounted(async () => {
   projects.value = (await api.projects()).projects.filter((p) => p.enabled);
 });
 
-// Photos to send with the next message (uploaded right away; Publisher uses them)
-const MAX_PHOTOS = 4;
+// Photos and videos to send with the next message (uploaded right away; Publisher and Editor use them)
+const MAX_PHOTOS = 10;
 const photos = ref<(ChatAttachment & { preview: string })[]>([]);
 const uploading = ref(false);
+/** Upload progress of the current video, 0–100 (null for photos). */
+const uploadPct = ref<number | null>(null);
 const photoInput = ref<HTMLInputElement>();
+const isVideo = (a: { content_type: string }) => a.content_type.startsWith("video/");
 async function addPhotos(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = [...(input.files ?? [])].slice(0, MAX_PHOTOS - photos.value.length);
@@ -138,11 +141,17 @@ async function addPhotos(e: Event) {
   uploading.value = true;
   error.value = "";
   try {
-    for (const file of files) photos.value.push({ ...(await api.uploadImage(file)), preview: URL.createObjectURL(file) });
+    for (const file of files) {
+      const video = file.type.startsWith("video/") || /\.(mp4|mov|webm|mkv|m4v)$/i.test(file.name);
+      uploadPct.value = video ? 0 : null;
+      const up = video ? await api.uploadVideo(file, (d) => (uploadPct.value = Math.round(d * 100))) : await api.uploadImage(file);
+      photos.value.push({ ...up, preview: URL.createObjectURL(file) });
+    }
   } catch (err) {
     error.value = (err as Error).message;
   } finally {
     uploading.value = false;
+    uploadPct.value = null;
   }
 }
 function removePhoto(id: string) {
@@ -152,7 +161,7 @@ function removePhoto(id: string) {
 }
 
 async function send(body = text.value) {
-  const t = (body + (interim.value ? ` ${interim.value}` : "")).trim() || (photos.value.length ? "(photo)" : "");
+  const t = (body + (interim.value ? ` ${interim.value}` : "")).trim() || (photos.value.length ? (photos.value.some(isVideo) ? "(video)" : "(photo)") : "");
   if (!t || !agent.value || sending.value || uploading.value) return;
   listening.value?.stop();
   sending.value = true;
@@ -345,9 +354,12 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
             <div class="group flex flex-col items-end">
               <div class="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-sm bg-accent px-4 py-2.5 text-[14px] leading-relaxed whitespace-pre-wrap text-accent-ink shadow-sm">
                 <div v-if="m.attachments?.length" class="mb-2 flex flex-wrap gap-1.5">
-                  <a v-for="a in m.attachments" :key="a.id" :href="api.uploadUrl(a.id)" target="_blank" rel="noopener" class="group/img block overflow-hidden rounded-xl border border-white/20 transition-transform hover:scale-[1.02]">
-                    <img :src="api.uploadUrl(a.id)" :alt="a.name" class="size-24 rounded-xl object-cover shadow-xs" loading="lazy" />
-                  </a>
+                  <template v-for="a in m.attachments" :key="a.id">
+                    <video v-if="isVideo(a)" :src="api.uploadUrl(a.id)" controls preload="metadata" class="h-40 max-w-full rounded-xl border border-white/20 bg-black shadow-xs" :aria-label="a.name" />
+                    <a v-else :href="api.uploadUrl(a.id)" target="_blank" rel="noopener" class="group/img block overflow-hidden rounded-xl border border-white/20 transition-transform hover:scale-[1.02]">
+                      <img :src="api.uploadUrl(a.id)" :alt="a.name" class="size-24 rounded-xl object-cover shadow-xs" loading="lazy" />
+                    </a>
+                  </template>
                 </div>
                 {{ m.text }}
               </div>
@@ -400,7 +412,8 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
           <p v-if="error" class="mb-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-1.5 text-xs text-danger">{{ error }}</p>
           <div v-if="photos.length || uploading" class="mb-2.5 flex flex-wrap items-center gap-2" aria-label="Photos to send">
             <div v-for="p in photos" :key="p.id" class="relative group">
-              <img :src="p.preview" :alt="p.name" class="size-16 rounded-xl border border-line object-cover shadow-xs" />
+              <video v-if="isVideo(p)" :src="p.preview" muted preload="metadata" class="size-16 rounded-xl border border-line bg-black object-cover shadow-xs" :aria-label="p.name" />
+              <img v-else :src="p.preview" :alt="p.name" class="size-16 rounded-xl border border-line object-cover shadow-xs" />
               <button
                 class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-line bg-surface text-muted shadow-sm hover:bg-danger-soft hover:text-danger hover:border-danger/30 transition-colors"
                 :aria-label="`Remove ${p.name}`"
@@ -412,16 +425,16 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
             </div>
             <span v-if="uploading" class="text-xs text-muted flex items-center gap-1.5">
               <LoaderCircle :size="13" class="animate-spin text-accent" />
-              Uploading…
+              {{ uploadPct === null ? "Uploading…" : `Uploading video… ${uploadPct}%` }}
             </span>
           </div>
           <div class="flex items-end gap-2">
-            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="hidden" @change="addPhotos" />
+            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v" multiple class="hidden" @change="addPhotos" />
             <button
               class="btn relative shrink-0 size-9 p-0 rounded-lg text-muted hover:text-fg"
               :disabled="uploading || photos.length >= MAX_PHOTOS"
-              aria-label="Add photos"
-              title="Add photos (up to 4). Publisher can see them and use one as the cover."
+              aria-label="Add photos or videos"
+              title="Add photos or videos (up to 10). Publisher sees the photos; Editor edits the videos."
               @click="photoInput?.click()"
             >
               <ImagePlus :size="16" />

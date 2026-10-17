@@ -298,7 +298,24 @@ export const api = {
     if (!res.ok || !data.upload) throw new ApiError(res.status, data.error ?? res.statusText);
     return data.upload;
   },
-  uploadUrl: (id: string) => `/api/uploads/${encodeURIComponent(id)}`,
+  /** Videos go in 32 MB parts (Cloudflare refuses bodies over 100 MB); `onProgress` gets 0–1. */
+  uploadVideo: async (file: File, onProgress?: (done: number) => void): Promise<ChatAttachment> => {
+    const PART = 32 * 1024 * 1024;
+    const key = crypto.randomUUID().replace(/-/g, "");
+    let offset = 0;
+    for (;;) {
+      const part = file.slice(offset, offset + PART);
+      const q = new URLSearchParams({ name: file.name, total: String(file.size), offset: String(offset) });
+      const res = await fetch(`/api/uploads/parts/${key}?${q}`, { method: "PUT", body: part, headers: { "content-type": file.type || "video/mp4" }, credentials: "same-origin" });
+      const data = (await res.json().catch(() => ({}))) as { received?: number; upload?: ChatAttachment; error?: string };
+      if (res.status === 401) onUnauthorized();
+      if (!res.ok) throw new ApiError(res.status, data.error ?? res.statusText);
+      if (data.upload) return data.upload;
+      offset = data.received ?? offset + part.size;
+      onProgress?.(offset / file.size);
+    }
+  },
+  uploadUrl: (id: string, download = false) => `/api/uploads/${encodeURIComponent(id)}${download ? "?download=1" : ""}`,
   chatThreads: (agentId: string) => request<{ threads: ChatThread[] }>(`/chat/threads?agent_id=${encodeURIComponent(agentId)}`),
   chatThread: (threadId: string) => request<{ messages: ChatMessage[] }>(`/chat/threads/${threadId}`),
 

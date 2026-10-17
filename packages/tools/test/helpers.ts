@@ -53,6 +53,9 @@ export function makeCtx(
     webSearch: async () => [],
     consult: async () => ({ ok: false, answer: "", error: "no hub in tests" }),
     attachments: [],
+    downloadAttachment: async () => {},
+    uploadVideo: async () => ({ id: "upl_test", size: 0 }),
+    renders: [],
     siteData: async () => ({}),
     webPost: async () => ({}),
   };

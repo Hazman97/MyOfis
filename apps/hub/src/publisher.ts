@@ -1,9 +1,9 @@
 import { createHmac } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { PublishInfo, WebPost, fixEscapedNewlines, freshFetch, type WebPostEdit } from "@agent-office/shared";
+import { PublishInfo, VIDEO_TYPES, WebPost, fixEscapedNewlines, freshFetch, type WebPostEdit } from "@agent-office/shared";
 import { keyHint, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { contentDrafts, projects, uploads, type ProjectPublish } from "./db/schema.ts";
@@ -65,6 +65,29 @@ export class Publisher {
     writeFileSync(join(this.filesDir, path), bytes);
     const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `image.${ext}`;
     return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size: bytes.length, path }).returning().get();
+  }
+
+  /**
+   * Take a finished file (a video sent in parts, or Editor's render) into the uploads table.
+   * `tmpPath` is moved, not copied.
+   */
+  adoptUpload(name: string, contentType: string, tmpPath: string, runId: string | null = null) {
+    const ext = VIDEO_TYPES[contentType] ?? IMAGE_TYPES[contentType];
+    if (!ext) throw new HttpError(400, "only photos (JPEG, PNG, WebP, GIF) or videos (MP4, MOV, WebM, MKV)");
+    const id = newId("upl");
+    mkdirSync(join(this.filesDir, "uploads"), { recursive: true });
+    const path = join("uploads", `${id}.${ext}`);
+    renameSync(tmpPath, join(this.filesDir, path));
+    const size = statSync(join(this.filesDir, path)).size;
+    const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `video.${ext}`;
+    return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size, path, run_id: runId }).returning().get();
+  }
+
+  /** Where an upload lives on disk (for streaming large files). */
+  uploadFile(id: string): { row: typeof uploads.$inferSelect; file: string } | null {
+    const row = this.upload(id);
+    const file = row ? join(this.filesDir, row.path) : "";
+    return row && existsSync(file) ? { row, file } : null;
   }
 
   upload(id: string) {

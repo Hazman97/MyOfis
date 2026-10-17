@@ -254,12 +254,14 @@ export const proposals = sqliteTable(
   (t) => [index("proposals_status_idx").on(t.status, t.created_at)],
 );
 
-/** Files the owner sends in chat (images for Publisher). Stored under FILES_DIR/uploads/. */
+/** Files the owner sends in chat (photos, videos) and videos Editor renders. Stored under FILES_DIR/uploads/. */
 export const uploads = sqliteTable("uploads", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   content_type: text("content_type").notNull(),
   size: integer("size").notNull(),
   path: text("path").notNull(),
+  /** Set when a run made the file (Editor's render); null for the owner's own uploads. */
+  run_id: text("run_id"),
   created_at: text("created_at").notNull().default(now),
 });

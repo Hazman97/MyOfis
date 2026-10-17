@@ -117,7 +117,8 @@ export const saveDraftTool = defineTool({
     title: z.string().min(1).max(200).describe('Short label, e.g. "Caption A: cuti sekolah"'),
     body: z.string().min(1).max(20_000).describe("The full draft, ready to paste"),
     self_check: SelfCheck,
-    cover_photo: z.number().int().min(1).max(4).optional().describe("A photo the owner sent (1 = first) to post with this caption, e.g. on Facebook"),
+    cover_photo: z.number().int().min(1).max(10).optional().describe("A photo the owner sent (1 = first file) to post with this caption, e.g. on Facebook"),
+    video: z.string().max(64).optional().describe("A video to post with this caption: a video_id from video_edit, or the id of a video the owner sent"),
   }),
   risk: () => "safe",
   describe: (i) => `save a ${i.platform} ${i.kind} draft: ${i.title}`,
@@ -131,11 +132,20 @@ export const saveDraftTool = defineTool({
     const copied = i.kind === "style_guide" ? null : copiedFrom(i.body, p.brief?.good_examples ?? []);
     if (copied) throw new ToolDenied(`the draft copies an example post word for word ("${copied}…"). Learn the style; write new sentences.`);
     let meta: WebPost | undefined;
+    let cover: string | null = null;
     if (i.cover_photo) {
       const a = ctx.attachments[i.cover_photo - 1];
       if (!a) throw new ToolDenied(`there is no photo ${i.cover_photo}; the owner sent ${ctx.attachments.length}`);
-      meta = WebPost.parse({ post_type: "social", cover_upload_id: a.id });
+      if (!a.content_type.startsWith("image/")) throw new ToolDenied(`file ${i.cover_photo} is a video, not a photo: pass it as video instead`);
+      cover = a.id;
     }
+    let video: string | null = null;
+    if (i.video) {
+      const v = [...ctx.renders, ...ctx.attachments].find((f) => f.id === i.video && f.content_type.startsWith("video/"));
+      if (!v) throw new ToolDenied(`unknown video "${i.video}": use the video_id that video_edit returned`);
+      video = v.id;
+    }
+    if (cover || video) meta = WebPost.parse({ post_type: "social", cover_upload_id: cover, video_upload_id: video });
     ctx.saveDraft({ project_id: p.id, platform: i.platform, kind: i.kind, title: i.title, body: i.body, self_check: i.self_check, ...(meta ? { meta } : {}) });
     return { ok: true, summary: `draft saved: ${i.platform} ${i.kind}`, output: { saved: true, project: p.slug, status: "waiting for the owner" } };
   },
@@ -159,7 +169,7 @@ export const draftWebPostTool = defineTool({
     event_time: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("HH:MM, 24-hour"),
     location: z.string().max(200).optional(),
     video_url: z.string().url().optional().describe("For vlogs: a YouTube/TikTok link the owner gave"),
-    cover_photo: z.number().int().min(1).max(4).optional().describe("Which photo the owner sent to use as the cover (1 = first)"),
+    cover_photo: z.number().int().min(1).max(10).optional().describe("Which photo the owner sent to use as the cover (1 = first file)"),
     self_check: SelfCheck,
   }),
   risk: () => "safe",
@@ -176,6 +186,7 @@ export const draftWebPostTool = defineTool({
     if (i.cover_photo) {
       const a = ctx.attachments[i.cover_photo - 1];
       if (!a) throw new ToolDenied(`there is no photo ${i.cover_photo}; the owner sent ${ctx.attachments.length}`);
+      if (!a.content_type.startsWith("image/")) throw new ToolDenied(`file ${i.cover_photo} is a video; the cover must be a photo`);
       cover = a.id;
     }
     const meta = WebPost.parse({

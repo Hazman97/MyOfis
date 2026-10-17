@@ -19,6 +19,7 @@ import type { Db } from "./db/client.ts";
 import { agents, approvals, contentDrafts, featureLog, jobs, projects, runners, runs } from "./db/schema.ts";
 import type { Backups } from "./backup.ts";
 import type { Publisher } from "./publisher.ts";
+import type { UploadParts } from "./uploads.ts";
 import type { Social } from "./social.ts";
 import type { Learning } from "./learning.ts";
 import type { Emit, EventStore } from "./events.ts";
@@ -62,7 +63,7 @@ export const MAX_HANDOFF_DEPTH = 5;
 export const MAX_DRAFTS_PER_RUN = 30;
 /** Earlier chat messages sent along with a new one. */
 const CHAT_HISTORY = 10;
-const MAX_CHAT_ATTACHMENTS = 4;
+const MAX_CHAT_ATTACHMENTS = 10;
 const CHAT_TEXT_MAX = 2000;
 
 type AgentRow = typeof agents.$inferSelect;
@@ -87,6 +88,8 @@ export class Hub {
   learning!: Learning;
   backups!: Backups;
   publisher!: Publisher;
+  /** Videos sent in parts (chat, Editor's renders). */
+  uploadParts!: UploadParts;
   social!: Social;
   /** Agents told they are over today's token budget, with the day they were told. */
   readonly #overBudget = new Map<string, string>();
@@ -288,22 +291,26 @@ Error: ${r.error}` : ""}` });
     const history = prior.slice(-CHAT_HISTORY).flatMap((j) => {
       const reply = this.chatReply(j);
       return [
-        { role: "owner", text: `${String(j.input.text ?? j.title).slice(0, CHAT_TEXT_MAX)}${Array.isArray(j.input.attachments) && j.input.attachments.length ? ` [sent ${j.input.attachments.length} photo(s)]` : ""}` },
+        { role: "owner", text: `${String(j.input.text ?? j.title).slice(0, CHAT_TEXT_MAX)}${Array.isArray(j.input.attachments) && j.input.attachments.length && !j.input.attachments_carried ? ` [sent ${j.input.attachments.length} file(s)]` : ""}` },
         ...(reply ? [{ role: "agent", text: reply.slice(0, CHAT_TEXT_MAX) }] : []),
       ];
     });
-    // photos sent with this message (uploaded first with POST /api/uploads)
-    const attachments = (input.attachments ?? []).slice(0, MAX_CHAT_ATTACHMENTS).map((id) => {
+    // photos and videos sent with this message (uploaded first with POST /api/uploads)
+    let attachments = (input.attachments ?? []).slice(0, MAX_CHAT_ATTACHMENTS).map((id) => {
       const u = this.publisher.upload(id);
       if (!u) throw new HttpError(400, `unknown upload ${id}`);
       return { id: u.id, name: u.name, content_type: u.content_type };
     });
+    // A reply without files keeps the thread's last files: the agent asked a question about them
+    // ("what time is the tournament?", "cut it shorter") and still needs them.
+    const carried = !attachments.length ? [...prior].reverse().find((j) => Array.isArray(j.input.attachments) && j.input.attachments.length) : undefined;
+    if (carried) attachments = carried.input.attachments as typeof attachments;
     const job = this.createJob({
       agent_id: input.agent_id,
       project_id: input.project_id ?? prior.at(-1)?.project_id ?? null,
       type: "chat",
       title: input.text.trim().replace(/\s+/g, " ").slice(0, 80) || "Chat",
-      input: { text: input.text, thread_id: threadId, history, ...(attachments.length ? { attachments } : {}), ...(input.source ? { source: input.source } : {}) },
+      input: { text: input.text, thread_id: threadId, history, ...(attachments.length ? { attachments } : {}), ...(carried ? { attachments_carried: true } : {}), ...(input.source ? { source: input.source } : {}) },
       trigger: "manual",
     });
     return { job, thread_id: threadId };
@@ -704,6 +711,10 @@ Error: ${r.error}` : ""}` });
     const count = this.db.select({ n: sql<number>`count(*)` }).from(contentDrafts).where(eq(contentDrafts.run_id, run.id)).get()?.n ?? 0;
     const project = this.db.select({ id: projects.id }).from(projects).where(eq(projects.id, msg.project_id)).get();
     const refusal = !project ? "unknown project" : count >= MAX_DRAFTS_PER_RUN ? `this run already saved ${MAX_DRAFTS_PER_RUN} drafts` : null;
+    // a video must be one this run rendered or one the owner sent with the job
+    const video = msg.meta?.video_upload_id ? this.publisher.upload(msg.meta.video_upload_id) : null;
+    const attached = Array.isArray(job?.input.attachments) && (job.input.attachments as { id?: unknown }[]).some((a) => a.id === video?.id);
+    const videoOk = !!video && (video.run_id === run.id || attached);
     this.store.transact((tx, emit) => {
       tx.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
       if (refusal) {
@@ -720,7 +731,7 @@ Error: ${r.error}` : ""}` });
         title: fixEscapedNewlines(msg.title),
         body: fixEscapedNewlines(msg.body),
         self_check: msg.self_check,
-        meta: msg.meta ? { ...msg.meta, excerpt: fixEscapedNewlines(msg.meta.excerpt) } : null,
+        meta: msg.meta ? { ...msg.meta, excerpt: fixEscapedNewlines(msg.meta.excerpt), video_upload_id: videoOk ? video!.id : null } : null,
         feature_id: featureId,
       });
     });

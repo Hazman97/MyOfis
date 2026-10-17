@@ -7,6 +7,7 @@ import { LEARNING_TOOLS } from "./memory.ts";
 import { runCommandTool } from "./shell.ts";
 import { WEB_TOOLS } from "./web.ts";
 import { RESEARCH_TOOLS } from "./research.ts";
+import { VIDEO_TOOLS } from "./video.ts";
 import type { ToolDef } from "./types.ts";
 
 export * from "./types.ts";
@@ -17,6 +18,7 @@ export { GiteaClient } from "./gitea.ts";
 export { checkUrl } from "./web.ts";
 export { htmlToText, isPrivateAddress } from "./research.ts";
 export { gitDefaultBranch, giteaRepoOf } from "./git.ts";
+export { buildEditArgs, captionsAss, clipLengths, parseProbe, EditPlan } from "./video.ts";
 
 /** Every tool an agent can be granted, by name. Agents list the names they may use in `agents.tools`. */
 export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
@@ -35,6 +37,7 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     addFeatureNoteTool,
     ...LEARNING_TOOLS,
     ...RESEARCH_TOOLS,
+    ...VIDEO_TOOLS,
   ].map((t) => [t.name, t as unknown as ToolDef]),
 );
 

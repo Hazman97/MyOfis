@@ -152,7 +152,7 @@ export const aiSdkRuntime: AgentRuntime = {
 
     // Photos the owner sent with a chat message go to the model as images (Publisher).
     const images = await loadImages(ctx);
-    const promptText = `Job: ${job.title}\n\n<job_input>\n${jobText(ctx)}${photoNote(images.length)}\n</job_input>`;
+    const promptText = `Job: ${job.title}\n\n<job_input>\n${jobText(ctx)}${filesNote(ctx)}\n</job_input>`;
     const start = (withImages: boolean) => {
       streamError = null;
       const input =
@@ -237,7 +237,7 @@ export const aiSdkRuntime: AgentRuntime = {
 /** Photos attached to the job (chat), fetched from the hub. A photo that fails to load is skipped. */
 async function loadImages(ctx: RunContext): Promise<{ bytes: Uint8Array; type: string }[]> {
   const out: { bytes: Uint8Array; type: string }[] = [];
-  for (const a of attachmentsOf(ctx.assignment.job.input).slice(0, 4)) {
+  for (const a of attachmentsOf(ctx.assignment.job.input).filter((f) => f.content_type.startsWith("image/")).slice(0, 4)) {
     try {
       out.push({ bytes: await ctx.fetchUpload(a.id), type: a.content_type });
     } catch (err) {
@@ -247,5 +247,13 @@ async function loadImages(ctx: RunContext): Promise<{ bytes: Uint8Array; type: s
   return out;
 }
 
-const photoNote = (n: number) =>
-  n ? `\n\n[The owner attached ${n} photo${n > 1 ? "s" : ""} (photo 1${n > 1 ? `–${n}` : ""}). Use them for the caption or as cover_photo.]` : "";
+/** The files the owner sent, numbered as the tools count them (cover_photo, video_probe, video_edit). */
+export function filesNote(ctx: RunContext): string {
+  const files = attachmentsOf(ctx.assignment.job.input);
+  if (!files.length) return "";
+  const photos = files.filter((f) => f.content_type.startsWith("image/")).length;
+  const lines = files.map((f, i) => `${i + 1}. ${f.name} (${f.content_type.startsWith("image/") ? "photo" : "video"})`);
+  const earlier = ctx.assignment.job.input.attachments_carried ? " earlier in this chat" : "";
+  const how = [photos ? "You can see the photos (up to 4): use them for the caption or as cover_photo." : "", photos < files.length ? "Videos: use video_probe and video_edit with their numbers." : ""].filter(Boolean).join(" ");
+  return `\n\n[The owner sent these files${earlier}:\n${lines.join("\n")}\n${how}]`;
+}

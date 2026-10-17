@@ -31,12 +31,15 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     webSearch: (q, n) => ctx.webSearch(q, n),
     consult: (to, q, ms) => ctx.consult(to, q, ms),
     attachments: attachmentsOf(ctx.assignment.job.input),
+    downloadAttachment: (id, dest) => ctx.downloadUpload(id, dest),
+    uploadVideo: (path, name) => ctx.uploadVideo(path, name),
+    renders: [],
     siteData: (p, r, params) => ctx.siteData(p, r, params),
     webPost: (a, id, edits) => ctx.webPost(a, id, edits),
   };
 }
 
-/** Photos the owner sent with a chat message (`input.attachments`, set by the hub). */
+/** Photos and videos the owner sent with a chat message (`input.attachments`, set by the hub). */
 export function attachmentsOf(input: Record<string, unknown>): { id: string; name: string; content_type: string }[] {
   if (!Array.isArray(input.attachments)) return [];
   return input.attachments.filter(

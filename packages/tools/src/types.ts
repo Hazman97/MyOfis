@@ -83,8 +83,14 @@ export interface ToolContext {
   webSearch(query: string, count: number): Promise<WebSearchResult[]>;
   /** Ask another agent (by slug) and wait for its answer, up to `timeoutMs`. Never throws. */
   consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
-  /** Photos the owner sent with this job's message (chat), in order. */
+  /** Photos and videos the owner sent with this job's message (chat), in order. */
   attachments: { id: string; name: string; content_type: string }[];
+  /** Save an attachment to a file (videos are too big to hold in memory). */
+  downloadAttachment(id: string, dest: string): Promise<void>;
+  /** Send a finished video to the hub; it becomes an upload tied to this run. */
+  uploadVideo(path: string, name: string): Promise<{ id: string; size: number }>;
+  /** Videos this run made (video_edit), in order; save_draft may attach them. */
+  renders: { id: string; name: string; content_type: string }[];
   /** Data a project's website shares with Agent Office (Kerani: bookings). */
   siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
   /** Change or remove a live website post (after the owner approved the tool call). */

@@ -21,6 +21,7 @@ import {
   ProviderInput,
   ScheduleInput,
   TIMEZONE,
+  UPLOAD_PART_BYTES,
   WebPostEdit,
 } from "@agent-office/shared";
 import { TOOL_REGISTRY } from "@agent-office/tools";
@@ -31,6 +32,7 @@ import { agents, approvals, jobs, pairingCodes, projects, providers, runners, ru
 import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
+import { fileResponse } from "./uploads.ts";
 import { CATALOG_SOURCES, SkillCatalog } from "./skillCatalog.ts";
 import type { Integrations } from "./integrations.ts";
 import type { TelegramBot } from "./telegram.ts";
@@ -239,9 +241,24 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const run = getRun(db, c.req.query("run_id") ?? "");
     const job = run && run.runner_id === runner.id && run.status === "running" ? getJob(db, run.job_id) : undefined;
     const attached = Array.isArray(job?.input.attachments) && (job.input.attachments as { id?: unknown }[]).some((a) => a.id === c.req.param("id"));
-    const f = attached ? hub.publisher.readUpload(c.req.param("id")) : null;
+    const f = attached ? hub.publisher.uploadFile(c.req.param("id")) : null;
     if (!f) throw new HttpError(404, "not found");
-    return c.body(new Uint8Array(f.bytes), 200, { "content-type": f.row.content_type });
+    return fileResponse(f.file, f.row.content_type, c.req.header("range"));
+  });
+
+  /** Runner sends a video it made (Editor's video_edit), in parts. It becomes an upload tied to the run. */
+  app.put("/api/runner/uploads/parts/:key", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const q = partQuery.parse(c.req.query());
+    const run = getRun(db, q.run_id ?? "");
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+    if (!getAgent(db, run.agent_id)?.tools.includes("video_edit")) throw new HttpError(403, "this agent may not upload videos");
+    const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
+    const r = hub.uploadParts.put(`run:${run.id}`, c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c), run.id);
+    return c.json({ received: r.received, total: r.total, ...(r.upload ? { upload: publicUpload(r.upload) } : {}) }, r.upload ? 201 : 200);
   });
 
   /** Runner changes or takes down a live post (update_web_post / take_down_web_post, after the owner's approval). */
@@ -460,12 +477,20 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     const u = hub.publisher.saveUpload(c.req.query("name") ?? "image", type, bytes);
-    return c.json({ upload: { id: u.id, name: u.name, content_type: u.content_type, size: u.size } }, 201);
+    return c.json({ upload: publicUpload(u) }, 201);
+  });
+  // videos come in parts (Cloudflare refuses bodies over 100 MB); see UploadParts
+  api.put("/uploads/parts/:key", async (c) => {
+    const q = partQuery.parse(c.req.query());
+    const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
+    const r = hub.uploadParts.put("owner", c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c));
+    return c.json({ received: r.received, total: r.total, ...(r.upload ? { upload: publicUpload(r.upload) } : {}) }, r.upload ? 201 : 200);
   });
   api.get("/uploads/:id", (c) => {
-    const f = hub.publisher.readUpload(c.req.param("id"));
+    const f = hub.publisher.uploadFile(c.req.param("id"));
     if (!f) throw new HttpError(404, "upload not found");
-    return c.body(new Uint8Array(f.bytes), 200, { "content-type": f.row.content_type, "cache-control": "private, max-age=86400" });
+    const download: Record<string, string> = c.req.query("download") === "1" ? { "content-disposition": `attachment; filename="${f.row.name.replace(/"/g, "")}"` } : {};
+    return fileResponse(f.file, f.row.content_type, c.req.header("range"), { "cache-control": "private, max-age=86400", ...download });
   });
   api.get("/projects/:id/publish", (c) => c.json({ publish: hub.publisher.settings(c.req.param("id")) }));
   api.put("/projects/:id/publish", async (c) => c.json({ publish: hub.publisher.setSettings(c.req.param("id"), await c.req.json()) }));
@@ -529,7 +554,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         text: z.string().trim().min(1).max(8000),
         thread_id: z.string().regex(/^cht_[a-z0-9]+$/).nullish(),
         project_id: z.string().nullish(),
-        attachments: z.array(z.string().max(64)).max(4).optional(),
+        attachments: z.array(z.string().max(64)).max(10).optional(),
       })
       .parse(await c.req.json());
     const { job, thread_id } = hub.chat(body);
@@ -569,7 +594,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         status: j.status,
         run_id: hub.store.state.jobs[j.id]?.run_ids.at(-1) ?? null,
         reply: hub.chatReply(j),
-        attachments: Array.isArray(j.input.attachments) ? j.input.attachments : [],
+        attachments: Array.isArray(j.input.attachments) && !j.input.attachments_carried ? j.input.attachments : [],
       })),
     });
   });
@@ -794,3 +819,17 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   return app;
 }
 
+const partQuery = z.object({
+  run_id: z.string().optional(),
+  name: z.string().max(200).default("video.mp4"),
+  total: z.coerce.number().int().positive(),
+  offset: z.coerce.number().int().min(0),
+});
+
+async function partBytes(c: Context): Promise<Uint8Array> {
+  const len = Number(c.req.header("content-length") ?? 0);
+  if (len > UPLOAD_PART_BYTES) throw new HttpError(400, "part too large");
+  return new Uint8Array(await c.req.arrayBuffer());
+}
+
+const publicUpload = (u: { id: string; name: string; content_type: string; size: number }) => ({ id: u.id, name: u.name, content_type: u.content_type, size: u.size });

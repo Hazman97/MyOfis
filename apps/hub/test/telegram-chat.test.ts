@@ -53,6 +53,29 @@ describe("Telegram: chat with an agent, approve drafts", () => {
     expect(Object.values(env.hub.hub.store.state.jobs).filter((j) => j.type === "chat")).toHaveLength(2);
   }, 30_000);
 
+  test("videos: up to 20 MB go to the agent, bigger ones get a pointer to the web chat; video drafts arrive with the video", async () => {
+    await setup();
+    const pub = ((await env.api("/api/agents")).body.agents as { id: string; slug: string }[]).find((a) => a.slug === "publisher")!;
+    await env.api(`/api/agents/${pub.id}`, { method: "PATCH", body: { provider: "mock", model: "mock-echo" } });
+    tg!.push({ message: { chat: { id: OWNER }, from: { id: OWNER }, caption: "edit ni", video: { file_id: "v1", file_size: 5_000_000, mime_type: "video/mp4", file_name: "match.mp4" } } });
+    await waitFor(() => said("Publisher:"), 8000, "agent reply");
+    const job = Object.values(env.hub.hub.store.state.jobs).find((j) => j.type === "chat")!;
+    expect(getJob(env.hub.hub.db, job.id)!.input.attachments).toMatchObject([{ name: "match.mp4", content_type: "video/mp4" }]);
+    tg!.push({ message: { chat: { id: OWNER }, from: { id: OWNER }, video: { file_id: "v2", file_size: 80_000_000, mime_type: "video/mp4" } } });
+    await waitFor(() => said("over 20 MB"), 5000, "too big");
+
+    // a video draft: the video is sent first, then the card
+    const project = (await env.api("/api/projects", { body: { slug: "sp", name: "SmashPoint" } })).body.project;
+    const video = (getJob(env.hub.hub.db, job.id)!.input.attachments as { id: string }[])[0]!.id;
+    const ed = (await env.api("/api/agents", { body: { slug: "ed", name: "Editor", provider: "mock", model: "mock-script", tools: ["save_draft"], config: { self_review: false } } })).body.agent;
+    const check = { facts_match_brief: true, only_released_features: true, no_overclaims: true, tone_and_language_match: true, notes: "" };
+    const script = [{ tool: "save_draft", input: { project: "sp", platform: "tiktok", kind: "video", title: "Highlight", body: "Smash! #smashpoint", self_check: check, video } }, { text: "ok" }];
+    await env.api("/api/jobs", { body: { agent_id: ed.id, project_id: project.id, title: "tiktok", input: { script, attachments: [{ id: video, name: "match.mp4", content_type: "video/mp4" }] } } });
+    await waitFor(() => tg!.sent.find((s) => s.method === "sendMessage" && String(s.body.text).includes("Highlight") && s.body.reply_markup), 8000, "video card");
+    const sv = tg!.sent.find((s) => s.method === "sendVideo")!;
+    expect(sv.body).toMatchObject({ caption: "🎬 Highlight", video: { size: 11 } });
+  }, 30_000);
+
   test("each new draft arrives as a card; the owner approves or rejects it with a signed button", async () => {
     await setup();
     const project = (await env.api("/api/projects", { body: { slug: "sp", name: "SmashPoint" } })).body.project;

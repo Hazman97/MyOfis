@@ -23,7 +23,10 @@ export function startFakeTelegram(token = "123456:fake-telegram-token-abcdefghij
       const m = new URL(req.url).pathname.match(/^\/bot([^/]+)\/(\w+)$/);
       if (!m || m[1] !== token) return Response.json({ ok: false, description: "Unauthorized" }, { status: 401 });
       const method = m[2]!;
-      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+      // sendVideo is multipart: files are recorded as their size
+      const body: Record<string, unknown> = (req.headers.get("content-type") ?? "").startsWith("multipart/")
+        ? Object.fromEntries([...(await req.formData()).entries()].map(([k, v]) => [k, typeof v === "string" ? v : { size: v.size }]))
+        : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
       if (method === "getUpdates") {
         const offset = Number(body.offset ?? 0);
         const ready = () => queue.filter((u) => Number(u.update_id) >= offset);

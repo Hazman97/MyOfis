@@ -271,6 +271,14 @@ Chat with **Publisher** (here or in Telegram), press 📷 to add photos (up to 4
 
 Each website exposes one signed endpoint. Set it per project in **Projects → Brief → Website**, then press **Test**. SmashPoint's is in its Worker. The setup and the contract for other sites are in [docs/website-publishing.md](docs/website-publishing.md).
 
+## Editor: videos for TikTok, Reels and Shorts
+
+Chat with **Editor** and attach videos:
+- web chat: up to 10 files, 2 GB each, sent in 32 MB parts;
+- Telegram: up to 20 MB.
+
+Say what you want ("compress untuk TikTok", "highlight 30 saat dari 1:20, slow motion, tulis …"). Editor cuts, reframes (crop / blur / pad) and exports with **ffmpeg on the runner PC**, using the NVIDIA GPU (h264_nvenc) when there is one. Presets: `tiktok_fhd` 1080×1920, `reels`, `youtube_shorts`, `youtube_1080p`, `square`. It then saves a video draft with a caption per platform. In **Drafts** you play it, **Download video**, and approve it. TikTok and YouTube posting are not connected yet. Guide: [docs/video-editor.md](docs/video-editor.md).
+
 ## Telegram as your office phone
 
 Message the bot like a colleague:

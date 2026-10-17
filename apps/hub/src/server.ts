@@ -15,6 +15,7 @@ import { Integrations } from "./integrations.ts";
 import { ReleaseWatcher } from "./releases.ts";
 import { TelegramBot } from "./telegram.ts";
 import { Backups } from "./backup.ts";
+import { UploadParts } from "./uploads.ts";
 import { Publisher } from "./publisher.ts";
 import { Social } from "./social.ts";
 import { Scheduler } from "./scheduler.ts";
@@ -58,6 +59,7 @@ export function startHub(
   hub.content = new Content(db, store, config.projectsDir);
   hub.learning = new Learning(db, store, config.skillsDir);
   hub.publisher = new Publisher(db, store, secrets, config.filesDir);
+  hub.uploadParts = new UploadParts(hub.publisher, config.filesDir);
   hub.social = new Social(db, store, secrets, hub.publisher, config.facebookGraphBase, config.threadsGraphBase);
   hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir });
   hub.boot();

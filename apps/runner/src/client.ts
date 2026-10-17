@@ -10,6 +10,7 @@ import {
   type RunAssignment,
   type RunnerRunMessage,
   type RunnerToHub,
+  UPLOAD_PART_BYTES,
 } from "@agent-office/shared";
 import { aiSdkRuntime } from "./runtimes/aiSdk.ts";
 import { mockRuntime } from "./runtimes/mock.ts";
@@ -278,6 +279,38 @@ export class RunnerClient {
     return new Uint8Array(await res.arrayBuffer());
   }
 
+  /** Stream an attached file (a video) to disk. */
+  async #downloadUpload(runId: string, id: string, dest: string): Promise<void> {
+    const url = new URL(`/api/runner/uploads/${encodeURIComponent(id)}`, this.#opts.hubUrl);
+    url.searchParams.set("run_id", runId);
+    const res = await freshFetch(url, { timeoutMs: 30 * 60_000, headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}` } });
+    if (!res.ok) throw new Error(`video download failed (${res.status})`);
+    await Bun.write(dest, res);
+  }
+
+  /** Send a finished video to the hub in parts (Cloudflare refuses bodies over 100 MB). */
+  async #uploadVideo(runId: string, path: string, name: string): Promise<{ id: string; size: number }> {
+    const file = Bun.file(path);
+    const total = file.size;
+    const key = randomUUID().replace(/-/g, "");
+    let offset = 0;
+    for (;;) {
+      const part = new Uint8Array(await file.slice(offset, offset + UPLOAD_PART_BYTES).arrayBuffer());
+      const url = new URL(`/api/runner/uploads/parts/${key}`, this.#opts.hubUrl);
+      for (const [k, v] of Object.entries({ run_id: runId, name, total: String(total), offset: String(offset) })) url.searchParams.set(k, v);
+      const res = await freshFetch(url, {
+        method: "PUT",
+        timeoutMs: 10 * 60_000,
+        headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "video/mp4" },
+        body: part,
+      });
+      const body = (await res.json().catch(() => ({}))) as { received?: number; upload?: { id: string; size: number }; error?: string };
+      if (!res.ok) throw new Error(`video upload failed (${res.status}): ${body.error ?? ""}`);
+      if (body.upload) return { id: body.upload.id, size: body.upload.size };
+      offset = body.received ?? offset + part.length;
+    }
+  }
+
   async #webSearch(runId: string, query: string, count: number) {
     const res = await freshFetch(new URL("/api/runner/web-search", this.#opts.hubUrl), {
       method: "POST",
@@ -355,6 +388,8 @@ export class RunnerClient {
         searchSessions: (query, allAgents) => this.#search(a.run_id, query, allAgents),
         webSearch: (query, count) => this.#webSearch(a.run_id, query, count),
         fetchUpload: (id) => this.#fetchUpload(a.run_id, id),
+        downloadUpload: (id, dest) => this.#downloadUpload(a.run_id, id, dest),
+        uploadVideo: (path, name) => this.#uploadVideo(a.run_id, path, name),
         siteData: (projectId, resource, params) => this.#siteData(a.run_id, projectId, resource, params),
         webPost: (action, draftId, edits) => this.#webPost(a.run_id, action, draftId, edits),
         consult: (toAgent, question, timeoutMs) => this.#consult(a.run_id, toAgent, question, timeoutMs, run.abort.signal),

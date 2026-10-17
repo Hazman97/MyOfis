@@ -123,10 +123,23 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - `hub.afterApprove` / `POST /drafts/:id/publish` call `social.post()` for any connected platform. `project_context.projects[].social` tells agents where approved captions go.
   - `THREADS_GRAPH_BASE` is for tests. Threads tokens expire after about 60 days (no auto-refresh yet).
   - Next phases (owner chose): B = YouTube/Shorts via Google API + video uploads; C = TikTok via a browser agent (logged-in Chrome, stops before Post until approval).
+- **Editor / local video pipeline** (owner, 2026-10-17: "buat dulu tanpa login"; later the owner wants TikTok **API** posting instead of the browser agent). Guide: docs/video-editor.md.
+  - Videos are uploads too (`uploads.run_id`, migration 0007). They arrive in parts (`PUT /api/uploads/parts/:key?name&total&offset`, ≤ `UPLOAD_PART_BYTES` 32 MB) because Cloudflare refuses bodies over 100 MB. `UploadParts` (apps/hub/src/uploads.ts) handles them: a retried part is ignored, a gap answers 409. The limit is 2 GB.
+  - `fileResponse` serves uploads with Range (video seeking) and `?download=1`.
+  - Runner side: `downloadUpload` streams to a file; `uploadVideo` sends parts to `PUT /api/runner/uploads/parts/:key` (only agents with `video_edit`). The hub keeps a draft's `meta.video_upload_id` only if this run rendered that video or it is attached to the job.
+  - Tools in `packages/tools/src/video.ts`:
+    - `video_probe` (ffprobe + scene changes);
+    - `video_edit` (EditPlan → `buildEditArgs`, pure and tested; ASS captions via `captionsAss`; tries h264_nvenc first and falls back to libx264; progress shown as `agent.thinking`).
+    - Presets are in `packages/shared/src/video.ts`. ffmpeg runs without a shell, with a scrubbed env, and cwd = `<workspace>/media`.
+  - `save_draft(video)` takes a render or an attached video. `cover_photo` must be an image. Kind `video` was added. Attachment numbers are shared by photos and videos (`filesNote` lists them in the prompt); only images go to the model (max 4).
+  - A chat reply without files carries the thread's last files (`input.attachments_carried`). This also fixes Publisher losing the photo after asking a question.
+  - Telegram: `video`/`document` up to 20 MB (bot download limit). Video drafts are sent with `sendVideo` (≤ 50 MB) before the card.
+  - Editor cannot see frames (tool results with images would become huge text on OpenAI-compatible providers). Future: vision frames once the owner has a strong local model; music/voice-over; TikTok Content Posting API (needs a TikTok developer app + OAuth; unaudited apps post private-only) and YouTube Data API.
 
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.
 **PENDING (read first, updated 2026-10-17 end of session)**
+- Latest: Editor (local video edit + TikTok FHD export) built, 236 tests green, web built. Owner: restart hub + runner (migration 0007 adds `uploads.run_id`; Editor is seeded on boot), then test in Chat → Editor. Next: TikTok Content Posting API + YouTube Data API (owner must create the developer apps; ask first). Gemini 008 (manual design) pending review ("semak 008"), then add Editor + Instagram/Threads to docs/manual.html.
 - Code: everything built and green: 214 tests, typecheck and web build OK. The domain serves the latest build.
 - Owner to do:
   - (done 2026-10-17: `consult_agent` added to Marketing + Researcher in the owner DB; Researcher prompt updated to read named sites with web_fetch and fall back when search is off; DB backup in data/backups/before-researcher-patch-*.db)

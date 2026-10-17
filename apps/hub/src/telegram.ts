@@ -1,6 +1,8 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { freshFetch, redactString, type AgentEvent } from "@agent-office/shared";
+import { VIDEO_TYPES, freshFetch, redactString, type AgentEvent } from "@agent-office/shared";
 import type { Hub } from "./core.ts";
 import { agents, approvals, contentDrafts, projects, settings } from "./db/schema.ts";
 import type { Integrations } from "./integrations.ts";
@@ -22,6 +24,24 @@ interface TgPhoto {
   width?: number;
   height?: number;
 }
+/** A video or file sent as a "document". */
+interface TgFile {
+  file_id: string;
+  file_size?: number;
+  file_name?: string;
+  mime_type?: string;
+}
+/** One file to hand to the agent: the photo's largest size, or the video. */
+interface InFile {
+  file_id: string;
+  file_size?: number;
+  name: string;
+  type: string;
+}
+/** Telegram bots may download files up to 20 MB and send up to 50 MB. */
+const TG_DOWNLOAD_MAX = 20 * 1024 * 1024;
+const TG_SEND_MAX = 50 * 1024 * 1024;
+
 interface TgMessage {
   message_id?: number;
   chat: { id: number };
@@ -29,6 +49,8 @@ interface TgMessage {
   text?: string;
   caption?: string;
   photo?: TgPhoto[];
+  video?: TgFile;
+  document?: TgFile;
   media_group_id?: string;
 }
 interface TgUpdate {
@@ -63,7 +85,7 @@ export class TelegramBot {
   /** run id -> drafts saved, sent as cards once the run ends. */
   readonly #draftsByRun = new Map<string, string[]>();
   /** media_group_id -> photos and caption collected so far. */
-  readonly #albums = new Map<string, { photos: TgPhoto[][]; caption: string; timer: ReturnType<typeof setTimeout> }>();
+  readonly #albums = new Map<string, { files: InFile[]; caption: string; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(
     private readonly hub: Hub,
@@ -100,6 +122,20 @@ export class TelegramBot {
     const json = (await res.json().catch(() => null)) as { ok: boolean; result?: T; description?: string } | null;
     if (!json?.ok) throw new Error(`Telegram ${method} failed: ${json?.description ?? res.status}`);
     return json.result as T;
+  }
+
+  /** Send a video file to the owner (multipart upload). */
+  async #sendVideo(path: string, name: string, caption: string): Promise<void> {
+    const cfg = this.integrations.telegram();
+    if (!cfg?.chatId) return;
+    const form = new FormData();
+    form.set("chat_id", cfg.chatId);
+    form.set("caption", caption.slice(0, 1000));
+    form.set("supports_streaming", "true");
+    form.set("video", Bun.file(path), name);
+    const res = await freshFetch(`${this.apiBase}/bot${cfg.token}/sendVideo`, { method: "POST", body: form, timeoutMs: 5 * 60_000 });
+    const json = (await res.json().catch(() => null)) as { ok: boolean; description?: string } | null;
+    if (!json?.ok) throw new Error(`Telegram sendVideo failed: ${json?.description ?? res.status}`);
   }
 
   /** Send a text to the owner. Returns false when Telegram is not set up. */
@@ -249,6 +285,9 @@ export class TelegramBot {
       "",
       d.body.length > 1500 ? `${d.body.slice(0, 1500)}…\n(full text in Agent Office → Drafts)` : d.body,
     ].join("\n");
+    const video = meta?.video_upload_id ? this.hub.publisher.uploadFile(meta.video_upload_id) : null;
+    if (video && video.row.size <= TG_SEND_MAX) await this.#sendVideo(video.file, video.row.name, `🎬 ${d.title}`).catch((err) => console.error("[telegram] video failed:", redactString(String(err))));
+    else if (video) await this.notify(`🎬 The video is ${Math.round(video.row.size / 1024 ** 2)} MB, too big for Telegram (50 MB): watch it in Agent Office → Drafts.`);
     await this.notify(text, {
       reply_markup: {
         inline_keyboard: [
@@ -312,8 +351,9 @@ export class TelegramBot {
       }
       if (chat !== owner) return;
       if (cmd) return this.#command(cmd, text.slice(cmd.length).trim());
-      if (msg.photo?.length && msg.media_group_id) return this.#collectAlbum(token, msg);
-      if (msg.photo?.length || text) await this.#toAgent(token, text, msg.photo?.length ? [msg.photo] : []);
+      const file = fileOf(msg);
+      if (file && msg.media_group_id) return this.#collectAlbum(token, msg, file);
+      if (file || text) await this.#toAgent(token, text, file ? [file] : []);
       return;
     }
     const cq = u.callback_query;
@@ -437,22 +477,22 @@ export class TelegramBot {
     }
   }
 
-  #collectAlbum(token: string, msg: TgMessage): void {
+  #collectAlbum(token: string, msg: TgMessage, file: InFile): void {
     const id = msg.media_group_id!;
     const cur = this.#albums.get(id);
     if (cur) clearTimeout(cur.timer);
-    const album = cur ?? { photos: [], caption: "", timer: setTimeout(() => {}, 0) };
-    album.photos.push(msg.photo!);
+    const album = cur ?? { files: [], caption: "", timer: setTimeout(() => {}, 0) };
+    album.files.push(file);
     if (msg.caption) album.caption = msg.caption.trim();
     album.timer = setTimeout(() => {
       this.#albums.delete(id);
-      void this.#toAgent(token, album.caption, album.photos).catch((err) => console.error("[telegram] album failed:", redactString(String(err))));
+      void this.#toAgent(token, album.caption, album.files).catch((err) => console.error("[telegram] album failed:", redactString(String(err))));
     }, ALBUM_WAIT_MS);
     this.#albums.set(id, album);
   }
 
-  /** Download the photos (largest size of each), then send the message to the agent as a chat. */
-  async #toAgent(token: string, text: string, photos: TgPhoto[][]): Promise<void> {
+  /** Download the photos and videos, then send the message to the agent as a chat. */
+  async #toAgent(token: string, text: string, files: InFile[]): Promise<void> {
     const state = this.#chatState();
     const agent = this.#agent(state);
     if (!agent) {
@@ -461,18 +501,28 @@ export class TelegramBot {
     }
     try {
       const attachments: string[] = [];
-      for (const sizes of photos.slice(0, 4)) {
-        const best = [...sizes].sort((a, b) => (b.file_size ?? b.width ?? 0) - (a.file_size ?? a.width ?? 0))[0]!;
-        const file = await this.#call<{ file_path?: string }>(token, "getFile", { file_id: best.file_id });
+      for (const f of files.slice(0, 10)) {
+        if ((f.file_size ?? 0) > TG_DOWNLOAD_MAX) {
+          await this.notify(`⚠️ ${f.name} is over 20 MB, and Telegram does not let bots download bigger files. Send it in Agent Office → Chat instead (up to 2 GB).`);
+          continue;
+        }
+        const file = await this.#call<{ file_path?: string }>(token, "getFile", { file_id: f.file_id });
         if (!file.file_path) continue;
-        const res = await freshFetch(`${this.apiBase}/file/bot${token}/${file.file_path}`, { timeoutMs: 60_000 });
-        if (!res.ok) throw new Error(`could not download the photo (${res.status})`);
-        const name = file.file_path.split("/").pop() ?? "photo.jpg";
-        attachments.push(this.hub.publisher.saveUpload(name, "image/jpeg", new Uint8Array(await res.arrayBuffer())).id);
+        const res = await freshFetch(`${this.apiBase}/file/bot${token}/${file.file_path}`, { timeoutMs: 5 * 60_000 });
+        if (!res.ok) throw new Error(`could not download ${f.name} (${res.status})`);
+        if (f.type.startsWith("image/")) {
+          attachments.push(this.hub.publisher.saveUpload(file.file_path.split("/").pop() ?? f.name, f.type, new Uint8Array(await res.arrayBuffer())).id);
+        } else {
+          const tmp = join(this.hub.config.filesDir, "uploads", `tg-${randomUUID()}.part`);
+          mkdirSync(dirname(tmp), { recursive: true });
+          await Bun.write(tmp, res);
+          attachments.push(this.hub.publisher.adoptUpload(f.name, f.type, tmp).id);
+        }
       }
+      if (!attachments.length && !text) return;
       const { thread_id } = this.hub.chat({
         agent_id: agent.id,
-        text: text || (attachments.length ? "(photo)" : ""),
+        text: text || (attachments.length ? "(sent files)" : ""),
         thread_id: state.thread_id,
         project_id: this.#project(state),
         attachments,
@@ -495,6 +545,18 @@ export class TelegramBot {
     const talking = this.#agent(this.#chatState());
     return `🏢 Agent Office${s.paused ? " (PAUSED)" : ""}\nWorking: ${busy}\nWaiting for you: ${waiting} approval${waiting === 1 ? "" : "s"}, ${drafts} draft${drafts === 1 ? "" : "s"}\nChatting with: ${talking?.name ?? "nobody"}`;
   }
+}
+
+/** The file in a message: a photo (largest size), a video, or a photo/video sent as a document. */
+function fileOf(msg: TgMessage): InFile | null {
+  if (msg.photo?.length) {
+    const best = [...msg.photo].sort((a, b) => (b.file_size ?? b.width ?? 0) - (a.file_size ?? a.width ?? 0))[0]!;
+    return { file_id: best.file_id, file_size: best.file_size, name: "photo.jpg", type: "image/jpeg" };
+  }
+  const f = msg.video ?? msg.document;
+  const type = f?.mime_type ?? (msg.video ? "video/mp4" : "");
+  if (!f || !(VIDEO_TYPES[type] || ["image/jpeg", "image/png", "image/webp"].includes(type))) return null;
+  return { file_id: f.file_id, file_size: f.file_size, name: f.file_name ?? (type.startsWith("video/") ? `video.${VIDEO_TYPES[type]}` : "photo.jpg"), type };
 }
 
 const clip = (s: string) => (s.length > MESSAGE_MAX ? `${s.slice(0, MESSAGE_MAX)}…` : s);
