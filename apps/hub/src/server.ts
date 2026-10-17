@@ -58,7 +58,7 @@ export function startHub(
   hub.content = new Content(db, store, config.projectsDir);
   hub.learning = new Learning(db, store, config.skillsDir);
   hub.publisher = new Publisher(db, store, secrets, config.filesDir);
-  hub.social = new Social(db, store, secrets, hub.publisher, config.facebookGraphBase);
+  hub.social = new Social(db, store, secrets, hub.publisher, config.facebookGraphBase, config.threadsGraphBase);
   hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir });
   hub.boot();
   hub.backfillIndex();

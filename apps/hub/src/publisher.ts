@@ -212,6 +212,19 @@ export class Publisher {
     return { ...row, meta: row.meta };
   }
 
+  /**
+   * Put an uploaded photo on the project's website storage and return its public URL. Instagram
+   * and Threads only accept photos by URL, and our own uploads stay private in the hub.
+   */
+  async uploadMedia(projectId: string, uploadId: string): Promise<string> {
+    const f = this.readUpload(uploadId);
+    if (!f) throw new HttpError(400, "the photo is missing");
+    if (!/^image\/(jpeg|png|webp)$/.test(f.row.content_type)) throw new HttpError(400, "Instagram and Threads need a JPEG, PNG or WebP photo");
+    const out = (await this.#post(projectId, { action: "upload_media", name: f.row.name, content_type: f.row.content_type, data_base64: f.bytes.toString("base64") })) as { url?: string };
+    if (!out.url?.startsWith("https://") && !out.url?.startsWith("http://")) throw new HttpError(400, "the website did not return a photo URL");
+    return out.url;
+  }
+
   /** Change a post that is already live. The draft keeps the new text only when the website accepted it. */
   async updatePublished(draftId: string, edits: { title?: string; body?: string; meta?: WebPostEdit }) {
     const row = this.#published(draftId);

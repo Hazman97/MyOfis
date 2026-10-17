@@ -249,6 +249,7 @@ export class Content {
         name: p.name,
         live_url: p.live_url,
         publish: p.publish?.url && p.publish.info ? p.publish.info : null,
+        social: [],
         published_posts: this.db
           .select()
           .from(contentDrafts)

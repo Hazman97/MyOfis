@@ -27,6 +27,7 @@ const EnvSchema = z
     WEB_SEARCH_API_BASE: z.string().default(""),
     /** Tests point Facebook posting at a fake Graph API. */
     FACEBOOK_GRAPH_BASE: z.string().default("https://graph.facebook.com/v21.0"),
+    THREADS_GRAPH_BASE: z.string().default("https://graph.threads.net/v1.0"),
     BACKUP_DIR: z.string().default("./data/backups"),
     BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(14),
     BACKUP_HOUR: z.coerce.number().int().min(0).max(23).default(3),
@@ -87,6 +88,7 @@ export interface HubConfig {
   backup: { dir: string; keep: number; hour: number };
   webSearchApiBase: string;
   facebookGraphBase: string;
+  threadsGraphBase: string;
   telegramApiBase: string;
   seed: {
     anthropicApiKey: string;
@@ -128,6 +130,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     backup: { dir: resolve(e.BACKUP_DIR), keep: e.BACKUP_KEEP, hour: e.BACKUP_HOUR },
     webSearchApiBase: e.WEB_SEARCH_API_BASE.replace(/\/$/, ""),
     facebookGraphBase: e.FACEBOOK_GRAPH_BASE.replace(/\/$/, ""),
+    threadsGraphBase: e.THREADS_GRAPH_BASE.replace(/\/$/, ""),
     telegramApiBase: e.TELEGRAM_API_BASE.replace(/\/$/, ""),
     seed: {
       anthropicApiKey: e.ANTHROPIC_API_KEY,

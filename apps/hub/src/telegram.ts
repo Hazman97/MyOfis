@@ -238,7 +238,7 @@ export class TelegramBot {
     if (!d || d.status !== "draft") return;
     const project = this.hub.db.select({ name: projects.name }).from(projects).where(eq(projects.id, d.project_id)).get();
     const web = d.kind === "web_post";
-    const fb = d.platform === "facebook" && this.hub.social.configured(d.project_id);
+    const social = !web && this.hub.social.configured(d.platform, d.project_id) ? d.platform : null;
     const head = web ? `🌐 ${agentName} drafted a website post for ${project?.name ?? "a project"}` : `📝 ${agentName} drafted a ${d.platform} ${d.kind.replace(/_/g, " ")} for ${project?.name ?? "a project"}`;
     const meta = d.meta;
     const details = web && meta ? [meta.post_type, meta.event_date, meta.event_time, meta.location].filter(Boolean).join(" · ") : "";
@@ -253,7 +253,7 @@ export class TelegramBot {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: web ? "✅ Approve & publish" : fb ? "✅ Approve & post to Facebook" : "✅ Approve", callback_data: this.draftCallbackData(draftId, "y") },
+            { text: web ? "✅ Approve & publish" : social ? `✅ Approve & post to ${social[0]!.toUpperCase()}${social.slice(1)}` : "✅ Approve", callback_data: this.draftCallbackData(draftId, "y") },
             { text: "❌ Reject", callback_data: this.draftCallbackData(draftId, "n") },
           ],
         ],

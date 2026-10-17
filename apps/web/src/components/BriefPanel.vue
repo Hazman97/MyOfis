@@ -6,6 +6,7 @@ import { Platform, type ContentLanguage, type FeatureNote, type Project, type Pr
 import SidePanel from "./SidePanel.vue";
 import PublishSettings from "./PublishSettings.vue";
 import FacebookSettings from "./FacebookSettings.vue";
+import SocialSettings from "./SocialSettings.vue";
 import { api } from "../api/http.ts";
 import { fmtDateTime } from "../format.ts";
 
@@ -193,6 +194,7 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
     <template v-if="tab === 'website'">
       <PublishSettings :project="project" />
       <FacebookSettings :project="project" class="mt-6" />
+      <SocialSettings :project="project" class="mt-6" />
     </template>
 
     <!-- BRIEF -->

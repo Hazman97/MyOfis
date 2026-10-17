@@ -26,6 +26,7 @@ export function testConfig(dir: string): HubConfig {
     backup: { dir: join(dir, "backups"), keep: 3, hour: 3 },
     webSearchApiBase: "",
     facebookGraphBase: "http://127.0.0.1:1",
+    threadsGraphBase: "http://127.0.0.1:1",
     telegramApiBase: "http://127.0.0.1:9",
     seed: { anthropicApiKey: "", openaiApiKey: "", ollamaBaseUrl: "", giteaUrl: "", giteaToken: "", telegramToken: "", telegramChatId: "" },
   };

@@ -73,7 +73,12 @@ export function contentNote(ctx: RunContext): string {
   if (!pc) return "";
   const type = MARKETING_JOB_TYPES.find((t) => t.type === ctx.assignment.job.type);
   const projects = pc.projects
-    .map((p) => `- ${p.slug}: ${p.name}${p.brief ? "" : " (no brief yet)"}${p.publish ? ` | website "${p.publish.site_name}" accepts posts (draft_web_post): ${p.publish.post_types.join(", ")}` : ""}`)
+    .map(
+      (p) =>
+        `- ${p.slug}: ${p.name}${p.brief ? "" : " (no brief yet)"}` +
+        `${p.publish ? ` | website "${p.publish.site_name}" accepts posts (draft_web_post): ${p.publish.post_types.join(", ")}` : ""}` +
+        `${p.social?.length ? ` | approved captions are posted to: ${p.social.join(", ")}` : ""}`,
+    )
     .join("\n");
   const job = type ? `\n\n## This job: ${type.label}\n${type.produce}` : "";
   return `\n\n## Today\n${pc.today} (Malaysia time)\n\n## Projects you write for\n${projects}${job}`;

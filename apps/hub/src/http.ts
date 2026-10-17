@@ -473,12 +473,20 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.post("/drafts/:id/publish", async (c) => {
     // "Publish now / again": a website post goes to its site, a Facebook caption to the Page
     const d = hub.content.draft(c.req.param("id"));
-    if (d?.platform === "facebook" && d.kind !== "web_post") return c.json({ draft: await hub.social.postToFacebook(d.id) });
+    if (d && d.kind !== "web_post" && ["facebook", "instagram", "threads"].includes(d.platform)) return c.json({ draft: await hub.social.post(d.id) });
     return c.json({ draft: await hub.publisher.publish(c.req.param("id")) });
   });
   api.get("/projects/:id/facebook", (c) => c.json({ facebook: hub.social.facebook(c.req.param("id")) }));
   api.put("/projects/:id/facebook", async (c) => c.json({ facebook: hub.social.setFacebook(c.req.param("id"), await c.req.json()) }));
   api.post("/projects/:id/facebook/test", async (c) => c.json({ facebook: await hub.social.testFacebook(c.req.param("id")) }));
+  api.get("/projects/:id/instagram", (c) => c.json({ instagram: hub.social.instagram(c.req.param("id")) }));
+  api.post("/projects/:id/instagram/connect", async (c) => c.json({ instagram: await hub.social.connectInstagram(c.req.param("id")) }));
+  api.put("/projects/:id/instagram", async (c) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(await c.req.json());
+    return c.json({ instagram: hub.social.setInstagramEnabled(c.req.param("id"), enabled) });
+  });
+  api.get("/projects/:id/threads", (c) => c.json({ threads: hub.social.threads(c.req.param("id")) }));
+  api.put("/projects/:id/threads", async (c) => c.json({ threads: await hub.social.setThreads(c.req.param("id"), await c.req.json()) }));
   const PublishedEdit = z.object({ title: z.string().trim().min(1).max(200).optional(), body: z.string().min(1).max(20_000).optional(), meta: WebPostEdit.optional() });
   api.post("/drafts/:id/update-published", async (c) => c.json({ draft: await hub.publisher.updatePublished(c.req.param("id"), PublishedEdit.parse(await c.req.json())) }));
   api.post("/drafts/:id/take-down", async (c) => c.json({ draft: await hub.publisher.takeDown(c.req.param("id")) }));

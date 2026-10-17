@@ -116,6 +116,13 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
 - **Facebook Page** (`apps/hub/src/social.ts`): a Page id + Page token (encrypted) per project, in `settings` `social.facebook.<project>`.
   - Approving a `platform: facebook` caption posts to `/{page}/photos` (when `save_draft` got `cover_photo`) or to `/{page}/feed`.
   - `FACEBOOK_GRAPH_BASE` points tests at a fake. Instagram is not done (it needs a public image URL). Guide: docs/facebook-page.md.
+- **Instagram + Threads** (Phase A of "all social media", 2026-10-17):
+  - `Social` stores `social.instagram.<project>` (IG user id found via the Page token: `GET /{page}?fields=instagram_business_account`) and `social.threads.<project>` (its own token, checked with `/me`).
+  - IG and Threads only take photos by public URL. `Publisher.uploadMedia` sends the photo to the website endpoint (`action: upload_media`); the SmashPoint Worker stores it on storage.bijokdev.com and returns the URL.
+  - Posting is create container → poll `status_code` / `status` until FINISHED → publish → read the permalink.
+  - `hub.afterApprove` / `POST /drafts/:id/publish` call `social.post()` for any connected platform. `project_context.projects[].social` tells agents where approved captions go.
+  - `THREADS_GRAPH_BASE` is for tests. Threads tokens expire after about 60 days (no auto-refresh yet).
+  - Next phases (owner chose): B = YouTube/Shorts via Google API + video uploads; C = TikTok via a browser agent (logged-in Chrome, stops before Post until approval).
 
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.

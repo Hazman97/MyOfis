@@ -277,7 +277,7 @@ Error: ${r.error}` : ""}` });
   async afterApprove(draft: ContentDraft): Promise<ContentDraft> {
     if (draft.status !== "approved" && draft.status !== "edited") return draft;
     if (draft.kind === "web_post") return this.publisher.publish(draft.id);
-    if (draft.platform === "facebook" && this.social.configured(draft.project_id)) return this.social.postToFacebook(draft.id);
+    if (this.social.configured(draft.platform, draft.project_id)) return this.social.post(draft.id);
     return draft;
   }
 
@@ -944,6 +944,7 @@ Error: ${r.error}` : ""}` });
     let projectContext: RunAssignment["project_context"] = null;
     try {
       projectContext = tools.some((t) => NEEDS_PROJECT_CONTEXT.has(t)) ? this.content.context(job.project_id ? [job.project_id] : "all") : null;
+      for (const p of projectContext?.projects ?? []) p.social = this.social.connected(p.id);
     } catch (err) {
       console.error(`[hub] project context for ${runId} failed: ${(err as Error).message}`);
     }

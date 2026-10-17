@@ -110,6 +110,8 @@ export const ProjectContext = z.object({
       brief: ProjectBrief.nullable(),
       /** The website accepts posts from Publisher (set in Projects → Website publishing). */
       publish: PublishInfo.nullable().default(null),
+      /** Social accounts where approving a caption posts it (facebook, instagram, threads). */
+      social: z.array(z.string()).default([]),
       /** Posts Agent Office put on that website (newest first), so agents can update or take one down. */
       published_posts: z
         .array(z.object({ draft_id: z.string(), title: z.string(), post_type: z.string(), event_date: z.string(), url: z.string().nullable() }))

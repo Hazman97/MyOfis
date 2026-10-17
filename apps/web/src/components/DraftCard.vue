@@ -336,7 +336,7 @@ async function decide(decision: "approve" | "reject") {
         rel="noopener"
         class="inline-flex items-center gap-1 font-medium text-accent hover:underline"
       >
-        <span>{{ draft.platform === 'facebook' && draft.kind !== 'web_post' ? 'View it on Facebook' : 'View it on the website' }}</span>
+        <span>{{ draft.kind === 'web_post' ? 'View it on the website' : `View it on ${PLATFORM[draft.platform] ?? draft.platform}` }}</span>
         <ExternalLink :size="12" />
       </a>
       <div v-else-if="draft.publish_error" class="flex flex-wrap items-center gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-danger">

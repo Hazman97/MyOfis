@@ -122,6 +122,18 @@ export interface CatalogSkill {
   has_extra_files: boolean;
   url: string;
 }
+export interface InstagramSettings {
+  connected: boolean;
+  enabled: boolean;
+  ig_user_id: string | null;
+  username: string | null;
+}
+export interface ThreadsSettings {
+  has_token: boolean;
+  token_hint: string | null;
+  user_id: string | null;
+  username: string | null;
+}
 export interface FacebookSettings {
   page_id: string;
   page_name: string | null;
@@ -258,6 +270,11 @@ export const api = {
   },
   skillCatalog: (refresh = false) => request<{ skills: CatalogSkill[]; updated_at: string | null }>(`/skills/catalog${refresh ? "?refresh=1" : ""}`),
   installCatalogSkill: (source: string, path: string) => request<{ skill: Skill; warnings: string[] }>("/skills/catalog/install", { body: { source, path } }),
+  instagramSettings: (projectId: string) => request<{ instagram: InstagramSettings }>(`/projects/${projectId}/instagram`),
+  connectInstagram: (projectId: string) => request<{ instagram: InstagramSettings }>(`/projects/${projectId}/instagram/connect`, { method: "POST" }),
+  setInstagramEnabled: (projectId: string, enabled: boolean) => request<{ instagram: InstagramSettings }>(`/projects/${projectId}/instagram`, { method: "PUT", body: { enabled } }),
+  threadsSettings: (projectId: string) => request<{ threads: ThreadsSettings }>(`/projects/${projectId}/threads`),
+  saveThreads: (projectId: string, token: string) => request<{ threads: ThreadsSettings }>(`/projects/${projectId}/threads`, { method: "PUT", body: { token } }),
   facebookSettings: (projectId: string) => request<{ facebook: FacebookSettings }>(`/projects/${projectId}/facebook`),
   saveFacebookSettings: (projectId: string, body: { page_id: string; token?: string }) =>
     request<{ facebook: FacebookSettings }>(`/projects/${projectId}/facebook`, { method: "PUT", body }),
