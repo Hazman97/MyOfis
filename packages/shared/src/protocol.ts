@@ -45,6 +45,14 @@ export const RunnerToHub = z.discriminatedUnion("type", [
     risk_level: RiskLevel,
     details: z.record(z.string(), z.unknown()),
   }),
+  /** Ask another agent and wait for the answer (consult_agent). Sequenced: the question is queued once. */
+  z.object({
+    type: z.literal("run.consult"),
+    ...runMsg,
+    consult_id: z.string().min(8).max(64),
+    to_agent: z.string().min(1).max(64),
+    question: z.string().min(1).max(4000),
+  }),
   /** Queue a job for another agent. Sequenced, so it survives reconnects and is applied once. */
   z.object({
     type: z.literal("run.handoff"),
@@ -164,6 +172,15 @@ export const HubToRunner = z.discriminatedUnion("type", [
     run_id: z.string(),
     approval_id: z.string(),
     decision: z.enum(["approved", "rejected", "expired"]),
+  }),
+  /** The answer to a run.consult (or why there is none). */
+  z.object({
+    type: z.literal("consult.answer"),
+    run_id: z.string(),
+    consult_id: z.string(),
+    ok: z.boolean(),
+    answer: z.string(),
+    error: z.string().optional(),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

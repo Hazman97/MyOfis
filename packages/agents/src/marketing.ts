@@ -29,7 +29,7 @@ export const marketingAgent: AgentInput = {
   provider: "mock",
   model: "mock-script",
   system_prompt: MARKETING_PROMPT,
-  tools: ["read_brief", "read_feature_log", "read_past_drafts", "save_draft", "memory", "session_search", "skills_list", "skill_view", "skill_manage"],
+  tools: ["read_brief", "read_feature_log", "read_past_drafts", "save_draft", "consult_agent", "memory", "session_search", "skills_list", "skill_view", "skill_manage"],
   config: { shell_allowlist: [], read_paths: [], http_allowlist: [], max_steps: 40 },
   permission_level: "safe",
   daily_token_budget: 400_000,

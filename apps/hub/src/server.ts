@@ -14,6 +14,7 @@ import { createHttpApp } from "./http.ts";
 import { Integrations } from "./integrations.ts";
 import { ReleaseWatcher } from "./releases.ts";
 import { TelegramBot } from "./telegram.ts";
+import { Backups } from "./backup.ts";
 import { Scheduler } from "./scheduler.ts";
 import { seed } from "./seed.ts";
 import { LocalStorage } from "./storage.ts";
@@ -37,7 +38,7 @@ export interface HubServer {
 
 export function startHub(
   config: HubConfig,
-  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number } = {},
+  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number } = {},
 ): HubServer {
   const { db, sqlite } = openDb(config.databasePath);
   const secrets = new Secrets(config.secretsKey);
@@ -54,8 +55,8 @@ export function startHub(
   hub.storage = storage;
   hub.content = new Content(db, store, config.projectsDir);
   hub.learning = new Learning(db, store, config.skillsDir);
+  hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir });
   hub.boot();
-  hub.learning.migrateOldNotes();
   hub.backfillIndex();
   const scheduler = new Scheduler(hub);
   scheduler.start();
@@ -162,6 +163,17 @@ export function startHub(
   });
 
   const sweep = setInterval(() => hub.sweep(), opts.sweepMs ?? 5_000);
+  // nightly backup: checked every 10 minutes, runs once a day after BACKUP_HOUR
+  const backupTimer = setInterval(() => {
+    if (!hub.backups.due()) return;
+    try {
+      const b = hub.backups.run();
+      console.log(`[hub] backup ${b.date} written (${Math.round(b.size_bytes / 1024)} KB)`);
+    } catch (err) {
+      console.error(`[hub] backup failed: ${(err as Error).message}`);
+      telegram.notify(`⚠️ Nightly backup failed: ${(err as Error).message}`).catch(() => {});
+    }
+  }, opts.backupCheckMs ?? 10 * 60_000);
 
   return {
     url: `http://${config.host}:${server.port}`,
@@ -172,6 +184,7 @@ export function startHub(
     telegram,
     async stop() {
       clearInterval(sweep);
+      clearInterval(backupTimer);
       scheduler.stop();
       releases.stop();
       telegram.stop();

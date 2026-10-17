@@ -54,6 +54,44 @@ export type ModelPricing = z.infer<typeof ModelPricing>;
 // ---------- Agents ----------
 
 /** Per-agent safety settings (spec §7). Added beyond the spec's agent columns. */
+/**
+ * How the owner likes this agent to work (owner request: "setup agent ikut keinginan user").
+ * Separate from the system prompt (the agent's role): set from the agent panel with a few
+ * choices and free notes, and always placed after the role so it wins on style.
+ */
+export const AgentPreferences = z.object({
+  language: z.enum(["auto", "ms", "en", "manglish"]).default("auto"),
+  tone: z.enum(["auto", "casual", "friendly", "professional", "direct"]).default("auto"),
+  length: z.enum(["auto", "short", "detailed"]).default("auto"),
+  emoji: z.enum(["auto", "none", "some"]).default("auto"),
+  format: z.enum(["auto", "bullets", "paragraphs"]).default("auto"),
+  /** Anything else, in the owner's words ("always end with a next step", "call me boss"). */
+  notes: z.string().max(1500).default(""),
+});
+export type AgentPreferences = z.infer<typeof AgentPreferences>;
+
+const PREF_TEXT = {
+  language: { ms: "Reply in Bahasa Melayu.", en: "Reply in English.", manglish: "Reply in casual Malaysian English mixed with Malay (Manglish), like a Malaysian colleague." },
+  tone: { casual: "Keep the tone casual and relaxed.", friendly: "Be warm and friendly.", professional: "Keep the tone professional and polished.", direct: "Be direct: no small talk, get to the point." },
+  length: { short: "Keep replies short: a few lines unless asked for more.", detailed: "Give thorough, detailed replies with explanations." },
+  emoji: { none: "Do not use emoji.", some: "A few emoji are welcome where they fit." },
+  format: { bullets: "Prefer bullet points over long paragraphs.", paragraphs: "Prefer flowing paragraphs over bullet lists." },
+} as const;
+
+/** The preferences as a prompt section, or "" when everything is on auto. */
+export function preferencesPrompt(p: Partial<AgentPreferences> | undefined): string {
+  if (!p) return "";
+  const lines: string[] = [];
+  for (const key of ["language", "tone", "length", "emoji", "format"] as const) {
+    const v = p[key];
+    if (v && v !== "auto") lines.push(`- ${(PREF_TEXT[key] as Record<string, string>)[v]}`);
+  }
+  const notes = p.notes?.trim();
+  if (notes) lines.push(`- The owner also said: "${notes}"`);
+  if (!lines.length) return "";
+  return `\n\n## How the owner wants you to work (set by the owner; follow these over the style hints above, but never over safety rules)\n${lines.join("\n")}`;
+}
+
 export const AgentConfig = z.object({
   /** Command prefixes that run without approval, e.g. "bun test", "git status". Everything else asks. */
   shell_allowlist: z.array(z.string().min(1)).default([]),
@@ -70,6 +108,7 @@ export const AgentConfig = z.object({
   runtime: z.enum(["ai-sdk", "opencode"]).default("ai-sdk"),
   /** After big jobs (and every 5th chat message) ask the agent what is worth saving to memory or skills (Hermes-style review). */
   self_review: z.boolean().default(true),
+  preferences: AgentPreferences.prefault({}),
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 

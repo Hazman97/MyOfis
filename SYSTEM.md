@@ -180,15 +180,15 @@ Each tool returns a risk level: `safe`, `review` or `dangerous`. Together with t
 
 ## 7. Quality
 
-- 193 tests (`bun test`), strict TypeScript across all workspaces, Vite build.
+- 214 tests (`bun test`), strict TypeScript across all workspaces, Vite build.
 - Acceptance tests run the whole loop with the mock provider and a fake Gitea.
 - Screenshot check: `apps/web/scripts/shots.mjs`.
 - The office "brain" and replay are pure and unit-tested.
 
 ## 8. Known gaps and weak spots (good places to suggest improvements)
 
-1. **Agents cannot ask each other and wait.** `handoff` is fire-and-forget; there is no "consult" tool that blocks until another agent answers.
-2. **No research agent.** There is no web search or fetch tool for a Researcher; agents only know what is in their prompt, brief, memory and skills.
+1. ~~Agents cannot ask each other and wait.~~ Done: `consult_agent` (one level deep).
+2. ~~No research agent.~~ Done: Researcher with `web_search` (Brave/Tavily via the hub) and `web_fetch`.
 3. **Single owner, single office.** No multi-user, no roles, no audit export.
 4. **Gitea not installed yet.** All Gitea flows (Coder PRs, release watcher) are tested only against a fake.
 5. **Isolation without Docker.** The current safety rests on path guards plus the allowlist. A low-privilege OS user for the runner was discussed but not built.
@@ -197,7 +197,7 @@ Each tool returns a risk level: `safe`, `review` or `dangerous`. Together with t
 8. **Publishing.** Drafts are never posted automatically (by design); the owner copies them by hand. There is no integration with Facebook, TikTok or WhatsApp.
 9. **3D / creative work** (OpenSCAD or Blender scripts) was discussed but not built.
 10. **Observability.** Events and the run timeline exist; there is no tracing (e.g. Langfuse) and no error alerting beyond Telegram.
-11. **Backups.** SQLite plus the `projects/` and `skills/` folders. There is no backup or restore command.
+11. ~~Backups.~~ Done: nightly `VACUUM INTO` + folder copies, 14 days kept.
 12. **Mobile.** The web app is responsive, but there is no PWA or offline mode. Telegram is the mobile channel.
 
 ## 9. Questions to ask a reviewer

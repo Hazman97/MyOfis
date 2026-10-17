@@ -114,6 +114,11 @@ export class Integrations {
   seedTelegramFromEnv(token: string, chatId: string): void {
     if (token && !this.#readTelegram()) this.setTelegram({ token, chat_id: chatId });
   }
+
+  /** A getter, not a field: parameter properties are not set yet when field initialisers run. */
+  get webSearch() {
+    return webSearchSettings(this.db, this.secrets);
+  }
 }
 
 const TELEGRAM_KEY = "integrations.telegram";
@@ -138,4 +143,52 @@ export interface TelegramPublic {
   token_hint: string | null;
   chat_id: string;
   enabled: boolean;
+}
+
+// ---------------------------------------------------------------- web search (Researcher)
+
+const WEB_SEARCH_KEY = "integrations.web_search";
+const StoredWebSearch = z.object({ provider: z.enum(["brave", "tavily"]), key_enc: z.string().nullable(), key_hint: z.string().nullable() });
+
+export const WebSearchSettingsInput = z.object({
+  provider: z.enum(["brave", "tavily"]),
+  /** Write-only. Omit to keep, "" to clear. */
+  api_key: z.string().max(500).optional(),
+});
+
+export interface WebSearchPublic {
+  provider: "brave" | "tavily";
+  has_key: boolean;
+  key_hint: string | null;
+}
+
+export function webSearchSettings(db: Db, secrets: Secrets) {
+  const read = () => {
+    const row = db.select().from(settings).where(eq(settings.key, WEB_SEARCH_KEY)).get();
+    const parsed = StoredWebSearch.safeParse(row?.value);
+    return parsed.success ? parsed.data : null;
+  };
+  const pub = (): WebSearchPublic => {
+    const s = read();
+    return { provider: s?.provider ?? "brave", has_key: !!s?.key_enc, key_hint: s?.key_hint ?? null };
+  };
+  return {
+    public: pub,
+    /** Decrypted config, or null when no key is stored. */
+    config(): { provider: "brave" | "tavily"; apiKey: string } | null {
+      const s = read();
+      return s?.key_enc ? { provider: s.provider, apiKey: secrets.decrypt(s.key_enc) } : null;
+    },
+    set(input: z.input<typeof WebSearchSettingsInput>): WebSearchPublic {
+      const data = WebSearchSettingsInput.parse(input);
+      const prev = read();
+      const value = {
+        provider: data.provider,
+        key_enc: data.api_key === undefined ? (prev?.key_enc ?? null) : data.api_key ? secrets.encrypt(data.api_key) : null,
+        key_hint: data.api_key === undefined ? (prev?.key_hint ?? null) : data.api_key ? keyHint(data.api_key) : null,
+      };
+      db.insert(settings).values({ key: WEB_SEARCH_KEY, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+      return pub();
+    },
+  };
 }

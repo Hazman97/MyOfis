@@ -263,7 +263,7 @@ onBeforeUnmount(() => {
             {{ s }}x
           </button>
         </div>
-        <div class="flex min-w-[180px] flex-1 items-center gap-2 sm:gap-3">
+        <div class="flex min-w-45 flex-1 items-center gap-2 sm:gap-3">
           <div class="h-2 flex-1 overflow-hidden rounded-full bg-surface-2 border border-line/40">
             <div class="h-full rounded-full bg-accent transition-all duration-75" :style="{ width: `${progress}%` }" />
           </div>

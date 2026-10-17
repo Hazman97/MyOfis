@@ -58,7 +58,7 @@
 
 ## Decisions taken beyond the spec (Phase 4.5: Hermes-style learning)
 Owner asked to follow Nous Research's **Hermes Agent** closely. Logic in `packages/shared/src/memory.ts` + `skills.ts`, tools in `packages/tools/src/memory.ts`, hub side in `apps/hub/src/learning.ts`.
-- **Memory = two bounded stores in `settings`**: `memory.agent.<id>` (own notes, 2200 chars) and `memory.user` (owner profile shared by all agents, 1375 chars). `memory` tool: add / patch{old_text} / remove{old_text} or several `operations` at once (all-or-nothing); when full it returns the current entries so the model consolidates in one call. Every write is scanned (injection phrases, invisible unicode, secrets). The old `remember` tool is an alias; old `agent_memory` notes are migrated once at boot.
+- **Memory = two bounded stores in `settings`**: `memory.agent.<id>` (own notes, 2200 chars) and `memory.user` (owner profile shared by all agents, 1375 chars). `memory` tool: add / patch{old_text} / remove{old_text} or several `operations` at once (all-or-nothing); when full it returns the current entries so the model consolidates in one call. Every write is scanned (injection phrases, invisible unicode, secrets). The legacy `remember` tool and the `agent_memory` table were removed (migration 0005; spec §table list deviates on purpose).
 - **Frozen snapshot**: `RunAssignment.memory` is rendered once at run start (`memoryNote` in the runner) with usage %; writes during the run do not change the prompt.
 - **`memory.write_approval`** (Skills page switch): memory ops become `proposals` rows the owner approves.
 - **Skills** = `skills/<name>/SKILL.md` (`SKILLS_DIR`, agentskills.io / Hermes frontmatter). Agents only *propose* (`skill_manage` → sequenced `run.skill` → `proposals` + `skill.proposed`); the owner approves on `/skills` (diff + warnings for download/delete commands). Owner can import any SKILL.md (`POST /api/skills`). The prompt carries only the index (progressive disclosure); `skill_view` loads one.
@@ -66,14 +66,52 @@ Owner asked to follow Nous Research's **Hermes Agent** closely. Logic in `packag
 - **Background review** (`wantsReview`): after 5+ tool calls or every 5th chat message, a short `generateText` pass with only the learning tools asks "anything worth saving?". Off per agent with `config.self_review = false`. Tokens count toward the budget.
 - Web: `views/SkillsView.vue` (`/skills`), `components/office/MemoryStores.vue` in the agent panel, pure `diff.ts`.
 
+## Decisions taken beyond the spec (after Phase 5: owner's improvement list, 2026-10-17)
+- **Nightly backup** (`apps/hub/src/backup.ts`): `VACUUM INTO` + copies of `projects/` and `skills/` into `data/backups/<YYYY-MM-DD>/`, checked every 10 min, runs once a day after `BACKUP_HOUR` (3, KL), keeps `BACKUP_KEEP` (14). Failure → Telegram. `GET/POST /api/backups`; card in Settings → Integrations. Workspaces and `data/files` are not backed up.
+- **Skill usage** is computed, not stored: `Learning.skillsWithUsage()` reads `agent.tool_call` events for `skill_view` plus run status / rejected drafts of those runs. `stale` after 60 days unused, or ≥3 runs with ≥50% bad.
+- **Researcher** (`packages/agents/src/researcher.ts`) with `web_search` + `web_fetch` (`packages/tools/src/research.ts`).
+  - `web_fetch` follows redirects by hand and refuses private/loopback addresses (DNS-resolved) unless the exact host is on the agent's `http_allowlist`. It converts HTML to text itself (no library), wraps the output as UNTRUSTED and flags injection with `memoryContentProblem`.
+  - `web_search` goes runner → `POST /api/runner/web-search` → Brave or Tavily. The key is encrypted in `settings` (`integrations.web_search`) and never leaves the hub. `WEB_SEARCH_API_BASE` points tests at a fake. Owner rejected r.jina.ai (it sends every URL to a third party).
+- **consult_agent** (ask and wait):
+  - The runner sends sequenced `run.consult`, and the hub creates a `consult` job (`input.parent_run_id`, `consult_id`) for the target. When that run ends, `#afterRun` sends `consult.answer` (the run's output) to the asking run.
+  - One level only: consult jobs get no `consult_agent` / `handoff`. A run waiting on a consult does not count toward runner capacity, otherwise a one-slot runner deadlocks.
+  - When the asking run ends, its open consult jobs are cancelled. The runner gives up after `timeout_minutes` (default 10).
+  - An answer lost to a disconnect just times out.
+- **Owner preferences per agent** (`AgentConfig.preferences`: language / tone / length / emoji / format / notes). `preferencesPrompt()` (shared, tested) is appended last to the prompt in the AI SDK runtime, the review pass and OpenCode. It is set in the office agent panel (`components/office/AgentPrefs.vue`). `AgentsView` keeps it when saving.
+- **Cloudflare is live**: `https://myofis.bijokdev.com` goes through the existing dashboard-managed tunnel `cloudflaretunnel` (Windows service on this PC) → `http://127.0.0.1:8788`. Access app "MyOfis" allows the owner's email only.
+  - The hub runs `AUTH_MODE=cf-access` (team `bbjokdev.cloudflareaccess.com`), so localhost cannot log in. The owner uses the domain everywhere.
+  - A "no login on localhost" bypass was blocked by Claude Code's safety classifier; do not re-add it without the owner explicitly granting it.
+  - The domain serves the **built** UI: run `bun run --cwd apps/web build` after UI changes.
+- **Screenshots now need a preview hub**: start a throwaway hub with `AUTH_MODE=local`, the same `LOCAL_AUTH_TOKEN` (read from `.env`, never printed), temp `DATABASE_PATH` / dirs, `WEB_DIST_DIR=apps/web/dist`, port 8811. Then `node apps/web/scripts/shots.mjs --base http://127.0.0.1:8811 …`.
+
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.
+**PENDING (read first, updated 2026-10-17 end of session)**
+- Code: everything built and green: 214 tests, typecheck and web build OK. The domain serves the latest build.
+- Owner to do:
+  - In Agents → Marketing and Agents → Researcher, tick `consult_agent` (both were seeded before the tool existed).
+  - Add a Brave or Tavily key in Settings → Integrations → Web search.
+  - Test with `docs/cuba-sistem.md` through https://myofis.bijokdev.com.
+  - Sign off Phases 4, 5 and 4.5.
+  - Rotate the canopy-ai key.
+  - Commit.
+  - Say "padam backup": Claude then deletes the old `.env` copy at `%TEMP%\env.backup`.
+- Gemini queue:
+  - review 003 ("semak 003": check that only its 7 files changed, then typecheck, tests and screenshots via the preview hub);
+  - then hand over 004 (4 files);
+  - then 005 (3 files).
+- Not started:
+  - "Kerani" camera-rental agent: ask the owner where bookings are stored (Google Calendar / Sheet / own site DB / WhatsApp only).
+  - 3D (OpenSCAD/Blender).
+  - Routing jobs by runner `programs`.
+  - `git worktree` workspaces (low value).
+
 
 **Phases**
 - Phases 1–3: done and signed off by the owner.
 - Phase 4: built and waiting for the owner's sign-off. 175 tests pass (incl. `apps/hub/test/acceptance-phase4.test.ts`); typecheck and build are green.
 - Phase 5: built (cf-access, tunnel docs, remote runners, replay, agent memory) and waiting for the owner's sign-off. The real-world check in docs/cloudflare-tunnel.md §5 needs the owner's domain.
-- Phase 4.5 (Hermes-style learning): built, 193 tests green. Gemini task 004 polishes the Skills page + Memory panel; task 003 still to be reviewed ("semak 003").
+- Phase 4.5 (Hermes-style learning) and the improvement list (backup, Researcher, consult_agent, preferences, one-line runner install, Cloudflare live): built, 214 tests green. Gemini: 003 to review ("semak 003"), then 004, then 005.
 - UI helper: the owner relays UI tasks to Gemini (Antigravity) from `tasks/gemini/NNN-*.md`; Claude reviews the diff, tests and screenshots. Task 001 passed review; task 002 passed; 003 (work pages) is with Gemini; 004 (Skills + Memory look) is ready to hand over.
 
 **Owner's environment**
@@ -92,7 +130,7 @@ Read this first when picking the project up in a new session.
   - in `apps/hub/test/telegram.test.ts`, a failing chat job sends no ❌ message.
 - Then add one line about this to the README "Chat" section.
 
-**Open questions for the owner** (Phase 4.5 skills/memory are now done; Researcher, agent-to-agent consult and 3D are still open)
+**Open questions for the owner** (skills, memory, Researcher and consult are done; 3D and the camera-rental "Kerani" agent are still open: ask where bookings are stored)
 - Is "Hermes" (set up on another PC) Nous Research's *Hermes Agent* or just a *Hermes model*?
   - Hermes model: add it as a provider.
   - Hermes Agent: a runner-side runtime like OpenCode, and/or import its SKILL.md skills.

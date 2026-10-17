@@ -78,6 +78,10 @@ export interface ToolContext {
   proposeSkill(p: { name: string; action: "create" | "patch" | "delete"; content: string; reason: string }): void;
   /** Full-text search over past runs (the hub answers). */
   searchSessions(query: string, allAgents: boolean): Promise<{ run_id: string; agent_id: string; job_type: string; ts: string; title: string; snippet: string }[]>;
+  /** Web search through the hub (it holds the search API key). Throws when search is not set up. */
+  webSearch(query: string, count: number): Promise<WebSearchResult[]>;
+  /** Ask another agent (by slug) and wait for its answer, up to `timeoutMs`. Never throws. */
+  consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
 }
 
 export interface DraftRequest {
@@ -113,3 +117,15 @@ export const defineTool = <S extends z.ZodType>(def: ToolDef<S>): ToolDef<S> => 
 
 /** Thrown by safety guards. The message is safe to show to the model. */
 export class ToolDenied extends Error {}
+
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface ConsultAnswer {
+  ok: boolean;
+  answer: string;
+  error?: string;
+}

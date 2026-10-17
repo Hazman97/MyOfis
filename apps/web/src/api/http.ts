@@ -42,6 +42,16 @@ export interface GiteaSettings {
   token_hint: string | null;
 }
 
+export interface WebSearchSettings {
+  provider: "brave" | "tavily";
+  has_key: boolean;
+  key_hint: string | null;
+}
+export interface BackupInfo {
+  date: string;
+  size_bytes: number;
+  created_at: string;
+}
 export interface TelegramSettings {
   has_token: boolean;
   token_hint: string | null;
@@ -56,10 +66,18 @@ export interface AgentMemory {
   limits: Record<MemoryTarget, number>;
   write_approval: boolean;
 }
+/** Usage comes from GET /skills only (see apps/hub/src/learning.ts skillsWithUsage). */
+export interface SkillUsage {
+  runs: number;
+  last_used_at: string | null;
+  bad_runs: number;
+  stale: string | null;
+}
 export interface Skill {
   name: string;
   description: string;
   content: string;
+  usage?: SkillUsage;
 }
 /** A change an agent wants: a skill (create/patch/delete) or memory ops when write approval is on. */
 export interface Proposal {
@@ -172,7 +190,13 @@ export const api = {
 
   tools: () => request<{ tools: ToolInfo[] }>("/tools"),
 
-  integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings }>("/settings/integrations"),
+  integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings }>("/settings/integrations"),
+  saveWebSearch: (body: { provider: "brave" | "tavily"; api_key?: string }) =>
+    request<{ web_search: WebSearchSettings }>("/settings/integrations/web-search", { method: "PUT", body }),
+  testWebSearch: () =>
+    request<{ ok: boolean; results?: { title: string; url: string }[]; error?: string }>("/settings/integrations/web-search/test", { method: "POST" }),
+  backups: () => request<{ backups: BackupInfo[]; dir: string }>("/backups"),
+  backupNow: () => request<{ backup: BackupInfo }>("/backups", { method: "POST" }),
   saveTelegram: (body: { token?: string; chat_id?: string; enabled?: boolean }) =>
     request<{ telegram: TelegramSettings }>("/settings/integrations/telegram", { method: "PUT", body }),
   testTelegram: () => request<{ ok: boolean; error?: string }>("/settings/integrations/telegram/test", { method: "POST" }),

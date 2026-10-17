@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { Pause, Pencil, Play, Plus } from "lucide-vue-next";
-import { dayKey, type Agent, type ProviderPublic, type Runner } from "@agent-office/shared";
+import { AgentPreferences, dayKey, type Agent, type ProviderPublic, type Runner } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SidePanel from "../components/SidePanel.vue";
@@ -38,6 +38,8 @@ const blank = () => ({
   max_steps: 30,
   runtime: "ai-sdk" as "ai-sdk" | "opencode",
   self_review: true,
+  // set from the agent panel (office); kept as is here
+  preferences: AgentPreferences.parse({}) as AgentPreferences,
 });
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 const form = reactive(blank());
@@ -83,6 +85,7 @@ function edit(a: Agent | null) {
       max_steps: a.config.max_steps,
       runtime: a.config.runtime,
       self_review: a.config.self_review ?? true,
+      preferences: AgentPreferences.parse(a.config.preferences ?? {}),
     });
   }
   editing.value = a?.id ?? "new";
@@ -92,10 +95,10 @@ async function save() {
   error.value = "";
   saving.value = true;
   try {
-    const { shell_allowlist, read_paths, http_allowlist, max_steps, runtime, self_review, slug, ...rest } = form;
+    const { shell_allowlist, read_paths, http_allowlist, max_steps, runtime, self_review, preferences, slug, ...rest } = form;
     const body = {
       ...rest,
-      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, runtime, self_review },
+      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, runtime, self_review, preferences },
     };
     if (editing.value === "new") await api.createAgent({ ...body, slug });
     else await api.updateAgent(editing.value!, body);

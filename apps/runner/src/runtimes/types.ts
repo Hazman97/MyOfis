@@ -1,6 +1,6 @@
 import type { RunAssignment, RunnerEventBody } from "@agent-office/shared";
 import type { FeatureNoteData, MemoryOp } from "@agent-office/shared";
-import type { ApprovalRequest, DraftRequest, HandoffRequest } from "@agent-office/tools";
+import type { ApprovalRequest, ConsultAnswer, DraftRequest, HandoffRequest, WebSearchResult } from "@agent-office/tools";
 
 export interface RunContext {
   assignment: RunAssignment;
@@ -21,6 +21,10 @@ export interface RunContext {
   saveMemory(target: "memory" | "user", ops: MemoryOp[]): void;
   proposeSkill(p: { name: string; action: "create" | "patch" | "delete"; content: string; reason: string }): void;
   searchSessions(query: string, allAgents: boolean): Promise<{ run_id: string; agent_id: string; job_type: string; ts: string; title: string; snippet: string }[]>;
+  /** Web search through the hub (it holds the search API key). Throws when search is not set up. */
+  webSearch(query: string, count: number): Promise<WebSearchResult[]>;
+  /** Ask another agent (by slug) and wait for its answer, up to `timeoutMs`. Never throws. */
+  consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
   /** Runner-owned folder (outside the workspace) for this agent's screenshot baselines. */
   baselineDir: string | null;
 }

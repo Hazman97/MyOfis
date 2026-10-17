@@ -251,6 +251,29 @@ Agents with the learning tools (Coach and Marketing by default; add them to any 
 - **Looking back.** After a big job (5+ tool calls) or every 5th chat message, the agent takes a short extra pass to decide whether anything is worth saving. Turn it off per agent with **Learn after work** (`self_review`).
 - **Switch "Ask me before agents change their memory".** It is on the Skills page. When it is on, memory changes wait there for your approval too.
 
+## Researcher, asking each other, and "How you like it"
+
+- **Researcher** searches the web and reads pages, then answers with sources.
+  - Setup: Settings → Integrations → **Web search**, paste a **Brave Search** or **Tavily** API key. The key stays encrypted in the hub; runners never see it.
+  - Reading a page (`web_fetch`) works without a key.
+  - Web content is treated as untrusted data: suspicious pages are flagged, and local or private addresses are refused unless you list the host in the agent's HTTP allowlist.
+- **consult_agent:** an agent asks a colleague and waits for the answer, e.g. Marketing asks Researcher for today's rental prices before writing a promo.
+  - The question shows up as a small "Question from …" job for the other agent.
+  - It goes one level only: whoever answers cannot ask further.
+  - Give the tool to an agent in **Agents → Edit → Tools**.
+- **How you like it:** click an agent in the office and pick language (Manglish / BM / English), tone, reply length, emoji and format, plus free notes such as "Panggil saya boss".
+  - It applies to every job and chat from then on, on top of the agent's role.
+  - What all agents should know about **you** goes in the shared **About you** memory instead.
+
+## Backups
+
+Every night after 3 am (Malaysia time) the hub saves a copy of the database, `projects/` and `skills/` to `data/backups/<date>/` and keeps 14 days (`BACKUP_HOUR`, `BACKUP_KEEP`, `BACKUP_DIR` in `.env`). A failed backup is reported on Telegram. **Settings → Integrations → Backups** lists them and has **Back up now**.
+
+To restore:
+1. Stop the hub.
+2. Copy `agent-office.db` over `data/agent-office.db`, and the folders back.
+3. Start the hub.
+
 ## Kill switch
 
 **Pause all** in the header cancels running jobs, and new jobs stay queued until you click **Resume all**. To pause one agent, click **Pause agent** on the Agents page.

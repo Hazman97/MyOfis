@@ -13,7 +13,7 @@ import {
 } from "@agent-office/shared";
 import { aiSdkRuntime } from "./runtimes/aiSdk.ts";
 import { mockRuntime } from "./runtimes/mock.ts";
-import type { ApprovalRequest } from "@agent-office/tools";
+import type { ApprovalRequest, ConsultAnswer } from "@agent-office/tools";
 import { RunError, type AgentRuntime } from "./runtimes/types.ts";
 import { resolveOpenCode } from "./opencode/binary.ts";
 import { opencodeRuntime } from "./opencode/runtime.ts";
@@ -65,6 +65,7 @@ export class RunnerClient {
   readonly #runs = new Map<string, ActiveRun>();
   /** approval_id -> waiting tool call. */
   readonly #approvals = new Map<string, { runId: string; resolve: (ok: boolean) => void }>();
+  readonly #consults = new Map<string, { runId: string; resolve: (a: ConsultAnswer) => void }>();
   #ws: WebSocket | null = null;
   #ready = false;
   #stopped = false;
@@ -189,6 +190,13 @@ export class RunnerClient {
         if (run.done && run.outbox.size === 0) this.#runs.delete(msg.run_id);
         return;
       }
+      case "consult.answer": {
+        const waiting = this.#consults.get(msg.consult_id);
+        if (!waiting || waiting.runId !== msg.run_id) return;
+        this.#consults.delete(msg.consult_id);
+        waiting.resolve({ ok: msg.ok, answer: msg.answer, ...(msg.error ? { error: msg.error } : {}) });
+        return;
+      }
       case "approval.decision": {
         const waiting = this.#approvals.get(msg.approval_id);
         if (!waiting || waiting.runId !== msg.run_id) return;
@@ -238,6 +246,36 @@ export class RunnerClient {
     return ((await res.json()) as { results: Awaited<ReturnType<import("@agent-office/tools").ToolContext["searchSessions"]>> }).results;
   }
 
+  async #webSearch(runId: string, query: string, count: number) {
+    const res = await freshFetch(new URL("/api/runner/web-search", this.#opts.hubUrl), {
+      method: "POST",
+      timeoutMs: 30_000,
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ run_id: runId, query, count }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { results?: import("@agent-office/tools").WebSearchResult[]; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `web search failed (${res.status})`);
+    return body.results ?? [];
+  }
+
+  /** Ask another agent through the hub and wait for its answer (or the timeout / cancel). */
+  #consult(runId: string, toAgent: string, question: string, timeoutMs: number, signal: AbortSignal): Promise<ConsultAnswer> {
+    const consultId = randomUUID();
+    return new Promise((resolve) => {
+      const done = (a: ConsultAnswer) => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        this.#consults.delete(consultId);
+        resolve(a);
+      };
+      const onAbort = () => done({ ok: false, answer: "", error: "the run was cancelled" });
+      const timer = setTimeout(() => done({ ok: false, answer: "", error: `no answer within ${Math.round(timeoutMs / 60_000)} minutes` }), timeoutMs);
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.#consults.set(consultId, { runId, resolve: done });
+      this.#sendRun(runId, { type: "run.consult", consult_id: consultId, to_agent: toAgent, question });
+    });
+  }
+
   #requestApproval(runId: string, req: ApprovalRequest, signal: AbortSignal): Promise<boolean> {
     const approvalId = randomUUID();
     return new Promise<boolean>((resolve, reject) => {
@@ -283,6 +321,8 @@ export class RunnerClient {
         saveMemory: (target, ops) => this.#sendRun(a.run_id, { type: "run.memory", target, ops }),
         proposeSkill: (p) => this.#sendRun(a.run_id, { type: "run.skill", ...p }),
         searchSessions: (query, allAgents) => this.#search(a.run_id, query, allAgents),
+        webSearch: (query, count) => this.#webSearch(a.run_id, query, count),
+        consult: (toAgent, question, timeoutMs) => this.#consult(a.run_id, toAgent, question, timeoutMs, run.abort.signal),
         baselineDir: this.#opts.dataDir ? join(this.#opts.dataDir, "baselines", a.agent.slug) : null,
       });
       if (run.abort.signal.aborted) throw run.abort.signal.reason;

@@ -104,6 +104,10 @@ describe("skills", () => {
       { text: "ok" },
     ]);
     expect(sent[0]!.skills.map((s) => s.name)).toEqual(["tiktok-caption"]);
+    // usage is counted from the skill_view calls in past runs
+    const [listed] = (await env.api("/api/skills")).body.skills;
+    expect(listed.usage).toMatchObject({ runs: 1, bad_runs: 0, stale: null });
+    expect(env.hub.hub.learning.skillsWithUsage(Date.now() + 61 * 86_400_000)[0]!.usage.stale).toBe("not used in 60 days");
     const [patch] = (await env.api("/api/proposals?status=pending")).body.proposals;
     expect(patch).toMatchObject({ action: "patch", previous: expect.stringContaining("Read the brief.") });
     await env.api(`/api/proposals/${patch.id}/decide`, { body: { decision: "reject" } });
@@ -114,6 +118,20 @@ describe("skills", () => {
     expect((await env.api("/api/skills")).body.skills.map((s: { name: string }) => s.name)).toEqual(["imported-skill", "tiktok-caption"]);
     await env.api("/api/skills/imported-skill", { method: "DELETE" });
     expect(existsSync(join(env.dir, "skills", "imported-skill"))).toBe(false);
+  });
+});
+
+describe("owner preferences", () => {
+  test("saved on the agent and sent to the runner with every run", async () => {
+    env = await createTestEnv();
+    await env.pairRunner();
+    const a = await bot(env, ["memory"]);
+    const { body } = await env.api(`/api/agents/${a}`);
+    const config = { ...body.agent.config, preferences: { language: "manglish", length: "short", notes: "Panggil saya boss" } };
+    expect((await env.api(`/api/agents/${a}`, { method: "PATCH", body: { config } })).body.agent.config.preferences).toMatchObject({ language: "manglish", tone: "auto" });
+    const sent = captureAssignments(env);
+    await runScript(env, a, [{ text: "ok" }]);
+    expect(sent[0]!.agent.config.preferences).toMatchObject({ language: "manglish", length: "short", notes: "Panggil saya boss" });
   });
 });
 

@@ -28,5 +28,7 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     skills: ctx.assignment.skills,
     proposeSkill: (p) => ctx.proposeSkill(p),
     searchSessions: (q, all) => ctx.searchSessions(q, all),
+    webSearch: (q, n) => ctx.webSearch(q, n),
+    consult: (to, q, ms) => ctx.consult(to, q, ms),
   };
 }

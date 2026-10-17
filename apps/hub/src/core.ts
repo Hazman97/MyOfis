@@ -15,6 +15,7 @@ import type { HubConfig } from "./env.ts";
 import type { Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { agents, approvals, contentDrafts, featureLog, jobs, projects, runners, runs } from "./db/schema.ts";
+import type { Backups } from "./backup.ts";
 import type { Learning } from "./learning.ts";
 import type { Emit, EventStore } from "./events.ts";
 import type { Integrations } from "./integrations.ts";
@@ -79,6 +80,7 @@ export class Hub {
   content!: Content;
   /** Set by the server after construction (memory, skills, session search). */
   learning!: Learning;
+  backups!: Backups;
   /** Agents told they are over today's token budget, with the day they were told. */
   readonly #overBudget = new Map<string, string>();
 
@@ -469,6 +471,7 @@ Error: ${r.error}` : ""}` });
         .get();
       if (!stillBusy) emit({ type: "agent.idle", payload: { agent_id: run.agent_id } }, { agent_id: run.agent_id });
     });
+    this.#afterRun(run, status, outcome.error);
     if (agent) this.#checkBudget(agent);
     this.indexRun(runId);
     this.dispatch();
@@ -541,6 +544,7 @@ Error: ${r.error}` : ""}` });
       case "run.feature_note":
       case "run.memory":
       case "run.skill":
+      case "run.consult":
         this.#runMessage(conn, msg);
         return;
     }
@@ -628,6 +632,8 @@ Error: ${r.error}` : ""}` });
           { run_id: run.id, agent_id: run.agent_id },
         );
       });
+    } else if (msg.type === "run.consult") {
+      this.#consult(conn, run, msg);
     } else if (msg.type === "run.handoff") {
       this.#handoff(run, msg);
     } else if (msg.type === "run.draft") {
@@ -711,6 +717,84 @@ Error: ${r.error}` : ""}` });
     if (row) this.#released(this.content.project(msg.project_id), row);
   }
 
+
+  // ---------------------------------------------------------------- consult (ask another agent, wait for the answer)
+
+  /**
+   * An agent asks a colleague and waits (consult_agent). The question becomes a `consult` job for
+   * the other agent; when its run ends, the answer goes back to the asking run. One level only:
+   * a consult job cannot consult or hand off again. While it waits, the asking run does not count
+   * against its runner's capacity, so a one-slot runner can still run the answer.
+   */
+  #consult(conn: RunnerConn, run: typeof runs.$inferSelect, msg: Extract<RunnerToHub, { type: "run.consult" }>): void {
+    const from = getAgent(this.db, run.agent_id);
+    const target = this.db.select().from(agents).where(eq(agents.slug, msg.to_agent)).get();
+    const parentJob = getJob(this.db, run.job_id);
+    const refuse = (error: string) => {
+      this.db.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
+      conn.send({ type: "consult.answer", run_id: run.id, consult_id: msg.consult_id, ok: false, answer: "", error });
+    };
+    if (!target || !target.enabled) return refuse(`agent "${msg.to_agent}" is unknown or disabled`);
+    if (target.id === run.agent_id) return refuse("an agent cannot consult itself");
+    if (parentJob?.type === "consult") return refuse("you are answering a consult yourself: answer with what you know");
+    const text =
+      `${from?.name ?? "A colleague"} (${from?.role || "agent"}) asks you, as a colleague in the office:\n\n${msg.question}\n\n` +
+      "Answer them directly and briefly. Your reply goes back to them, not to the owner.";
+    const data = JobInput.parse({
+      agent_id: target.id,
+      project_id: parentJob?.project_id ?? null,
+      type: "consult",
+      title: `Question from ${from?.name ?? "a colleague"}: ${msg.question}`.slice(0, 200),
+      input: { text, consult_id: msg.consult_id, parent_run_id: run.id, from_agent: from?.slug ?? run.agent_id },
+      trigger: "handoff",
+      parent_job_id: run.job_id,
+    });
+    this.store.transact((tx, emit) => {
+      tx.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
+      this.#insertJob(tx, emit, data);
+      emit({ type: "agent.thinking", payload: { summary: `Asked ${target.name}; waiting for the answer` } }, { run_id: run.id, agent_id: run.agent_id });
+    });
+    this.dispatch();
+  }
+
+  /** Runs waiting for a consult answer (their consult job is not finished yet). */
+  #waitingOnConsult(): Set<string> {
+    const rows = this.db
+      .select({ input: jobs.input })
+      .from(jobs)
+      .where(and(eq(jobs.type, "consult"), inArray(jobs.status, ["queued", "running", "waiting_approval"])))
+      .all();
+    return new Set(rows.map((r) => r.input.parent_run_id).filter((x): x is string => typeof x === "string"));
+  }
+
+  /** A consult job's run ended: send the answer to the asking run. An asking run that ended: cancel its open questions. */
+  #afterRun(run: typeof runs.$inferSelect, status: string, error: string | undefined): void {
+    const job = getJob(this.db, run.job_id);
+    if (job?.type === "consult") {
+      const parentId = job.input.parent_run_id;
+      const consultId = job.input.consult_id;
+      const parent = typeof parentId === "string" ? getRun(this.db, parentId) : undefined;
+      if (parent?.status === "running" && typeof consultId === "string") {
+        const answer = (this.store.state.runs[run.id]?.output ?? "").trim();
+        const ok = status === "done" && answer.length > 0;
+        this.conns.get(parent.runner_id)?.send({
+          type: "consult.answer",
+          run_id: parent.id,
+          consult_id: consultId,
+          ok,
+          answer: ok ? answer : "",
+          ...(ok ? {} : { error: status === "done" ? "they finished without an answer" : `their run ${status}${error ? `: ${error}` : ""}` }),
+        });
+      }
+    }
+    const open = this.db
+      .select({ id: jobs.id, input: jobs.input })
+      .from(jobs)
+      .where(and(eq(jobs.type, "consult"), eq(jobs.parent_job_id, run.job_id), inArray(jobs.status, ["queued", "running", "waiting_approval"])))
+      .all()
+      .filter((j) => j.input.parent_run_id === run.id);
+    for (const j of open) this.cancelJob(j.id, "the agent that asked has finished");
+  }
   // ---------------------------------------------------------------- handoffs
 
   #handoff(run: typeof runs.$inferSelect, msg: Extract<RunnerToHub, { type: "run.handoff" }>): void {
@@ -774,11 +858,13 @@ Error: ${r.error}` : ""}` });
 
       const load = new Map<string, number>();
       const busy = this.db
-        .select({ runner_id: runs.runner_id })
+        .select({ id: runs.id, runner_id: runs.runner_id })
         .from(runs)
         .where(and(eq(runs.status, "running"), inArray(runs.runner_id, [...this.conns.keys()])))
         .all();
-      for (const b of busy) load.set(b.runner_id, (load.get(b.runner_id) ?? 0) + 1);
+      // a run waiting for a consult answer frees its slot, so the answer can run on the same runner
+      const waiting = this.#waitingOnConsult();
+      for (const b of busy) if (!waiting.has(b.id)) load.set(b.runner_id, (load.get(b.runner_id) ?? 0) + 1);
 
       for (const { job, agent } of queued) {
         // over today's token budget: the job waits (for tomorrow, or for a higher budget)
@@ -827,7 +913,8 @@ Error: ${r.error}` : ""}` });
     }
     // A release note is a fixed, small job: its own prompt and two safe tools, whatever the agent normally has.
     const featureNote = job.type === "feature_note";
-    const tools = featureNote ? FEATURE_NOTE_TOOLS : agent.tools;
+    // a consult answer is one level deep: no asking or handing off from there
+    const tools = featureNote ? FEATURE_NOTE_TOOLS : job.type === "consult" ? agent.tools.filter((t) => t !== "consult_agent" && t !== "handoff") : agent.tools;
     const config = toAgent(agent).config;
     let projectContext: RunAssignment["project_context"] = null;
     try {

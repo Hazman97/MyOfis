@@ -213,21 +213,6 @@ export const contentDrafts = sqliteTable("content_drafts", {
   decided_at: text("decided_at"),
 });
 
-export const agentMemory = sqliteTable(
-  "agent_memory",
-  {
-    id: text("id").primaryKey(),
-    agent_id: text("agent_id")
-      .notNull()
-      .references(() => agents.id),
-    project_id: text("project_id").references(() => projects.id),
-    kind: text("kind").notNull(),
-    content: text("content").notNull(),
-    created_at: text("created_at").notNull().default(now),
-  },
-  (t) => [index("agent_memory_agent_idx").on(t.agent_id, t.project_id)],
-);
-
 /**
  * Things agents want to save that wait for the owner (Phase 4.5, Hermes-style learning):
  * kind "skill" = a SKILL.md create/patch/delete; kind "memory" = memory ops when write approval is on.

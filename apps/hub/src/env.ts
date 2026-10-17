@@ -23,6 +23,11 @@ const EnvSchema = z
     MAPS_DIR: z.string().default("./maps"),
     PROJECTS_DIR: z.string().default("./projects"),
     SKILLS_DIR: z.string().default("./skills"),
+    /** Tests point web search at a fake API. */
+    WEB_SEARCH_API_BASE: z.string().default(""),
+    BACKUP_DIR: z.string().default("./data/backups"),
+    BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(14),
+    BACKUP_HOUR: z.coerce.number().int().min(0).max(23).default(3),
     ANTHROPIC_API_KEY: z.string().default(""),
     OPENAI_API_KEY: z.string().default(""),
     OLLAMA_BASE_URL: z.string().default(""),
@@ -76,6 +81,9 @@ export interface HubConfig {
   projectsDir: string;
   /** skills/<name>/SKILL.md (agentskills.io format). */
   skillsDir: string;
+  /** Nightly backups (data/backups/<date>/): keep this many days; run after this hour (Malaysia time). */
+  backup: { dir: string; keep: number; hour: number };
+  webSearchApiBase: string;
   telegramApiBase: string;
   seed: {
     anthropicApiKey: string;
@@ -114,6 +122,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     mapsDir: resolve(e.MAPS_DIR),
     projectsDir: resolve(e.PROJECTS_DIR),
     skillsDir: resolve(e.SKILLS_DIR),
+    backup: { dir: resolve(e.BACKUP_DIR), keep: e.BACKUP_KEEP, hour: e.BACKUP_HOUR },
+    webSearchApiBase: e.WEB_SEARCH_API_BASE.replace(/\/$/, ""),
     telegramApiBase: e.TELEGRAM_API_BASE.replace(/\/$/, ""),
     seed: {
       anthropicApiKey: e.ANTHROPIC_API_KEY,

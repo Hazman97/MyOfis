@@ -275,8 +275,8 @@ const title = (p: Proposal) =>
               >
                 {{ op.action }}
               </span>
-              <span v-if="op.action !== 'add'" class="text-danger line-through opacity-80 break-words">{{ op.old_text }}</span>
-              <span v-if="op.action !== 'remove'" class="text-info font-medium break-words">{{ op.content }}</span>
+              <span v-if="op.action !== 'add'" class="text-danger line-through opacity-80 wrap-break-word">{{ op.old_text }}</span>
+              <span v-if="op.action !== 'remove'" class="text-info font-medium wrap-break-word">{{ op.content }}</span>
             </li>
           </ul>
           <pre v-else-if="c.type === 'diff'" class="max-h-96 overflow-auto rounded-xl border border-line bg-surface-2/80 p-3 font-mono text-xs leading-relaxed"><template v-for="(l, i) in c.lines" :key="i"><span v-if="l.kind === 'gap'" class="block py-0.5 text-faint select-none">  ⋯ {{ l.count }} unchanged lines</span><span v-else class="block whitespace-pre-wrap px-1 rounded-sm" :class="l.kind === 'add' ? 'bg-info-soft text-info' : l.kind === 'del' ? 'bg-danger-soft text-danger' : 'text-muted'">{{ l.kind === "add" ? "+ " : l.kind === "del" ? "- " : "  " }}{{ l.text }}</span></template></pre>
@@ -338,7 +338,7 @@ const title = (p: Proposal) =>
         </div>
         <pre
           v-if="open === s.name"
-          class="mt-3 max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-xl border border-line bg-sunken/80 p-3.5 font-mono text-xs leading-relaxed text-fg shadow-inner"
+          class="mt-3 max-h-112 overflow-auto whitespace-pre-wrap rounded-xl border border-line bg-sunken/80 p-3.5 font-mono text-xs leading-relaxed text-fg shadow-inner"
         >{{ s.content }}</pre>
       </article>
 

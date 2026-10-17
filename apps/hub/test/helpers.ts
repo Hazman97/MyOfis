@@ -23,6 +23,8 @@ export function testConfig(dir: string): HubConfig {
     mapsDir: join(import.meta.dir, "../../../maps"),
     projectsDir: join(dir, "projects"),
     skillsDir: join(dir, "skills"),
+    backup: { dir: join(dir, "backups"), keep: 3, hour: 3 },
+    webSearchApiBase: "",
     telegramApiBase: "http://127.0.0.1:9",
     seed: { anthropicApiKey: "", openaiApiKey: "", ollamaBaseUrl: "", giteaUrl: "", giteaToken: "", telegramToken: "", telegramChatId: "" },
   };

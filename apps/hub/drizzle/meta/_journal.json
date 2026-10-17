@@ -36,6 +36,13 @@
       "when": 1792206397557,
       "tag": "0004_session_search",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792212261411,
+      "tag": "0005_drop_agent_memory",
+      "breakpoints": true
     }
   ]
 }

@@ -53,19 +53,6 @@ export const memoryTool = defineTool({
   },
 });
 
-/** Older name kept so agents created before the memory tool keep working. */
-export const rememberTool = defineTool({
-  name: "remember",
-  description: "Save one short note to your memory (same as memory with target \"memory\" and action \"add\").",
-  category: "write",
-  input: z.object({ note: z.string().trim().min(3).max(300) }),
-  risk: () => "safe",
-  describe: (i) => `remember: ${i.note}`,
-  async execute(i, ctx) {
-    return applyHere(ctx, "memory", [{ action: "add", content: i.note }]);
-  },
-});
-
 export const sessionSearchTool = defineTool({
   name: "session_search",
   description:

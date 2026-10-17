@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import {
@@ -12,7 +12,7 @@ import {
   type MemoryTarget,
 } from "@agent-office/shared";
 import type { Db } from "./db/client.ts";
-import { agentMemory, proposals, settings } from "./db/schema.ts";
+import { proposals, settings } from "./db/schema.ts";
 import type { EventStore } from "./events.ts";
 import { HttpError, newId } from "./repo.ts";
 
@@ -26,6 +26,18 @@ export interface SkillRecord {
   description: string;
   content: string;
 }
+
+export interface SkillUsage {
+  /** Runs that opened the skill with skill_view. */
+  runs: number;
+  last_used_at: string | null;
+  /** Of those runs: failed, or a draft from it was rejected. */
+  bad_runs: number;
+  /** Why it may be worth deleting, or null. */
+  stale: string | null;
+}
+
+const STALE_AFTER_MS = 60 * 24 * 60 * 60 * 1000;
 
 export interface Proposal {
   id: string;
@@ -112,23 +124,6 @@ export class Learning {
     return r.entries;
   }
 
-  /** Before Phase 4.5 agents saved free notes in agent_memory: fold the newest into the bounded store once. */
-  migrateOldNotes(): void {
-    const rows = this.db.select().from(agentMemory).where(eq(agentMemory.kind, "note")).orderBy(desc(agentMemory.created_at)).all();
-    if (!rows.length) return;
-    const byAgent = new Map<string, string[]>();
-    for (const r of rows) byAgent.set(r.agent_id, [...(byAgent.get(r.agent_id) ?? []), r.content]);
-    for (const [agentId, notes] of byAgent) {
-      let entries = this.entries("memory", agentId);
-      for (const note of notes) {
-        const r = applyMemoryOps(entries, [{ action: "add", content: note }], MEMORY_LIMITS.memory);
-        if (r.ok) entries = r.entries;
-      }
-      this.#set(memKey("memory", agentId), entries);
-    }
-    this.db.delete(agentMemory).where(eq(agentMemory.kind, "note")).run();
-  }
-
   // ---------------------------------------------------------------- skills
 
   #skillFile(name: string) {
@@ -152,6 +147,38 @@ export class Learning {
       }
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * How each skill is doing, from the events we already keep: runs that opened it with
+   * skill_view, when it was last used, and how many of those runs failed or had a draft
+   * rejected. `stale` says why the owner might want to delete it.
+   */
+  skillsWithUsage(now = Date.now()): (SkillRecord & { usage: SkillUsage })[] {
+    const rows = this.#sqlite()
+      .query(
+        `WITH uses AS (
+           SELECT json_extract(payload, '$.args.name') AS name, run_id, MAX(ts) AS ts
+           FROM events
+           WHERE type = 'agent.tool_call' AND json_extract(payload, '$.tool') = 'skill_view' AND run_id IS NOT NULL
+           GROUP BY name, run_id)
+         SELECT u.name AS name, COUNT(*) AS runs, MAX(u.ts) AS last_used_at,
+           SUM(CASE WHEN r.status = 'failed'
+                 OR EXISTS (SELECT 1 FROM content_drafts d WHERE d.run_id = u.run_id AND d.status = 'rejected')
+               THEN 1 ELSE 0 END) AS bad_runs
+         FROM uses u LEFT JOIN runs r ON r.id = u.run_id
+         GROUP BY u.name`,
+      )
+      .all() as { name: string; runs: number; last_used_at: string; bad_runs: number }[];
+    const byName = new Map(rows.map((r) => [r.name, r]));
+    return this.skills().map((s) => {
+      const u = byName.get(s.name);
+      const since = u?.last_used_at ? Date.parse(u.last_used_at) : statSync(join(this.skillsDir, s.name, "SKILL.md")).mtimeMs;
+      const usage: SkillUsage = { runs: u?.runs ?? 0, last_used_at: u?.last_used_at ?? null, bad_runs: u?.bad_runs ?? 0, stale: null };
+      if (now - since > STALE_AFTER_MS) usage.stale = u ? "not used in 60 days" : "never used in 60 days";
+      else if (usage.runs >= 3 && usage.bad_runs / usage.runs >= 0.5) usage.stale = "most runs that used it failed or had a draft rejected";
+      return { ...s, usage };
+    });
   }
 
   skill(name: string): SkillRecord | null {

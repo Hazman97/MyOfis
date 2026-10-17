@@ -29,6 +29,7 @@ import { hashToken, keyHint, normalizeCode, pairingCode, randomToken } from "./c
 import { agents, approvals, jobs, pairingCodes, projects, providers, runners, runs, schedules } from "./db/schema.ts";
 import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
+import { searchWeb } from "./websearch.ts";
 import type { Integrations } from "./integrations.ts";
 import type { TelegramBot } from "./telegram.ts";
 import {
@@ -208,6 +209,22 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ results: hits });
   });
 
+  /** Runner asks for a web search (web_search tool). The API key never leaves the hub. */
+  const webSearchLimit = limiter(60, 60_000);
+  app.post("/api/runner/web-search", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const body = z.object({ run_id: z.string(), query: z.string().min(2).max(400), count: z.number().int().min(1).max(10).default(5) }).parse(await c.req.json());
+    const run = getRun(db, body.run_id);
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+    if (!webSearchLimit()) throw new HttpError(429, "too many web searches, wait a minute");
+    const cfg = integrations.webSearch.config();
+    if (!cfg) throw new HttpError(400, "web search is not set up: the owner adds a Brave or Tavily key in Settings → Integrations");
+    return c.json({ results: await searchWeb(cfg, body.query, body.count, hub.config.webSearchApiBase) });
+  });
+
   // ------------------------------------------------------------ owner only
 
   const api = new Hono();
@@ -234,7 +251,20 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
 
   // integrations (Gitea). The token is write-only, like provider keys.
-  api.get("/settings/integrations", (c) => c.json({ gitea: integrations.giteaPublic(), telegram: integrations.telegramPublic() }));
+  api.get("/settings/integrations", (c) =>
+    c.json({ gitea: integrations.giteaPublic(), telegram: integrations.telegramPublic(), web_search: integrations.webSearch.public() }),
+  );
+  api.put("/settings/integrations/web-search", async (c) => c.json({ web_search: integrations.webSearch.set(await c.req.json()) }));
+  api.post("/settings/integrations/web-search/test", async (c) => {
+    const cfg = integrations.webSearch.config();
+    if (!cfg) throw new HttpError(400, "add an API key first");
+    try {
+      const results = await searchWeb(cfg, "sewa kamera Kuala Lumpur", 3, hub.config.webSearchApiBase);
+      return c.json({ ok: true, results });
+    } catch (err) {
+      return c.json({ ok: false, error: (err as Error).message });
+    }
+  });
   api.put("/settings/integrations/telegram", async (c) => c.json({ telegram: integrations.setTelegram(await c.req.json()) }));
   api.post("/settings/integrations/telegram/test", async (c) => {
     try {
@@ -339,8 +369,12 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ write_approval: learning.writeApproval });
   });
 
+
+  // nightly backups (data/backups/<date>/): list them, or make one now
+  api.get("/backups", (c) => c.json({ backups: hub.backups.list(), dir: hub.backups.dir }));
+  api.post("/backups", (c) => c.json({ backup: hub.backups.run() }, 201));
   // skills (agentskills.io SKILL.md, the format Hermes uses) and proposals waiting for the owner
-  api.get("/skills", (c) => c.json({ skills: learning.skills() }));
+  api.get("/skills", (c) => c.json({ skills: learning.skillsWithUsage() }));
   api.post("/skills", async (c) => {
     const { content } = z.object({ content: z.string().min(10).max(MAX_SKILL_CHARS) }).parse(await c.req.json());
     return c.json({ skill: learning.writeSkill(content) }, 201);

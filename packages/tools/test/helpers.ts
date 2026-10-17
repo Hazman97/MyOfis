@@ -50,6 +50,8 @@ export function makeCtx(
     skills: [],
     proposeSkill: () => {},
     searchSessions: async () => [],
+    webSearch: async () => [],
+    consult: async () => ({ ok: false, answer: "", error: "no hub in tests" }),
   };
   return { ctx, events, approvals, handoffs, uploads, drafts, features };
 }

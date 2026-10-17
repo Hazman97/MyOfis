@@ -9,6 +9,7 @@ import ConfirmButton from "../ConfirmButton.vue";
 import EventTimeline from "../EventTimeline.vue";
 import SidePanel from "../SidePanel.vue";
 import MemoryStores from "./MemoryStores.vue";
+import AgentPrefs from "./AgentPrefs.vue";
 import StatusBadge from "../StatusBadge.vue";
 import { api, type Approval } from "../../api/http.ts";
 import { useOffice } from "../../stores/office.ts";
@@ -145,6 +146,8 @@ const togglePause = () =>
           <div class="h-full rounded-full" :class="budgetPct > 85 ? 'bg-signal' : 'bg-accent'" :style="{ width: `${budgetPct}%` }" />
         </div>
       </section>
+
+      <AgentPrefs v-if="agent" :agent="agent" />
 
       <MemoryStores :agent-id="agentId" :reload-key="view?.current_run_id" />
 

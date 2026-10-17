@@ -2,10 +2,11 @@ import { CONTENT_TOOLS, addFeatureNoteTool } from "./content.ts";
 import { editFileTool, listDirTool, readFileTool, writeFileTool } from "./fs.ts";
 import { GIT_TOOLS } from "./git.ts";
 import { GITEA_TOOLS } from "./gitea.ts";
-import { handoffTool } from "./handoff.ts";
-import { LEARNING_TOOLS, rememberTool } from "./memory.ts";
+import { consultTool, handoffTool } from "./handoff.ts";
+import { LEARNING_TOOLS } from "./memory.ts";
 import { runCommandTool } from "./shell.ts";
 import { WEB_TOOLS } from "./web.ts";
+import { RESEARCH_TOOLS } from "./research.ts";
 import type { ToolDef } from "./types.ts";
 
 export * from "./types.ts";
@@ -14,6 +15,7 @@ export { runTool, sanitizeArgs } from "./run.ts";
 export { execArgv } from "./shell.ts";
 export { GiteaClient } from "./gitea.ts";
 export { checkUrl } from "./web.ts";
+export { htmlToText, isPrivateAddress } from "./research.ts";
 export { gitDefaultBranch, giteaRepoOf } from "./git.ts";
 
 /** Every tool an agent can be granted, by name. Agents list the names they may use in `agents.tools`. */
@@ -27,11 +29,12 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     ...GIT_TOOLS,
     ...GITEA_TOOLS,
     handoffTool,
+    consultTool,
     ...WEB_TOOLS,
     ...CONTENT_TOOLS,
     addFeatureNoteTool,
-    rememberTool,
     ...LEARNING_TOOLS,
+    ...RESEARCH_TOOLS,
   ].map((t) => [t.name, t as unknown as ToolDef]),
 );
 

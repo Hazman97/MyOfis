@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { RiskLevel, ToolCategory } from "@agent-office/shared";
+import { preferencesPrompt } from "@agent-office/shared";
 import { TOOL_REGISTRY, giteaRepoOf, gitDefaultBranch, runTool, sanitizeArgs } from "@agent-office/tools";
 import { SAFETY_PREAMBLE, projectsNote } from "../runtimes/aiSdk.ts";
 import { MessageStreamer, jobText } from "../runtimes/text.ts";
@@ -106,6 +107,7 @@ export const opencodeRuntime: AgentRuntime = {
         agent.system_prompt,
         SAFETY_PREAMBLE,
         projectsNote(ctx),
+        preferencesPrompt(agent.config.preferences),
         "\n\n## How this run works",
         `- You are in a fresh clone of ${repoUrl}, on branch ${branch} (based on ${base}).`,
         "- Make the change, then run the project's tests and build. Fix what you break.",

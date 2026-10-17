@@ -310,7 +310,7 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
       <!-- Vertical Timeline -->
       <ol class="relative ml-3 space-y-5 border-l border-line pl-5">
         <li v-for="f in features" :key="f.id" class="relative group">
-          <span class="absolute -left-[27px] top-1.5 size-3 rounded-full border-2 border-surface bg-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+          <span class="absolute -left-6.75 top-1.5 size-3 rounded-full border-2 border-surface bg-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
           <div class="card p-3.5 space-y-2">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
               <span class="font-semibold text-sm text-fg">{{ f.title }}</span>
