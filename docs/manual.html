@@ -5,144 +5,1077 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>MyOfis · Manual Pengguna</title>
 <style>
+
   :root {
-    --bg: #f6f8f7; --surface: #ffffff; --surface-2: #eef2f0; --line: #dfe6e2; --fg: #14201b; --muted: #5b6b64; --faint: #8a9892;
-    --accent: #0f9d6b; --accent-soft: #e2f5ec; --signal: #b45309; --signal-soft: #fef3c7; --danger: #c0392b; --danger-soft: #fdecea; --info: #2563eb; --info-soft: #e8f0fe;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-2: #f1f5f9;
+    --surface-3: #e2e8f0;
+    --line: #e2e8f0;
+    --line-strong: #cbd5e1;
+    --fg: #0f172a;
+    --muted: #475569;
+    --faint: #94a3b8;
+    --accent: #0f9d6b;
+    --accent-hover: #0b8056;
+    --accent-soft: #ecfdf5;
+    --accent-line: #a7f3d0;
+    --signal: #d97706;
+    --signal-soft: #fffbeb;
+    --signal-line: #fde68a;
+    --danger: #dc2626;
+    --danger-soft: #fef2f2;
+    --danger-line: #fecaca;
+    --info: #2563eb;
+    --info-soft: #eff6ff;
+    --info-line: #bfdbfe;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #0b0f0d; --surface: #121815; --surface-2: #19211d; --line: #26302b; --fg: #e7efeb; --muted: #9aa9a2; --faint: #6f7d77;
-      --accent: #34d399; --accent-soft: #0f2a20; --signal: #f59e0b; --signal-soft: #2a2010; --danger: #f87171; --danger-soft: #2a1414; --info: #60a5fa; --info-soft: #111c2e;
+      --bg: #090d0b;
+      --surface: #101713;
+      --surface-2: #16201b;
+      --surface-3: #1f2d26;
+      --line: #22332a;
+      --line-strong: #2f4539;
+      --fg: #f1f5f3;
+      --muted: #9baea5;
+      --faint: #63776d;
+      --accent: #34d399;
+      --accent-hover: #4ade80;
+      --accent-soft: #0c291e;
+      --accent-line: #134e3a;
+      --signal: #fbbf24;
+      --signal-soft: #281d08;
+      --signal-line: #4d380f;
+      --danger: #f87171;
+      --danger-soft: #2d1212;
+      --danger-line: #5a2222;
+      --info: #60a5fa;
+      --info-soft: #0e1d33;
+      --info-line: #1d3557;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
     }
   }
   :root[data-theme="dark"] {
-    --bg: #0b0f0d; --surface: #121815; --surface-2: #19211d; --line: #26302b; --fg: #e7efeb; --muted: #9aa9a2; --faint: #6f7d77;
-    --accent: #34d399; --accent-soft: #0f2a20; --signal: #f59e0b; --signal-soft: #2a2010; --danger: #f87171; --danger-soft: #2a1414; --info: #60a5fa; --info-soft: #111c2e;
+    --bg: #090d0b;
+    --surface: #101713;
+    --surface-2: #16201b;
+    --surface-3: #1f2d26;
+    --line: #22332a;
+    --line-strong: #2f4539;
+    --fg: #f1f5f3;
+    --muted: #9baea5;
+    --faint: #63776d;
+    --accent: #34d399;
+    --accent-hover: #4ade80;
+    --accent-soft: #0c291e;
+    --accent-line: #134e3a;
+    --signal: #fbbf24;
+    --signal-soft: #281d08;
+    --signal-line: #4d380f;
+    --danger: #f87171;
+    --danger-soft: #2d1212;
+    --danger-line: #5a2222;
+    --info: #60a5fa;
+    --info-soft: #0e1d33;
+    --info-line: #1d3557;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
   }
+
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  a { color: var(--accent); }
-  code, kbd { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 0.05em 0.35em; }
-  .layout { display: grid; grid-template-columns: 290px 1fr; min-height: 100vh; }
-  nav.toc { position: sticky; top: 0; height: 100vh; overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface); padding: 20px 14px 40px; }
-  .brand { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
-  .logo { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 800; }
-  .brand b { display: block; font-size: 15px; } .brand span { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
-  #q { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font-size: 14px; margin-bottom: 10px; }
-  .toc .grp { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin: 14px 6px 4px; }
-  .toc a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 13.5px; }
-  .toc a:hover, .toc a.on { background: var(--accent-soft); color: var(--accent); }
-  .theme { margin-top: 16px; width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--fg); cursor: pointer; }
-  main { padding: 28px 40px 80px; max-width: 980px; min-width: 0; }
-  .hero { background: linear-gradient(135deg, var(--accent-soft), var(--surface)); border: 1px solid var(--line); border-radius: 18px; padding: 28px; margin-bottom: 28px; }
-  .hero h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: -0.02em; }
-  .hero p { margin: 0; color: var(--muted); max-width: 70ch; }
-  .hero img { width: 100%; border-radius: 12px; border: 1px solid var(--line); margin-top: 18px; image-rendering: pixelated; }
-  section { margin: 40px 0; }
-  section > h2 { font-size: 22px; letter-spacing: -0.01em; margin: 0 0 4px; display: flex; gap: 10px; align-items: baseline; }
-  section > h2 .n { font-family: var(--mono); font-size: 12px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 2px 7px; }
-  section > .lede { color: var(--muted); margin: 0 0 14px; }
-  h3 { font-size: 16px; margin: 22px 0 6px; }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 12px 0; }
-  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .agent { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-  .agent h4 { margin: 0; font-size: 15px; } .agent .role { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-  .chip { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; background: var(--surface-2); color: var(--muted); }
-  .chip.ok { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
-  .chip.rv { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 40%, transparent); }
-  .chip.dg { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 10px 0; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); font-weight: 600; }
-  .note, .warn, .tip, .danger { border-radius: 12px; padding: 11px 14px; margin: 12px 0; font-size: 14px; }
-  .tip { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
-  .note { background: var(--info-soft); border: 1px solid color-mix(in srgb, var(--info) 30%, transparent); }
-  .warn { background: var(--signal-soft); border: 1px solid color-mix(in srgb, var(--signal) 35%, transparent); }
-  .danger { background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); }
-  ol.steps { counter-reset: s; list-style: none; padding: 0; }
-  ol.steps > li { counter-increment: s; position: relative; padding: 2px 0 10px 40px; }
-  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 27px; height: 27px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
-  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13.5px; margin: 10px 0; }
-  .flow span { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; }
+  html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration: none; transition: color 0.15s ease; }
+  a:hover { text-decoration: underline; }
+  code, kbd {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.1em 0.4em;
+    color: var(--fg);
+  }
+  kbd {
+    box-shadow: 0 1px 0 var(--line-strong);
+    background: var(--surface);
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 310px 1fr;
+    min-height: 100vh;
+  }
+
+  /* Sidebar */
+  nav.toc {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
+    padding: 24px 16px 48px;
+    display: flex;
+    flex-direction: column;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  nav.toc::-webkit-scrollbar { width: 5px; }
+  nav.toc::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+  .brand {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 18px;
+    padding: 0 4px;
+  }
+  .logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 18px;
+    box-shadow: var(--shadow-sm);
+  }
+  .brand b { display: block; font-size: 16px; font-weight: 700; color: var(--fg); line-height: 1.2; }
+  .brand span { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+
+  .search-wrap {
+    position: relative;
+    margin-bottom: 16px;
+  }
+  .search-icon {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--faint);
+    pointer-events: none;
+    display: flex;
+  }
+  #q {
+    width: 100%;
+    height: 40px;
+    padding: 8px 12px 8px 36px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--fg);
+    font-size: 13.5px;
+    outline: none;
+    transition: all 0.15s ease;
+  }
+  #q:focus {
+    border-color: var(--accent);
+    background: var(--surface);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+  #q::placeholder { color: var(--faint); }
+
+  .menu-btn { display: none; }
+
+  .links {
+    flex: 1;
+  }
+  .toc .grp {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 20px 8px 6px;
+  }
+  .toc .grp-icon {
+    display: inline-flex;
+    color: var(--faint);
+  }
+  .toc a {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.35;
+    transition: all 0.15s ease;
+    min-height: 38px;
+  }
+  .toc a:hover {
+    background: var(--surface-2);
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .toc a.on {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .toc a .nav-icon {
+    display: inline-flex;
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+  .toc a:hover .nav-icon, .toc a.on .nav-icon {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  .theme-btn {
+    margin-top: 18px;
+    width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.15s ease;
+  }
+  .theme-btn:hover {
+    background: var(--surface-3);
+    border-color: var(--line-strong);
+  }
+
+  /* Main Content */
+  main {
+    padding: 36px 48px 100px;
+    max-width: 980px;
+    min-width: 0;
+  }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 80%, var(--surface)), var(--surface));
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 32px 36px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 12px;
+    margin-bottom: 14px;
+  }
+  .hero h1 {
+    margin: 0 0 10px;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    color: var(--fg);
+    line-height: 1.2;
+  }
+  .hero p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 15.5px;
+    max-width: 72ch;
+    line-height: 1.6;
+  }
+  .hero img {
+    width: 100%;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    margin-top: 22px;
+    box-shadow: var(--shadow-md);
+    image-rendering: pixelated;
+    display: block;
+  }
+
+  /* Quick Start Card Row */
+  .quickstart-box {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 24px;
+    margin-bottom: 40px;
+    box-shadow: var(--shadow-sm);
+  }
+  .quickstart-header {
+    margin-bottom: 16px;
+  }
+  .quickstart-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--fg);
+    margin-bottom: 4px;
+  }
+  .quickstart-title svg { color: var(--accent); }
+  .quickstart-desc {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+  .quickstart-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .qs-card {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    position: relative;
+  }
+  .qs-card:hover {
+    border-color: var(--accent);
+    background: var(--surface);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    text-decoration: none;
+  }
+  .qs-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+  .qs-icon {
+    font-size: 22px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .qs-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--fg);
+    margin-bottom: 4px;
+  }
+  .qs-text {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.45;
+    flex: 1;
+    margin-bottom: 10px;
+  }
+  .qs-link {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Section Styling */
+  section {
+    margin: 48px 0;
+    scroll-margin-top: 32px;
+  }
+  section > h2 {
+    font-size: 23px;
+    font-weight: 750;
+    letter-spacing: -0.015em;
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--fg);
+  }
+  section > h2 .n {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    border-radius: 6px;
+    padding: 2px 7px;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+  section > h2 .sec-icon {
+    display: inline-flex;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  section > .lede {
+    color: var(--muted);
+    font-size: 15.5px;
+    margin: 0 0 18px;
+    line-height: 1.6;
+  }
+  h3 {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 26px 0 10px;
+    color: var(--fg);
+  }
+  h4 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    color: var(--fg);
+  }
+
+  /* Cards & Grids */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin: 12px 0;
+    box-shadow: var(--shadow-sm);
+  }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+
+  /* Agent Cards */
+  .agent-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .agent-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .agent-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    font-size: 24px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  .agent-card-info h4 {
+    margin: 0;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--fg);
+  }
+  .agent-card-info .role {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+  .agent-desc {
+    font-size: 13.5px;
+    color: var(--fg);
+    line-height: 1.5;
+  }
+  .agent-usecase {
+    font-size: 12.5px;
+    color: var(--muted);
+    background: var(--surface-2);
+    border-left: 3px solid var(--accent);
+    padding: 6px 10px;
+    border-radius: 0 6px 6px 0;
+    line-height: 1.45;
+  }
+  .agent-usecase b { color: var(--fg); }
+
+  /* Chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px 9px;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .chip.ok {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+    font-weight: 600;
+  }
+  .chip.rv {
+    color: var(--signal);
+    background: var(--signal-soft);
+    border-color: var(--signal-line);
+    font-weight: 600;
+  }
+  .chip.dg {
+    color: var(--danger);
+    background: var(--danger-soft);
+    border-color: var(--danger-line);
+    font-weight: 600;
+  }
+
+  /* Table Container & Sticky Header */
+  .table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 14px 0;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    text-align: left;
+  }
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    color: var(--fg);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--surface-2) 45%, var(--surface));
+  }
+  tr:hover td {
+    background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface)) !important;
+  }
+
+  /* Callouts */
+  .callout, .tip, .note, .warn, .danger {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border-radius: 12px;
+    padding: 13px 16px;
+    margin: 16px 0;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .callout-icon-wrap {
+    flex-shrink: 0;
+    display: flex;
+    margin-top: 2px;
+  }
+  .callout-body { flex: 1; }
+
+  .tip {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    border-left: 4px solid var(--accent);
+    color: var(--fg);
+  }
+  .tip .callout-icon-wrap { color: var(--accent); }
+
+  .note {
+    background: var(--info-soft);
+    border: 1px solid var(--info-line);
+    border-left: 4px solid var(--info);
+    color: var(--fg);
+  }
+  .note .callout-icon-wrap { color: var(--info); }
+
+  .warn {
+    background: var(--signal-soft);
+    border: 1px solid var(--signal-line);
+    border-left: 4px solid var(--signal);
+    color: var(--fg);
+  }
+  .warn .callout-icon-wrap { color: var(--signal); }
+
+  .danger {
+    background: var(--danger-soft);
+    border: 1px solid var(--danger-line);
+    border-left: 4px solid var(--danger);
+    color: var(--fg);
+  }
+  .danger .callout-icon-wrap { color: var(--danger); }
+
+  /* Steps List */
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 16px 0; }
+  ol.steps > li {
+    counter-increment: s;
+    position: relative;
+    padding: 2px 0 14px 44px;
+    line-height: 1.55;
+  }
+  ol.steps > li::before {
+    content: counter(s);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    display: grid;
+    place-items: center;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Diagrams */
+  .diagram-wrap {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px;
+    margin: 22px 0;
+    box-shadow: var(--shadow-sm);
+  }
+  .diagram-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--fg);
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .diagram-title .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px 8px;
+    color: var(--muted);
+  }
+  .diagram-svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Mock Telegram Chat */
+  .chat-mock {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    margin: 18px 0;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .chat-mock-header {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .chat-mock-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color: #fff;
+    font-size: 18px;
+    display: grid;
+    place-items: center;
+  }
+  .chat-mock-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chat-mock-bot-tag {
+    font-size: 10px;
+    font-weight: 700;
+    background: var(--info-soft);
+    color: var(--info);
+    border: 1px solid var(--info-line);
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
+  .chat-mock-sub {
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .chat-mock-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: color-mix(in srgb, var(--surface-2) 30%, var(--surface));
+  }
+  .chat-bubble {
+    max-width: 82%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    position: relative;
+  }
+  .chat-bubble.user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+  }
+  .chat-bubble.user code {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #ffffff;
+  }
+  .chat-bubble.bot {
+    align-self: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    border-bottom-left-radius: 4px;
+    box-shadow: var(--shadow-sm);
+  }
+  .chat-muted { color: var(--muted); font-size: 12px; }
+  .chat-time {
+    font-size: 10px;
+    opacity: 0.65;
+    text-align: right;
+    margin-top: 4px;
+  }
+  .chat-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .chat-btn {
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    cursor: default;
+  }
+  .chat-btn.approve {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: var(--accent-line);
+  }
+  .chat-btn.reject {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: var(--danger-line);
+  }
+
+  /* Flow inline pipeline */
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    font-size: 13.5px;
+    margin: 14px 0;
+  }
+  .flow span {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 11px;
+    font-weight: 500;
+    box-shadow: var(--shadow-sm);
+  }
   .flow b { color: var(--accent); }
+
+  /* See Also Footer */
+  .see-also {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .see-also-label {
+    color: var(--faint);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+  .see-also-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+  .see-also-pill:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+    color: var(--accent);
+    text-decoration: none;
+  }
+
   .muted { color: var(--muted); }
   .hidden { display: none !important; }
-  footer { color: var(--faint); font-size: 12.5px; margin-top: 60px; border-top: 1px solid var(--line); padding-top: 16px; }
-  .menu-btn { display: none; }
+
+  footer {
+    color: var(--faint);
+    font-size: 13px;
+    margin-top: 70px;
+    border-top: 1px solid var(--line);
+    padding-top: 24px;
+    line-height: 1.6;
+  }
+
+  /* Responsive Mobile (Max 900px, tested down to 390px) */
   @media (max-width: 900px) {
     .layout { grid-template-columns: minmax(0, 1fr); }
-    nav.toc { position: sticky; top: 0; z-index: 5; height: auto; max-height: 100vh; border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 16px; }
-    nav.toc .links { display: none; }
-    nav.toc.open .links { display: block; max-height: 70vh; overflow-y: auto; }
+    nav.toc {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      height: auto;
+      max-height: 100vh;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 12px 16px;
+      box-shadow: var(--shadow-sm);
+    }
     .brand { margin-bottom: 8px; }
-    .menu-btn { display: block; width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--fg); margin-bottom: 8px; cursor: pointer; }
-    main { padding: 20px 16px 60px; }
+    .menu-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      min-height: 42px;
+      padding: 9px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--fg);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    nav.toc .links { display: none; }
+    nav.toc.open .links {
+      display: block;
+      max-height: 72vh;
+      overflow-y: auto;
+      padding-top: 8px;
+    }
+    nav.toc a {
+      min-height: 42px;
+      padding: 9px 12px;
+      font-size: 14px;
+    }
+    main { padding: 20px 16px 80px; }
+    .hero { padding: 22px 20px; }
+    .hero h1 { font-size: 26px; }
+    .quickstart-grid { grid-template-columns: 1fr; }
     .grid2, .grid3 { grid-template-columns: 1fr; }
-    table { display: block; overflow-x: auto; }
-    .hero { padding: 18px; }
-    .hero h1 { font-size: 24px; }
   }
+
+  /* Print Stylesheet */
+  @media print {
+    body {
+      background: #ffffff !important;
+      color: #000000 !important;
+      font-size: 11pt;
+      line-height: 1.5;
+    }
+    .layout { display: block !important; }
+    nav.toc, .menu-btn, #theme, #q, .quickstart-box, .chat-actions {
+      display: none !important;
+    }
+    main {
+      padding: 0 !important;
+      max-width: 100% !important;
+    }
+    .hero {
+      background: none !important;
+      border: 1px solid #ccc !important;
+      box-shadow: none !important;
+      padding: 16pt !important;
+      page-break-after: avoid;
+    }
+    section {
+      page-break-inside: avoid;
+      margin: 20pt 0 !important;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 14pt;
+    }
+    .card, .agent-card, .diagram-wrap, .table-wrap, .chat-mock {
+      page-break-inside: avoid;
+      box-shadow: none !important;
+      border: 1px solid #ddd !important;
+    }
+    a {
+      color: #000000 !important;
+      text-decoration: underline;
+    }
+    a[href^="http"]::after {
+      content: " (" attr(href) ")";
+      font-size: 0.85em;
+      font-family: var(--mono);
+      word-break: break-all;
+    }
+    .see-also { display: none !important; }
+  }
+
 </style>
 </head>
 <body>
 <div class="layout">
 <nav class="toc" aria-label="Isi kandungan">
-  <div class="brand"><div class="logo">M</div><div><b>MyOfis</b><span>Manual pengguna</span></div></div>
-  <input id="q" type="search" placeholder="Cari dalam manual… (cth: telegram)" aria-label="Cari" />
-  <button class="menu-btn" id="menu" type="button" aria-expanded="false">☰ Isi kandungan</button>
-  <div class="links" id="links">
-  <div class="grp">Mula</div>
-  <a href="#apa">1. Apa itu MyOfis</a>
-  <a href="#masuk">2. Cara masuk</a>
-  <a href="#peta">3. Peta menu</a>
-  <a href="#rutin">4. Rutin harian</a>
-  <div class="grp">Pejabat & agent</div>
-  <a href="#office">5. Pejabat pixel</a>
-  <a href="#panel">6. Panel agent</a>
-  <a href="#agents">7. Semua agent</a>
-  <a href="#chat">8. Chat</a>
-  <div class="grp">Kerja</div>
-  <a href="#publisher">9. Publisher → website</a>
-  <a href="#drafts">10. Drafts (inbox)</a>
-  <a href="#projects">11. Projects & brief</a>
-  <a href="#marketing">12. Marketing</a>
-  <a href="#kerani">13. Kerani (tempahan)</a>
-  <a href="#researcher">14. Researcher (web)</a>
-  <a href="#facebook">15. Media sosial</a>
-  <a href="#jobs">16. Jobs, runs & board</a>
-  <a href="#consult">17. Agent tanya agent</a>
-  <div class="grp">Belajar</div>
-  <a href="#memory">18. Memory</a>
-  <a href="#skills">19. Skills & Browse</a>
-  <a href="#prefs">20. How you like it</a>
-  <div class="grp">Kawalan</div>
-  <a href="#approvals">21. Approvals & keselamatan</a>
-  <a href="#telegram">22. Telegram</a>
-  <a href="#schedules">23. Schedules</a>
-  <a href="#budget">24. Budget & kos</a>
-  <a href="#pause">25. Pause all</a>
-  <a href="#replay">26. Replay</a>
-  <div class="grp">Sistem</div>
-  <a href="#runners">27. Runners & PC lain</a>
-  <a href="#settings">28. Settings</a>
-  <a href="#backup">29. Backup & restore</a>
-  <a href="#hermes">30. Hermes Agent</a>
-  <a href="#searxng">31. SearXNG</a>
-  <a href="#gemini">32. Kerja dengan Gemini</a>
-  <a href="#maint">33. Maintenance & arahan</a>
-  <a href="#masalah">34. Kalau ada masalah</a>
-  <a href="#rahsia">35. Di mana rahsia disimpan</a>
-  <a href="#istilah">36. Istilah A–Z</a>
+  <div class="brand">
+    <div class="logo">M</div>
+    <div><b>MyOfis</b><span>Manual pengguna</span></div>
   </div>
-  <button class="theme" id="theme" type="button">🌓 Tukar terang / gelap</button>
+  <div class="search-wrap">
+    <span class="search-icon"><svg class="icon" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg></span>
+    <input id="q" type="search" placeholder="Cari dalam manual… (cth: telegram)" aria-label="Cari" />
+  </div>
+  <button class="menu-btn" id="menu" type="button" aria-expanded="false">
+    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+    <span>Isi kandungan</span>
+  </button>
+  <div class="links" id="links">
+  <div class="grp"><svg class="icon grp-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg><span>Mula</span></div>
+  <a href="#apa"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg><span>01. Apa itu MyOfis</span></a>
+  <a href="#masuk"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg><span>02. Cara masuk</span></a>
+  <a href="#peta"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg><span>03. Peta menu</span></a>
+  <a href="#rutin"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg><span>04. Rutin harian</span></a>
+  <div class="grp"><svg class="icon grp-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="8" x2="16" y1="10" y2="10"/><line x1="8" x2="16" y1="14" y2="14"/><line x1="8" x2="16" y1="18" y2="18"/></svg><span>Pejabat & agent</span></div>
+  <a href="#office"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg><span>05. Pejabat pixel</span></a>
+  <a href="#panel"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg><span>06. Panel agent</span></a>
+  <a href="#agents"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>07. Semua agent</span></a>
+  <a href="#chat"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>08. Chat</span></a>
+  <div class="grp"><svg class="icon grp-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg><span>Kerja</span></div>
+  <a href="#publisher"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><span>09. Publisher → website</span></a>
+  <a href="#drafts"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span>10. Drafts (inbox)</span></a>
+  <a href="#projects"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>11. Projects & brief</span></a>
+  <a href="#marketing"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><span>12. Marketing</span></a>
+  <a href="#kerani"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v12"/></svg><span>13. Kerani (tempahan)</span></a>
+  <a href="#researcher"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg><span>14. Researcher (web)</span></a>
+  <a href="#facebook"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg><span>15. Media sosial</span></a>
+  <a href="#jobs"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg><span>16. Jobs, runs & board</span></a>
+  <a href="#consult"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg><span>17. Agent tanya agent</span></a>
+  <div class="grp"><svg class="icon grp-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg><span>Belajar</span></div>
+  <a href="#memory"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-5.04Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-5.04Z"/></svg><span>18. Memory</span></a>
+  <a href="#skills"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>19. Skills & Browse</span></a>
+  <a href="#prefs"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/></svg><span>20. How you like it</span></a>
+  <div class="grp"><svg class="icon grp-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Kawalan</span></div>
+  <a href="#approvals"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>21. Approvals & keselamatan</span></a>
+  <a href="#telegram"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><span>22. Telegram</span></a>
+  <a href="#schedules"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>23. Schedules</span></a>
+  <a href="#budget"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></svg><span>24. Budget & kos</span></a>
+  <a href="#pause"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="10" x2="10" y1="15" y2="9"/><line x1="14" x2="14" y1="15" y2="9"/></svg><span>25. Pause all</span></a>
+  <a href="#replay"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>26. Replay</span></a>
+  <div class="grp"><svg class="icon grp-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg><span>Sistem</span></div>
+  <a href="#runners"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg><span>27. Runners & PC lain</span></a>
+  <a href="#settings"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>28. Settings</span></a>
+  <a href="#backup"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg><span>29. Backup & restore</span></a>
+  <a href="#hermes"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="12" x="3" y="6" rx="2"/><path d="M12 2v4"/><line x1="8" x2="8.01" y1="12" y2="12"/><line x1="16" x2="16.01" y1="12" y2="12"/></svg><span>30. Hermes Agent</span></a>
+  <a href="#searxng"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span>31. SearXNG</span></a>
+  <a href="#gemini"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>32. Kerja dengan Gemini</span></a>
+  <a href="#maint"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg><span>33. Maintenance & arahan</span></a>
+  <a href="#masalah"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg><span>34. Kalau ada masalah</span></a>
+  <a href="#rahsia"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>35. Di mana rahsia disimpan</span></a>
+  <a href="#istilah"><svg class="icon nav-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>36. Istilah A–Z</span></a>
+  </div>
+  <button class="theme-btn" id="theme" type="button">
+    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="5"/><line x1="12" x2="12" y1="1" y2="3"/><line x1="12" x2="12" y1="21" y2="23"/><line x1="4.22" x2="5.64" y1="4.22" y2="5.64"/><line x1="18.36" x2="19.78" y1="18.36" y2="19.78"/><line x1="1" x2="3" y1="12" y2="12"/><line x1="21" x2="23" y1="12" y2="12"/><line x1="4.22" x2="5.64" y1="19.78" y2="18.36"/><line x1="18.36" x2="19.78" y1="5.64" y2="4.22"/></svg>
+    <span>Tukar tema (Terang / Gelap)</span>
+  </button>
 </nav>
 
 <main>
 <div class="hero">
+  <div class="hero-tag"><span>Panduan Rasmi Pemilik</span></div>
   <h1>MyOfis: pejabat AI awak 🏢</h1>
   <p>
     Manual penuh untuk semua benda dalam MyOfis (Agent Office): setiap menu, agent, butang, setting dan aliran kerja. Baca dari atas sekali; lepas tu guna kotak
@@ -151,8 +1084,55 @@
   <img src="../maps/preview.png" alt="Pejabat pixel MyOfis" onerror="this.remove()" />
 </div>
 
+<div class="quickstart-box">
+  <div class="quickstart-header">
+    <div class="quickstart-title">
+      <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span>Mula dalam 5 minit</span>
+    </div>
+    <p class="quickstart-desc">Langkah pantas untuk mula menggunakan MyOfis hari ini sebagai pemilik:</p>
+  </div>
+  <div class="quickstart-grid">
+    <a href="#masuk" class="qs-card">
+      <div class="qs-badge">01</div>
+      <div class="qs-icon">🔑</div>
+      <div class="qs-title">Cara masuk</div>
+      <div class="qs-text">Login Cloudflare Access guna email <code>hazman5001@gmail.com</code> & kod 6 digit.</div>
+      <div class="qs-link">Buka panduan →</div>
+    </a>
+    <a href="#chat" class="qs-card">
+      <div class="qs-badge">02</div>
+      <div class="qs-icon">💬</div>
+      <div class="qs-title">Chat & Suara</div>
+      <div class="qs-text">Borak terus dengan agent pilihan, upload gambar situasi & gunakan input suara.</div>
+      <div class="qs-link">Buka panduan →</div>
+    </a>
+    <a href="#publisher" class="qs-card">
+      <div class="qs-badge">03</div>
+      <div class="qs-icon">📰</div>
+      <div class="qs-title">Publisher</div>
+      <div class="qs-text">Hantar poster & point info untuk draf artikel tournament ke website SmashPoint.</div>
+      <div class="qs-link">Buka panduan →</div>
+    </a>
+    <a href="#telegram" class="qs-card">
+      <div class="qs-badge">04</div>
+      <div class="qs-icon">📱</div>
+      <div class="qs-title">Telegram Bot</div>
+      <div class="qs-text">Telefon pejabat <code>@MyOfis_monmon_bot</code> untuk arahan & kelulusan pantas.</div>
+      <div class="qs-link">Buka panduan →</div>
+    </a>
+    <a href="#drafts" class="qs-card">
+      <div class="qs-badge">05</div>
+      <div class="qs-icon">📥</div>
+      <div class="qs-title">Drafts Inbox</div>
+      <div class="qs-text">Semua penulisan AI disaring di sini. Semak, sunting & luluskan sebelum live.</div>
+      <div class="qs-link">Buka panduan →</div>
+    </a>
+  </div>
+</div>
+
 <section id="apa">
-  <h2><span class="n">01</span>Apa itu MyOfis</h2>
+  <h2><span class="n">01</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg><span>Apa itu MyOfis</span></h2>
   <p class="lede">Satu "pejabat" berisi pekerja AI (agent) yang buat kerja sebenar untuk awak. Awak boss: awak bagi arahan, mereka buat, awak approve.</p>
   <div class="grid3">
     <div class="card"><b>🧑‍💼 Agent</b><br /><span class="muted">Pekerja AI. Setiap satu ada peranan, otak (model AI), tools dan watak pixel sendiri.</span></div>
@@ -160,7 +1140,8 @@
     <div class="card"><b>✅ Approval</b><br /><span class="muted">Benda berisiko (tulis fail, push code, ubah website) tunggu awak tekan Approve dulu.</span></div>
   </div>
   <h3>Bahagian sistem</h3>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Bahagian</th><th>Apa dia</th><th>Di mana</th></tr>
     <tr><td><b>Hub</b></td><td>Otak pusat: database, event, jadual, approval, Telegram, backup. Port 8788.</td><td>PC ni (<code>bun run dev</code>)</td></tr>
     <tr><td><b>Runner</b></td><td>Yang betul-betul jalankan agent dan tools. Boleh lebih dari satu PC.</td><td>PC ni (<code>bun run dev:runner</code>) + PC lain (pilihan)</td></tr>
@@ -168,24 +1149,92 @@
     <tr><td><b>Telegram bot</b></td><td>"Telefon pejabat": chat, approve, laporan.</td><td><code>@MyOfis_monmon_bot</code></td></tr>
     <tr><td><b>Worker SmashPoint</b></td><td>Pintu masuk ke website SmashPoint: publish/ubah post, baca tempahan, upload gambar.</td><td><code>smashpoint-api.hazman5001.workers.dev</code></td></tr>
   </table>
-  <div class="tip">💡 Semua yang berlaku disimpan sebagai <b>event</b>. Sebab tu pejabat, board dan replay sentiasa sama: semuanya baca dari event yang sama.</div>
-</section>
+</div>
 
+  <div class="diagram-wrap">
+  <div class="diagram-title"><span>Seni Bina Sistem MyOfis</span><span class="badge">Architecture Flow</span></div>
+  <svg class="diagram-svg" viewBox="0 0 820 400" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--muted)" />
+      </marker>
+    </defs>
+    <!-- Clients Row -->
+    <g transform="translate(110, 20)">
+      <rect width="260" height="60" rx="10" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="20" y="28" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="var(--fg)">💻 Web Browser</text>
+      <text x="20" y="46" font-family="var(--mono)" font-size="11" fill="var(--muted)">myofis.bijokdev.com</text>
+    </g>
+    <g transform="translate(450, 20)">
+      <rect width="260" height="60" rx="10" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="20" y="28" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="var(--fg)">📱 Telegram Bot</text>
+      <text x="20" y="46" font-family="var(--mono)" font-size="11" fill="var(--muted)">@MyOfis_monmon_bot</text>
+    </g>
+
+    <!-- Connectors to Hub -->
+    <path d="M 240 80 L 240 120 L 380 120 L 380 135" fill="none" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 580 80 L 580 120 L 440 120 L 440 135" fill="none" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Hub Central -->
+    <g transform="translate(180, 140)">
+      <rect width="460" height="95" rx="12" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="2"/>
+      <rect x="15" y="12" width="55" height="20" rx="4" fill="var(--accent-soft)" />
+      <text x="42" y="26" text-anchor="middle" font-family="var(--mono)" font-size="10" font-weight="700" fill="var(--accent)">:8788</text>
+      <text x="80" y="28" font-family="system-ui, sans-serif" font-size="15" font-weight="700" fill="var(--fg)">MyOfis Central Hub</text>
+      <text x="20" y="52" font-family="system-ui, sans-serif" font-size="12" fill="var(--muted)">Otak Pusat: SQLite DB, Event Store, Cron Scheduler & Approvals</text>
+      <text x="20" y="74" font-family="var(--mono)" font-size="11" fill="var(--accent)">bun run dev · Tunnel cloudflared → 127.0.0.1:8788</text>
+    </g>
+
+    <!-- Connectors Hub to Runners & Worker -->
+    <path d="M 320 235 L 320 270 L 240 270 L 240 285" fill="none" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 500 235 L 500 270 L 580 270 L 580 285" fill="none" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Runner & AI Stack (Left) -->
+    <g transform="translate(70, 290)">
+      <rect width="340" height="90" rx="10" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="16" y="26" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="var(--fg)">⚡ Runner (bun run dev:runner)</text>
+      <text x="16" y="46" font-family="system-ui, sans-serif" font-size="11.5" fill="var(--muted)">Menjalankan agent, tools, web search & OpenCode</text>
+      <line x1="16" y1="56" x2="324" y2="56" stroke="var(--line)" stroke-dasharray="3 3"/>
+      <text x="16" y="74" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600" fill="var(--accent)">🧠 AI: canopy-ai (vision) · OpenRouter · Gemini</text>
+    </g>
+
+    <!-- SmashPoint Worker Stack (Right) -->
+    <g transform="translate(450, 290)">
+      <rect width="320" height="90" rx="10" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="16" y="26" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="var(--fg)">☁️ Worker SmashPoint</text>
+      <text x="16" y="46" font-family="var(--mono)" font-size="10.5" fill="var(--muted)">smashpoint-api.hazman5001.workers.dev</text>
+      <line x1="16" y1="56" x2="304" y2="56" stroke="var(--line)" stroke-dasharray="3 3"/>
+      <text x="16" y="74" font-family="system-ui, sans-serif" font-size="11.5" fill="var(--muted)">Pintu Masuk: <b style="fill:var(--fg)">Firestore</b> (posts/) & <b style="fill:var(--fg)">Storage</b></text>
+    </g>
+  </svg>
+</div>
+
+  
+  <div class="callout tip"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></div><div class="callout-body">Semua yang berlaku disimpan sebagai <b>event</b>. Sebab tu pejabat, board dan replay sentiasa sama: semuanya baca dari event yang sama.</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#masuk" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg> 02. Cara masuk</a> <a href="#peta" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg> 03. Peta menu</a> <a href="#office" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 05. Pejabat pixel</a>
+  </div>
+</section>
 <section id="masuk">
-  <h2><span class="n">02</span>Cara masuk</h2>
+  <h2><span class="n">02</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg><span>Cara masuk</span></h2>
   <ol class="steps">
     <li>Buka <code>https://myofis.bijokdev.com</code> (PC atau phone).</li>
     <li>Cloudflare minta email: masukkan <code>hazman5001@gmail.com</code> → dapat kod 6 digit dalam email → masukkan.</li>
     <li>Siap. Login tahan lebih kurang seminggu. Tak perlu token lagi.</li>
   </ol>
-  <div class="warn">⚠️ <code>localhost:5180</code> dan <code>localhost:8788</code> <b>tak boleh login</b> (mod Cloudflare). Guna domain sahaja, kat PC ni pun.</div>
-  <div class="note">ℹ️ Domain ni hidup melalui tunnel <code>cloudflaretunnel</code> (Windows service) → <code>127.0.0.1:8788</code>. Kalau PC ni tutup, domain pun tak jalan.</div>
+  <div class="callout warn"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg></div><div class="callout-body"><code>localhost:5180</code> dan <code>localhost:8788</code> <b>tak boleh login</b> (mod Cloudflare). Guna domain sahaja, kat PC ni pun.</div></div>
+  <div class="callout note"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div><div class="callout-body">Domain ni hidup melalui tunnel <code>cloudflaretunnel</code> (Windows service) → <code>127.0.0.1:8788</code>. Kalau PC ni tutup, domain pun tak jalan.</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#apa" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg> 01. Apa itu MyOfis</a> <a href="#peta" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg> 03. Peta menu</a> <a href="#masalah" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg> 34. Kalau ada masalah</a>
+  </div>
 </section>
-
 <section id="peta">
-  <h2><span class="n">03</span>Peta menu</h2>
+  <h2><span class="n">03</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg><span>Peta menu</span></h2>
   <p class="lede">Sidebar kiri (desktop) atau bar bawah + "More" (phone). Nombor merah pada menu = benda menunggu awak.</p>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Kumpulan</th><th>Menu</th><th>Guna untuk</th></tr>
     <tr><td rowspan="4">Office</td><td><b>Office</b></td><td>Pejabat pixel (atau tukar ke <b>Board</b>: kad agent + kanban job).</td></tr>
     <tr><td><b>Chat</b></td><td>Borak dengan mana-mana agent; hantar gambar.</td></tr>
@@ -199,11 +1248,15 @@
     <tr><td rowspan="2">System</td><td><b>Runners</b></td><td>PC yang jalankan agent; "Connect a PC".</td></tr>
     <tr><td><b>Settings</b></td><td>AI providers + Integrations (Gitea, Telegram, Web search, Backups).</td></tr>
   </table>
+</div>
   <p>Bawah sidebar: <b>+ New job</b>, kos hari ni (<b>Today $</b>), runner online (<b>1/1</b>), <b>Pause all agents</b>, tukar tema (🌙/☀️), <b>Log out</b>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#office" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 05. Pejabat pixel</a> <a href="#agents" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 07. Semua agent</a> <a href="#settings" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 28. Settings</a>
+  </div>
 </section>
-
 <section id="rutin">
-  <h2><span class="n">04</span>Rutin harian (cadangan)</h2>
+  <h2><span class="n">04</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg><span>Rutin harian (cadangan)</span></h2>
   <div class="grid2">
     <div class="card"><b>🌅 Pagi</b><ul>
       <li>Telegram: laporan Kerani (tempahan hari ni, belum bayar, slot kosong) kalau jadual dihidupkan.</li>
@@ -220,13 +1273,17 @@
       <li>Chat → Researcher: "harga sewa X kat KL? bagi sumber".</li>
       <li>Coach untuk latih English (mic + Listen).</li></ul></div>
   </div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#kerani" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v12"/></svg> 13. Kerani (tempahan)</a> <a href="#publisher" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 09. Publisher</a> <a href="#telegram" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 22. Telegram</a>
+  </div>
 </section>
-
 <section id="office">
-  <h2><span class="n">05</span>Pejabat pixel</h2>
+  <h2><span class="n">05</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg><span>Pejabat pixel</span></h2>
   <p class="lede">Setiap agent ialah satu watak. Watak hanya <i>menunjuk</i> apa yang berlaku; ia tak pernah ubah kerja.</p>
   <h3>Kawalan</h3>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Buat</th><th>Hasil</th></tr>
     <tr><td>Seret (drag) kawasan kosong</td><td>Gerak pandangan (pan). Pandangan <b>kekal</b> walaupun skrin berubah saiz.</td></tr>
     <tr><td>Butang − / +</td><td>Zoom keluar / masuk (zoom pixel penuh supaya tajam).</td></tr>
@@ -235,8 +1292,10 @@
     <tr><td>Klik kawasan kosong</td><td>Tutup pilihan.</td></tr>
     <tr><td>Toggle <b>Office / Board</b></td><td>Tukar ke papan kad + kanban. Pilihan diingat dalam browser.</td></tr>
   </table>
+</div>
   <h3>Apa maksud pergerakan watak</h3>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Watak di…</th><th>Maksud</th></tr>
     <tr><td>Meja sendiri, menaip</td><td>Tulis / code / git / shell (skrin tunjuk code), atau browser (gelembung 🌐).</td></tr>
     <tr><td>Library (rak buku)</td><td>Cari web, baca dokumen/page, baca skill, baca tempahan.</td></tr>
@@ -248,12 +1307,17 @@
     <tr><td>Pantry</td><td>Tiada kerja (idle). 💤 kalau sistem di-pause.</td></tr>
     <tr><td>Keluar ikut pintu</td><td>Agent disabled, atau budget harian habis ("balik rumah").</td></tr>
   </table>
-  <div class="note">ℹ️ Gelembung atas kepala: 💭 berfikir · 🔍 cari · 📖 baca · 💬 bercakap · ✅ siap · ❗ tunggu approval. Bila tab browser tak aktif pejabat jalan 30 fps; bila tersorok ia berhenti (jimat bateri).</div>
+</div>
+  <div class="callout note"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div><div class="callout-body">Gelembung atas kepala: 💭 berfikir · 🔍 cari · 📖 baca · 💬 bercakap · ✅ siap · ❗ tunggu approval. Bila tab browser tak aktif pejabat jalan 30 fps; bila tersorok ia berhenti (jimat bateri).</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#panel" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg> 06. Panel agent</a> <a href="#jobs" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg> 16. Jobs, runs & Board</a> <a href="#replay" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> 26. Replay</a>
+  </div>
 </section>
-
 <section id="panel">
-  <h2><span class="n">06</span>Panel agent (klik watak)</h2>
-  <table>
+  <h2><span class="n">06</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg><span>Panel agent (klik watak)</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><th>Bahagian</th><th>Isi</th></tr>
     <tr><td>Kepala</td><td>Nama, peranan, status (idle / working / waiting / away), butang <b>Chat</b>, <b>Pause / Resume</b>, <b>Stop</b> run semasa.</td></tr>
     <tr><td>Job semasa</td><td>Tajuk job, approval yang menunggu (boleh approve terus).</td></tr>
@@ -263,15 +1327,210 @@
     <tr><td>Last tool calls</td><td>5 tool terakhir yang dipanggil.</td></tr>
     <tr><td>Timeline</td><td>Event run terkini (fikiran, mesej, tool, hasil).</td></tr>
   </table>
+</div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#office" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 05. Pejabat pixel</a> <a href="#prefs" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/></svg> 20. How you like it</a> <a href="#memory" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-5.04Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-5.04Z"/></svg> 18. Memory</a>
+  </div>
 </section>
-
 <section id="agents">
-  <h2><span class="n">07</span>Semua agent</h2>
+  <h2><span class="n">07</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Semua agent</span></h2>
   <p class="lede">Agent bawaan. Semua guna provider <b>canopy-ai</b> (server AI awak sendiri; boleh baca gambar). Tambah agent sendiri di <b>Agents → + New agent</b>.</p>
   <div class="grid2">
-    <div class="agent"><h4>📰 Publisher</h4><div class="role">Editor · post website, berita, vlog</div>
-      Terima gambar + point → post website (<code>draft_web_post</code>) + caption media sosial (<code>save_draft</code>). Boleh ubah/turunkan post live (perlu approval).
-      <div class="chips"><span class="chip ok">draft_web_post</span><span class="chip rv">update_web_post</span><span class="chip rv">take_down_web_post</span><span class="chip ok">save_draft</span><span class="chip ok">read_brief</span><span class="chip ok">consult_agent</span></div></div>
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">📰</div>
+        <div class="agent-card-info">
+          <h4>Publisher</h4>
+          <div class="role">Editor · post website, berita, vlog</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        Terima gambar + point → post website (<code>draft_web_post</code>) + caption media sosial (<code>save_draft</code>). Boleh ubah/turunkan post live (perlu approval).
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Bila ada event, gambar aktiviti gelanggang, atau pengumuman rasmi yang nak dipublish terus ke website & media sosial.
+      </div>
+      <div class="chips">
+        <span class="chip ok">draft_web_post</span>
+        <span class="chip rv">update_web_post</span>
+        <span class="chip rv">take_down_web_post</span>
+        <span class="chip ok">save_draft</span>
+        <span class="chip ok">read_brief</span>
+        <span class="chip ok">consult_agent</span>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">🗂️</div>
+        <div class="agent-card-info">
+          <h4>Kerani</h4>
+          <div class="role">Front desk · tempahan, bayaran, slot kosong</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        Baca tempahan SmashPoint → laporan: hari ni, belum bayar (+ link WhatsApp), slot kosong, perkara pelik. Jadual 08:00 setiap hari (off by default).
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Pagi-pagi sebelum buka dewan badminton untuk semak jadual pemain hari ni, ingatkan baki bayaran, atau check kekosongan court.
+      </div>
+      <div class="chips">
+        <span class="chip ok">read_bookings</span>
+        <span class="chip ok">write_report</span>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">✍️</div>
+        <div class="agent-card-info">
+          <h4>Marketing</h4>
+          <div class="role">Copywriter · post, skrip, promo</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        Caption, skrip video, kalendar kandungan, promo, balasan DM, analisis gaya tulisan. Semua jadi draf.
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Bila perlukan idea promosi bermusim, penulisan copy iklan yang padu, skrip video pendek TikTok/Reels, atau template jawapan pelanggan.
+      </div>
+      <div class="chips">
+        <span class="chip ok">read_brief</span>
+        <span class="chip ok">read_feature_log</span>
+        <span class="chip ok">read_past_drafts</span>
+        <span class="chip ok">save_draft</span>
+        <span class="chip ok">consult_agent</span>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">🔎</div>
+        <div class="agent-card-info">
+          <h4>Researcher</h4>
+          <div class="role">Research · cari web, sumber</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        Cari web (DuckDuckGo → SearXNG → Tavily/Brave), baca page, jawab dengan <b>Sources</b>. Kalau awak sebut website, dia baca terus.
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Bila nak buat kajian pasaran, cari harga sewa semasa, baca dokumentasi online, atau cari fakta yang disertakan sumber link.
+      </div>
+      <div class="chips">
+        <span class="chip ok">web_search</span>
+        <span class="chip ok">web_fetch</span>
+        <span class="chip ok">write_report</span>
+        <span class="chip ok">handoff</span>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">🗣️</div>
+        <div class="agent-card-info">
+          <h4>Coach</h4>
+          <div class="role">Rakan latihan English</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        Betulkan ayat, ajar frasa natural, ingat silap awak. Guna mic & Listen dalam Chat.
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Bila nak berlatih komunikasi Bahasa Inggeris secara interaktif; dia dengar sebutan awak dan baiki tatabahasa secara mesra.
+      </div>
+      <div class="chips">
+        <span class="chip ok">memory</span>
+        <span class="chip ok">session_search</span>
+        <span class="chip ok">skills</span>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">🛡️</div>
+        <div class="agent-card-info">
+          <h4>Pak Guard</h4>
+          <div class="role">DevOps · laporan kesihatan pagi</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        CPU/RAM/disk, ping website, status CI Gitea. Jadual 08:00 Isnin–Jumaat (off).
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Pantau status server secara berkala pada hari kerja untuk memastikan domain, database dan perkhidmatan MyOfis sentiasa sihat.
+      </div>
+      <div class="chips">
+        <span class="chip ok">http_check</span>
+        <span class="chip ok">system_metrics</span>
+        <span class="chip ok">gitea_ci_status</span>
+        <span class="chip ok">write_report</span>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">🧪</div>
+        <div class="agent-card-info">
+          <h4>Tester</h4>
+          <div class="role">QA · ujian malam, screenshot feature</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        Buka website dalam browser sebenar, check error, screenshot & visual diff. Jadual 02:00 setiap malam (off).
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Pengesahan automatik waktu tengah malam untuk pastikan UI website SmashPoint tak rosak dan tiada ralat browser.
+      </div>
+      <div class="chips">
+        <span class="chip ok">browser_check</span>
+        <span class="chip ok">http_check</span>
+        <span class="chip ok">handoff</span>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">💻</div>
+        <div class="agent-card-info">
+          <h4>Coder</h4>
+          <div class="role">Developer · betulkan bug, buka PR</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        Guna OpenCode dalam clone repo; Agent Office yang commit/push/PR (bukan AI). Perlu Gitea (belum setup).
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Bila nak automasikan perubahan kod sumber, baiki bug programming, dan buka Pull Request secara teratur tanpa usik main.
+      </div>
+      <div class="chips">
+        <span class="chip rv">git_*</span>
+        <span class="chip rv">write/edit_file</span>
+        <span class="chip rv">gitea_create_pr</span>
+        <span class="chip dg">push ke main</span>
+      </div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div class="agent-avatar">🔁</div>
+        <div class="agent-card-info">
+          <h4>Echo</h4>
+          <div class="role">Summariser / agent ujian</div>
+        </div>
+      </div>
+      <div class="agent-desc">
+        Agent ringkas untuk test sistem.
+      </div>
+      <div class="agent-usecase">
+        <b>Bila guna:</b> Bila baru pasang AI provider baru atau runner baru dan nak pastikan pipeline mesej beroperasi dengan betul.
+      </div>
+      <div class="chips">
+        <span class="chip ok">test_agent</span>
+      </div>
+    </div>
+  </div>
     <div class="agent"><h4>🗂️ Kerani</h4><div class="role">Front desk · tempahan, bayaran, slot kosong</div>
       Baca tempahan SmashPoint → laporan: hari ni, belum bayar (+ link WhatsApp), slot kosong, perkara pelik. Jadual 08:00 setiap hari (off by default).
       <div class="chips"><span class="chip ok">read_bookings</span><span class="chip ok">write_report</span></div></div>
@@ -295,11 +1554,14 @@
       <div class="chips"><span class="chip rv">git_*</span><span class="chip rv">write/edit_file</span><span class="chip rv">gitea_create_pr</span><span class="chip dg">push ke main</span></div></div>
     <div class="agent"><h4>🔁 Echo</h4><div class="role">Summariser / agent ujian</div>Agent ringkas untuk test sistem.</div>
   </div>
-  <div class="tip">💡 Edit agent: <b>Agents → ✏️</b>: nama, peranan, provider/model, system prompt, tools, permission level, budget harian, runner, engine (AI SDK / OpenCode), max steps, shell allowlist, read paths, HTTP allowlist, <b>Learn after work</b>.</div>
+  <div class="callout tip"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></div><div class="callout-body">Edit agent: <b>Agents → ✏️</b>: nama, peranan, provider/model, system prompt, tools, permission level, budget harian, runner, engine (AI SDK / OpenCode), max steps, shell allowlist, read paths, HTTP allowlist, <b>Learn after work</b>.</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#panel" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg> 06. Panel agent</a> <a href="#chat" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 08. Chat</a> <a href="#skills" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 19. Skills & Browse</a>
+  </div>
 </section>
-
 <section id="chat">
-  <h2><span class="n">08</span>Chat</h2>
+  <h2><span class="n">08</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Chat</span></h2>
   <ol class="steps">
     <li><b>Chat</b> → pilih agent. Pilih <b>projek</b> kalau berkaitan (cth SmashPoint).</li>
     <li>Taip mesej. <kbd>Enter</kbd> hantar, <kbd>Shift</kbd>+<kbd>Enter</kbd> baris baru.</li>
@@ -312,11 +1574,84 @@
     <li><b>Skrol</b>: kalau awak tengah baca mesej atas, jawapan baru <b>tak tarik</b> awak ke bawah; keluar butang <b>New reply ↓</b>.</li>
     <li>Setiap mesej chat satu job (kira budget, nampak di pejabat) tapi <b>disorok dari Board</b>.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#agents" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 07. Semua agent</a> <a href="#publisher" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 09. Publisher</a> <a href="#projects" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg> 11. Projects & brief</a>
+  </div>
 </section>
-
 <section id="publisher">
-  <h2><span class="n">09</span>Publisher: post terus ke website</h2>
+  <h2><span class="n">09</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><span>Publisher: post terus ke website</span></h2>
   <div class="flow"><span>📷 Gambar + point</span><b>→</b><span>Publisher tulis</span><b>→</b><span>Drafts / kad Telegram</span><b>→</b><span>✅ Approve</span><b>→</b><span>Website SmashPoint</span><b>+</b><span>Media sosial</span></div>
+
+  <div class="diagram-wrap">
+  <div class="diagram-title"><span>Aliran Kerja Publisher</span><span class="badge">Pipeline</span></div>
+  <svg class="diagram-svg" viewBox="0 0 820 180" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow-p" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--accent)" />
+      </marker>
+    </defs>
+    <!-- Step 1 -->
+    <g transform="translate(10, 35)">
+      <rect width="135" height="95" rx="10" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="var(--surface-2)"/>
+      <text x="28" y="34" text-anchor="middle" font-size="14">📷</text>
+      <text x="16" y="60" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="var(--fg)">1. Input Info</text>
+      <text x="16" y="78" font-family="system-ui, sans-serif" font-size="10" fill="var(--muted)">Foto + point via Chat / Telegram</text>
+    </g>
+
+    <line x1="150" y1="82" x2="175" y2="82" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow-p)"/>
+
+    <!-- Step 2 -->
+    <g transform="translate(180, 35)">
+      <rect width="145" height="95" rx="10" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="var(--accent-soft)"/>
+      <text x="28" y="34" text-anchor="middle" font-size="14">✍️</text>
+      <text x="16" y="60" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="var(--fg)">2. Draf Publisher</text>
+      <text x="16" y="78" font-family="system-ui, sans-serif" font-size="10" fill="var(--muted)">Hasilkan post HTML + caption sosial</text>
+    </g>
+
+    <line x1="330" y1="82" x2="355" y2="82" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow-p)"/>
+
+    <!-- Step 3 -->
+    <g transform="translate(360, 35)">
+      <rect width="145" height="95" rx="10" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="var(--surface-2)"/>
+      <text x="28" y="34" text-anchor="middle" font-size="14">📥</text>
+      <text x="16" y="60" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="var(--fg)">3. Inbox Semakan</text>
+      <text x="16" y="78" font-family="system-ui, sans-serif" font-size="10" fill="var(--muted)">Drafts Web & kad bot Telegram</text>
+    </g>
+
+    <line x1="510" y1="82" x2="535" y2="82" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow-p)"/>
+
+    <!-- Step 4 -->
+    <g transform="translate(540, 35)">
+      <rect width="125" height="95" rx="10" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="2"/>
+      <circle cx="28" cy="28" r="14" fill="var(--accent-soft)"/>
+      <text x="28" y="34" text-anchor="middle" font-size="14">👤</text>
+      <text x="16" y="60" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="var(--fg)">4. Keputusan</text>
+      <text x="16" y="78" font-family="system-ui, sans-serif" font-size="10" fill="var(--muted)">Approve / Edit / Tolak dengan nota</text>
+    </g>
+
+    <!-- Branching to Step 5 -->
+    <path d="M 670 65 L 695 65 L 695 45 L 705 45" fill="none" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow-p)"/>
+    <path d="M 670 100 L 695 100 L 695 120 L 705 120" fill="none" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow-p)"/>
+
+    <!-- Step 5 Targets -->
+    <g transform="translate(710, 20)">
+      <rect width="100" height="50" rx="8" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="10" y="24" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="var(--fg)">🌐 Website</text>
+      <text x="10" y="40" font-family="var(--mono)" font-size="9" fill="var(--muted)">posts/ao-&lt;draft&gt;</text>
+    </g>
+    <g transform="translate(710, 95)">
+      <rect width="100" height="50" rx="8" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="10" y="24" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="var(--fg)">📣 Facebook</text>
+      <text x="10" y="40" font-family="system-ui, sans-serif" font-size="9" fill="var(--muted)">Post live terus</text>
+    </g>
+  </svg>
+</div>
+
+  
   <ol class="steps">
     <li>Chat (atau Telegram) → <b>Publisher</b> → projek SmashPoint → 📷 gambar → point. Contoh: <i>"Tournament doubles Sabtu 24 Okt 9 pagi, hadiah RM500, yuran RM20 seorang, daftar kat kaunter"</i>.</li>
     <li>Publisher sebut apa dalam gambar; kalau maklumat kurang dia tanya <b>satu soalan</b>.</li>
@@ -325,21 +1660,27 @@
     <li><b>Approve</b> → terus publish → <b>View it on the website →</b>.</li>
   </ol>
   <h3>Lepas live</h3>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Nak buat</th><th>Cara</th></tr>
     <tr><td>Ubah post</td><td>Drafts → Decided → kad → <b>Edit live post</b> → <b>Save to website</b>. Atau chat Publisher ("tukar tarikh ke 31 Okt") → approve.</td></tr>
     <tr><td>Turunkan post</td><td>Kad → <b>Take down</b>. Atau chat Publisher. Naik semula: <b>Publish now</b>.</td></tr>
     <tr><td>Publish gagal</td><td>Error merah + <b>Publish again</b>.</td></tr>
     <tr><td>Approved tapi belum keluar</td><td>Kotak kuning + <b>Publish now</b>.</td></tr>
   </table>
-  <div class="note">ℹ️ Jenis post SmashPoint: <code>news</code>, <code>match</code>, <code>tournament</code>, <code>event</code>, <code>vlog</code>. Disimpan di Firestore sebagai <code>posts/ao-&lt;draft&gt;</code>; publish dua kali takkan buat dua post.</div>
-  <div class="tip">💡 Sambung website lain: cakap pada Claude <b>"Sambung website &lt;nama&gt; ke Publisher. Repo: C:\Users\Hazman\Documents\GitHub\&lt;repo&gt;"</b>. Teknikal: <code>docs/website-publishing.md</code>.</div>
+</div>
+  <div class="callout note"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div><div class="callout-body">Jenis post SmashPoint: <code>news</code>, <code>match</code>, <code>tournament</code>, <code>event</code>, <code>vlog</code>. Disimpan di Firestore sebagai <code>posts/ao-&lt;draft&gt;</code>; publish dua kali takkan buat dua post.</div></div>
+  <div class="callout tip"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></div><div class="callout-body">Sambung website lain: cakap pada Claude <b>"Sambung website &lt;nama&gt; ke Publisher. Repo: C:\Users\Hazman\Documents\GitHub\&lt;repo&gt;"</b>. Teknikal: <code>docs/website-publishing.md</code>.</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#drafts" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> 10. Drafts (inbox)</a> <a href="#projects" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg> 11. Projects & brief</a> <a href="#facebook" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg> 15. Media sosial</a>
+  </div>
 </section>
-
 <section id="drafts">
-  <h2><span class="n">10</span>Drafts (inbox)</h2>
+  <h2><span class="n">10</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span>Drafts (inbox)</span></h2>
   <p class="lede">Semua tulisan agent masuk sini dulu. <b>Tiada apa keluar tanpa approve awak.</b></p>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Status</th><th>Maksud</th></tr>
     <tr><td><span class="chip">draft</span></td><td>Menunggu awak (tab <b>Waiting</b>).</td></tr>
     <tr><td><span class="chip ok">approved</span></td><td>Diluluskan tanpa ubah.</td></tr>
@@ -347,18 +1688,23 @@
     <tr><td><span class="chip ok">published</span></td><td>Dah keluar di website / media sosial.</td></tr>
     <tr><td><span class="chip dg">rejected</span></td><td>Ditolak; feedback awak dibaca agent lain kali.</td></tr>
   </table>
+</div>
   <ul>
     <li>Kad: platform, jenis, projek, masa, <b>self-check</b> (fakta ikut brief, feature dah release, tak over-claim, nada & bahasa) — merah kalau gagal.</li>
     <li><b>Reject…</b> → tulis apa salah → <b>Reject</b>. <b>Feedback · optional</b> boleh juga masa approve.</li>
     <li><b>Copy</b> untuk paste manual. Tapis ikut projek; tab <b>Waiting / Decided</b>.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#publisher" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 09. Publisher</a> <a href="#approvals" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> 21. Approvals & keselamatan</a> <a href="#facebook" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg> 15. Media sosial</a>
+  </div>
 </section>
-
 <section id="projects">
-  <h2><span class="n">11</span>Projects & brief</h2>
+  <h2><span class="n">11</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>Projects & brief</span></h2>
   <p class="lede"><b>Projects</b> → kad projek → <b>Brief</b> / <b>Feature log</b>. Panel ada 3 tab.</p>
   <h3>Tab Brief</h3>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Medan</th><th>Contoh</th></tr>
     <tr><td>Product / one-liner / audience</td><td>Gelanggang badminton 2 court untuk pemain sekitar…</td></tr>
     <tr><td>Facts</td><td>Harga RM20/jam, buka 8 pagi – 12 malam, WhatsApp 01x…</td></tr>
@@ -369,6 +1715,7 @@
     <tr><td>Posts you like</td><td>Paste posting yang awak suka (agent belajar gaya, tak copy).</td></tr>
     <tr><td>style_notes</td><td>Diisi bila awak approve "Writing-style analysis".</td></tr>
   </table>
+</div>
   <h3>Tab Feature log</h3>
   <p>Perubahan yang dah release (bahasa pelanggan). Tambah nota manual → Tester screenshot + Marketing draf announcement. Bila Gitea disambung, PR yang di-merge jadi nota automatik.</p>
   <h3>Tab Website</h3>
@@ -376,12 +1723,16 @@
     <li><b>Website publishing</b>: endpoint + shared secret → <b>Save</b> → <b>Test</b>. SmashPoint dah disambung.</li>
     <li><b>Facebook Page</b> (dan media sosial lain bila siap): lihat <a href="#facebook">bahagian 15</a>.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#publisher" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 09. Publisher</a> <a href="#marketing" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg> 12. Marketing</a> <a href="#facebook" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg> 15. Media sosial</a>
+  </div>
 </section>
-
 <section id="marketing">
-  <h2><span class="n">12</span>Marketing</h2>
+  <h2><span class="n">12</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><span>Marketing</span></h2>
   <p class="lede"><b>+ New job</b> → Marketing → pilih jenis → projek → arahan. Atau terus Chat.</p>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Jenis job</th><th>Hasil</th></tr>
     <tr><td>Captions</td><td>Beberapa variasi caption untuk platform dalam brief.</td></tr>
     <tr><td>Short-video script</td><td>Skrip TikTok/Reels: hook, babak, CTA.</td></tr>
@@ -394,21 +1745,28 @@
     <tr><td>Writing-style analysis</td><td>Paste posting orang → analisis gaya → approve → jadi <code>style_notes</code>.</td></tr>
     <tr><td>Other</td><td>Apa-apa lain.</td></tr>
   </table>
-  <div class="tip">💡 Marketing boleh <b>tanya Researcher</b> dulu (harga pasaran) sebelum tulis promo.</div>
+</div>
+  <div class="callout tip"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></div><div class="callout-body">Marketing boleh <b>tanya Researcher</b> dulu (harga pasaran) sebelum tulis promo.</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#projects" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg> 11. Projects & brief</a> <a href="#drafts" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> 10. Drafts (inbox)</a> <a href="#publisher" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 09. Publisher</a>
+  </div>
 </section>
-
 <section id="kerani">
-  <h2><span class="n">13</span>Kerani: tempahan SmashPoint</h2>
+  <h2><span class="n">13</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v12"/></svg><span>Kerani: tempahan SmashPoint</span></h2>
   <ul>
     <li>Tanya: <i>"siapa main hari ni?"</i>, <i>"slot kosong esok?"</i>, <i>"siapa belum bayar minggu ni?"</i> (sampai 14 hari).</li>
     <li>Laporan: <b>Hari ni</b> (masa, court, pelanggan, bayar/belum, "regular"), <b>Belum bayar</b> + <b>link WhatsApp</b> siap mesej, <b>Slot kosong</b>, <b>Perhatian</b>.</li>
     <li>Automatik: <b>Schedules → Kerani 0 8 * * * → on</b> → laporan ke Telegram 8 pagi.</li>
   </ul>
-  <div class="warn">🔒 Nama & telefon pelanggan hanya untuk laporan kepada awak. Data dibaca melalui Worker (kunci Firebase tak keluar dari Cloudflare).</div>
+  <div class="callout warn"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg></div><div class="callout-body">Nama & telefon pelanggan hanya untuk laporan kepada awak. Data dibaca melalui Worker (kunci Firebase tak keluar dari Cloudflare).</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#schedules" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 23. Schedules</a> <a href="#telegram" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 22. Telegram</a> <a href="#rutin" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg> 04. Rutin harian</a>
+  </div>
 </section>
-
 <section id="researcher">
-  <h2><span class="n">14</span>Researcher & web search</h2>
+  <h2><span class="n">14</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg><span>Researcher & web search</span></h2>
   <div class="flow"><span>DuckDuckGo (percuma)</span><b>→ gagal →</b><span>SearXNG awak</span><b>→</b><span>Tavily / Brave (key)</span></div>
   <ul>
     <li>Tak perlu setup: DuckDuckGo terus jalan (had 20 carian/minit).</li>
@@ -416,46 +1774,64 @@
     <li>Jawapan: <b>Answer</b>, <b>Details</b>, <b>Sources</b>, <b>Unsure</b>.</li>
     <li>Page web = DATA tak dipercayai: arahan dalam page diabaikan; alamat rangkaian dalaman ditolak.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#searxng" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> 31. SearXNG</a> <a href="#chat" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 08. Chat</a> <a href="#settings" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 28. Settings</a>
+  </div>
 </section>
-
 <section id="facebook">
-  <h2><span class="n">15</span>Media sosial</h2>
-  <table>
+  <h2><span class="n">15</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg><span>Media sosial</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><th>Platform</th><th>Status</th><th>Cara</th></tr>
     <tr><td>Facebook Page</td><td><span class="chip ok">siap</span></td><td>Approve caption Facebook → terus post (dengan gambar). Setup: <code>docs/facebook-page.md</code> → Projects → Website → Facebook Page → Save → Test.</td></tr>
     <tr><td>Instagram + Threads</td><td><span class="chip rv">sedang dibina</span></td><td>API Meta; gambar dihantar melalui storage website supaya ada URL awam.</td></tr>
     <tr><td>YouTube / Shorts</td><td><span class="chip">dirancang</span></td><td>API Google + upload video.</td></tr>
     <tr><td>TikTok</td><td><span class="chip">dirancang</span></td><td>Browser agent: Chrome khas yang dah login; berhenti sebelum "Post" sampai awak approve.</td></tr>
   </table>
-  <div class="note">ℹ️ Tanpa platform disambung, approve caption cuma rekod — awak copy manual. Telegram tunjuk butang yang sesuai (cth <b>✅ Approve & post to Facebook</b>).</div>
+</div>
+  <div class="callout note"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div><div class="callout-body">Tanpa platform disambung, approve caption cuma rekod — awak copy manual. Telegram tunjuk butang yang sesuai (cth <b>✅ Approve & post to Facebook</b>).</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#publisher" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 09. Publisher</a> <a href="#drafts" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> 10. Drafts (inbox)</a> <a href="#projects" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg> 11. Projects & brief</a>
+  </div>
 </section>
-
 <section id="jobs">
-  <h2><span class="n">16</span>Jobs, runs & Board</h2>
+  <h2><span class="n">16</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg><span>Jobs, runs & Board</span></h2>
   <ul>
     <li><b>+ New job</b>: agent, tajuk, arahan (+ jenis & projek untuk Marketing).</li>
     <li>Status: <span class="chip">queued</span> · <span class="chip">running</span> · <span class="chip rv">waiting_approval</span> · <span class="chip ok">done</span> · <span class="chip dg">failed</span> · <span class="chip">cancelled</span>.</li>
     <li>Klik job → klik run → <b>timeline penuh</b>: fikiran, mesej, setiap tool + input + hasil, approval, fail (report, screenshot, output.md), token & kos. <b>Cancel</b> bila-bila.</li>
     <li><b>Board</b>: kad agent + kanban Queued / Running / Waiting / Done today. Chat disorok ("+ N chat messages").</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#office" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 05. Pejabat pixel</a> <a href="#approvals" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> 21. Approvals & keselamatan</a> <a href="#replay" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> 26. Replay</a>
+  </div>
 </section>
-
 <section id="consult">
-  <h2><span class="n">17</span>Agent tanya agent</h2>
-  <table>
+  <h2><span class="n">17</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg><span>Agent tanya agent</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><th>Tool</th><th>Cara kerja</th></tr>
     <tr><td><code>consult_agent</code></td><td>A tanya B dan <b>tunggu jawapan</b> (sampai 10 min). Job "Question from A…" untuk B. Satu tingkat sahaja. Watak A ke bilik mesyuarat.</td></tr>
     <tr><td><code>handoff</code></td><td>Serah kerja kepada agent lain dan teruskan (tak tunggu).</td></tr>
   </table>
+</div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#agents" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 07. Semua agent</a> <a href="#office" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 05. Pejabat pixel</a> <a href="#jobs" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg> 16. Jobs, runs & Board</a>
+  </div>
 </section>
-
 <section id="memory">
-  <h2><span class="n">18</span>Memory (agent ingat)</h2>
-  <table>
+  <h2><span class="n">18</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-5.04Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-5.04Z"/></svg><span>Memory (agent ingat)</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><th>Stor</th><th>Had</th><th>Isi</th></tr>
     <tr><td><b>Own notes</b> (setiap agent)</td><td>2200 aksara</td><td>Pelajaran agent sendiri: silap English awak, gaya yang jalan, sumber bagus…</td></tr>
     <tr><td><b>About you</b> (dikongsi)</td><td>1375 aksara</td><td>Fakta pasal awak untuk semua agent.</td></tr>
   </table>
+</div>
   <ul>
     <li>Dimuat sekali di awal setiap job. Bila penuh, agent gabungkan nota lama.</li>
     <li>Edit: klik watak → Memory → edit / remove / + add.</li>
@@ -464,45 +1840,155 @@
     <li><b>Session search</b>: agent cari kerja & chat lama.</li>
     <li><b>Learn after work</b>: lepas job besar (5+ tool) atau setiap 5 mesej, agent muhasabah. Off per agent di Agents → Edit.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#skills" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 19. Skills & Browse</a> <a href="#prefs" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/></svg> 20. How you like it</a> <a href="#panel" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg> 06. Panel agent</a>
+  </div>
 </section>
-
 <section id="skills">
-  <h2><span class="n">19</span>Skills & Browse</h2>
+  <h2><span class="n">19</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Skills & Browse</span></h2>
   <p class="lede">Skill = "cara kerja" dalam <code>SKILL.md</code> (format Hermes Agent / Anthropic). Agent nampak senarai; buka penuh bila perlu.</p>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Tab</th><th>Isi</th></tr>
     <tr><td><b>Waiting</b> 🔴</td><td>Cadangan agent (baru / perbaikan dengan diff / padam) + perubahan memory (kalau suis on). Amaran kuning kalau skill suruh download/padam. <b>Approve / Reject</b>.</td></tr>
     <tr><td><b>Skills</b></td><td>Baca, <b>delete</b>. Statistik: berapa run guna, last used, "went badly", <b>Stale</b>.</td></tr>
     <tr><td><b>History</b></td><td>Keputusan lama.</td></tr>
     <tr><td><b>Browse</b></td><td>~229 skill popular (Anthropic + Hermes): cari, tapis, <b>Install</b>, <b>Read ↗</b>. Kuning = lesen terhad. Hanya SKILL.md dipasang.</td></tr>
   </table>
+</div>
   <p><b>Import SKILL.md</b>: paste skill sendiri (cth dari PC Hermes).</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#memory" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-5.04Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-5.04Z"/></svg> 18. Memory</a> <a href="#hermes" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="12" x="3" y="6" rx="2"/><path d="M12 2v4"/><line x1="8" x2="8.01" y1="12" y2="12"/><line x1="16" x2="16.01" y1="12" y2="12"/></svg> 30. Hermes Agent</a> <a href="#agents" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 07. Semua agent</a>
+  </div>
 </section>
-
 <section id="prefs">
-  <h2><span class="n">20</span>How you like it</h2>
+  <h2><span class="n">20</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/></svg><span>How you like it</span></h2>
   <p>Klik watak → <b>How you like it</b>: <b>Bahasa</b> (Auto / Manglish / BM / English), <b>Nada</b> (Santai / Mesra / Profesional / Terus terang), <b>Panjang</b> (Pendek / Detail), <b>Emoji</b> (Tiada / Sikit-sikit), <b>Format</b> (Bullet / Perenggan), <b>Anything else</b> (nota bebas). "What the agent will be told" tunjuk arahan sebenar. <b>Save</b> → berkesan dari mesej seterusnya.</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#panel" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg> 06. Panel agent</a> <a href="#chat" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 08. Chat</a> <a href="#memory" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-5.04Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-5.04Z"/></svg> 18. Memory</a>
+  </div>
 </section>
-
 <section id="approvals">
-  <h2><span class="n">21</span>Approvals & keselamatan</h2>
-  <table>
+  <h2><span class="n">21</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>Approvals & keselamatan</span></h2>
+  <div class="diagram-wrap">
+  <div class="diagram-title"><span>Matriks Keselamatan & Approvals</span><span class="badge">Security Matrix</span></div>
+  <svg class="diagram-svg" viewBox="0 0 820 220" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+    <!-- Header -->
+    <rect x="10" y="10" width="800" height="36" rx="6" fill="var(--surface-2)" stroke="var(--line)" stroke-width="1"/>
+    <text x="30" y="33" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="var(--fg)">TAHAP RISIKO TOOL</text>
+    <text x="260" y="33" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="var(--fg)">AGENT "SAFE"</text>
+    <text x="440" y="33" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="var(--fg)">AGENT "REVIEW"</text>
+    <text x="620" y="33" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="var(--fg)">CONTOH TOOL</text>
+
+    <!-- Row 1: Safe -->
+    <rect x="10" y="54" width="800" height="46" rx="6" fill="var(--surface)" stroke="var(--line)" stroke-width="1"/>
+    <rect x="25" y="66" width="70" height="22" rx="4" fill="var(--accent-soft)"/>
+    <text x="60" y="81" text-anchor="middle" font-family="var(--mono)" font-size="11" font-weight="700" fill="var(--accent)">safe</text>
+    <text x="260" y="82" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="var(--accent)">✅ Terus jalan</text>
+    <text x="440" y="82" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="var(--accent)">✅ Terus jalan</text>
+    <text x="620" y="82" font-family="var(--mono)" font-size="11" fill="var(--muted)">read_*, web_search, save_draft</text>
+
+    <!-- Row 2: Review -->
+    <rect x="10" y="108" width="800" height="46" rx="6" fill="var(--surface)" stroke="var(--line)" stroke-width="1"/>
+    <rect x="25" y="120" width="70" height="22" rx="4" fill="var(--signal-soft)"/>
+    <text x="60" y="135" text-anchor="middle" font-family="var(--mono)" font-size="11" font-weight="700" fill="var(--signal)">review</text>
+    <text x="260" y="136" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="var(--signal)">⏸ Tunggu approve</text>
+    <text x="440" y="136" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="var(--accent)">✅ Terus jalan</text>
+    <text x="620" y="136" font-family="var(--mono)" font-size="11" fill="var(--muted)">write_file, git_*, update_web_post</text>
+
+    <!-- Row 3: Dangerous -->
+    <rect x="10" y="162" width="800" height="46" rx="6" fill="var(--surface)" stroke="var(--line)" stroke-width="1"/>
+    <rect x="25" y="174" width="85" height="22" rx="4" fill="var(--danger-soft)"/>
+    <text x="67" y="189" text-anchor="middle" font-family="var(--mono)" font-size="11" font-weight="700" fill="var(--danger)">dangerous</text>
+    <text x="260" y="190" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="var(--danger)">🛑 Tunggu approve</text>
+    <text x="440" y="190" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="var(--danger)">🛑 Tunggu approve</text>
+    <text x="620" y="190" font-family="var(--mono)" font-size="11" fill="var(--danger)">push ke main, shell luar allowlist</text>
+  </svg>
+</div>
+
+  <div class="table-wrap">
+<table>
     <tr><th>Risiko tool</th><th>Agent "safe"</th><th>Agent "review"</th></tr>
     <tr><td><span class="chip ok">safe</span> (baca, cari, draf)</td><td>Terus jalan</td><td>Terus jalan</td></tr>
     <tr><td><span class="chip rv">review</span> (tulis fail, git, ubah post live)</td><td><b>Tunggu approve</b></td><td>Terus jalan</td></tr>
     <tr><td><span class="chip dg">dangerous</span> (push ke main, shell luar allowlist)</td><td><b>Tunggu approve</b></td><td><b>Tunggu approve</b></td></tr>
   </table>
+</div>
   <ul>
     <li>Approve di <b>Approvals</b>, panel agent, atau Telegram. Reject → agent cari cara lain atau berhenti.</li>
     <li>Setiap run dalam folder sendiri; tak boleh baca <code>.env</code>/kunci atau keluar folder.</li>
     <li>Shell ikut allowlist per agent, env dibersihkan. Kandungan web/fail/gambar = DATA, bukan arahan.</li>
     <li>Push/PR dibuat kod Agent Office, bukan AI. <b>Tiada Docker</b>.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#drafts" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> 10. Drafts (inbox)</a> <a href="#telegram" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 22. Telegram</a> <a href="#rahsia" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> 35. Di mana rahsia disimpan</a>
+  </div>
 </section>
-
 <section id="telegram">
-  <h2><span class="n">22</span>Telegram: telefon pejabat</h2>
-  <table>
+  <h2><span class="n">22</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg><span>Telegram: telefon pejabat</span></h2>
+  <div class="chat-mock">
+    <div class="chat-mock-header">
+      <div class="chat-mock-avatar">🤖</div>
+      <div class="chat-mock-info">
+        <div class="chat-mock-name">MyOfis Bot <span class="chat-mock-bot-tag">BOT</span></div>
+        <div class="chat-mock-sub">@MyOfis_monmon_bot · telefon pejabat</div>
+      </div>
+    </div>
+    <div class="chat-mock-body">
+      <div class="chat-bubble user">
+        <div class="chat-text"><code>/drafts</code></div>
+        <div class="chat-time">10:42 AM</div>
+      </div>
+      <div class="chat-bubble bot">
+        <div class="chat-text">
+          <b>📋 1 draf sedia untuk semakan:</b><br />
+          <b>Kejohanan Badminton Terbuka SmashPoint 2026</b><br />
+          <span class="chat-muted">Projek: SmashPoint · Kategori: tournament · Tarikh: 24 Okt</span><br />
+          <i>"Sertai kejohanan beregu terbuka kami dengan hadiah wang tunai RM500..."</i>
+        </div>
+        <div class="chat-actions">
+          <span class="chat-btn approve">✅ Approve & publish</span>
+          <span class="chat-btn reject">❌ Reject</span>
+        </div>
+        <div class="chat-time">10:42 AM</div>
+      </div>
+      <div class="chat-bubble user">
+        <div class="chat-text"><i>[Tekan butang: ✅ Approve & publish]</i></div>
+        <div class="chat-time">10:43 AM</div>
+      </div>
+      <div class="chat-bubble bot">
+        <div class="chat-text">
+          ✅ <b>Draf diluluskan dan terus dipublish!</b><br />
+          🌐 Live di: <code>https://smashpoint.my/posts/ao-kejohanan-terbuka-2026</code><br />
+          📣 Status: Siap sedia untuk Facebook Page.
+        </div>
+        <div class="chat-time">10:43 AM</div>
+      </div>
+      <div class="chat-bubble user">
+        <div class="chat-text"><code>/status</code></div>
+        <div class="chat-time">10:45 AM</div>
+      </div>
+      <div class="chat-bubble bot">
+        <div class="chat-text">
+          🏢 <b>Status Pejabat MyOfis:</b><br />
+          • Runner: <code>1/1 online</code> (PC Hazman)<br />
+          • 🧑‍💼 <b>Monmon</b>: idle (chat aktif)<br />
+          • 📰 <b>Publisher</b>: siap publish post 10:43 AM<br />
+          • 🗂️ <b>Kerani</b>: standby jadual 08:00 AM esok<br />
+          • Approvals menunggu: <code>0</code> · Draf menunggu: <code>0</code>
+        </div>
+        <div class="chat-time">10:45 AM</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Perintah Telegram & Butang Callback</h3>
+  <div class="table-wrap">
+<table>
     <tr><th>Taip</th><th>Hasil</th></tr>
     <tr><td>Teks / gambar / album</td><td>Ke agent semasa (default Publisher); jawapan datang balik.</td></tr>
     <tr><td><code>/agent kerani</code></td><td>Tukar agent (slug).</td></tr>
@@ -513,47 +1999,65 @@
     <tr><td><code>/help</code></td><td>Bantuan.</td></tr>
     <tr><td><code>/id</code></td><td>Chat id (setup).</td></tr>
   </table>
+</div>
   <ul>
     <li>🔔 / ⚠️ Approval dengan <b>✅ Approve / ❌ Reject</b>.</li>
     <li>🌐 / 📝 Draf baru: <b>✅ Approve & publish</b> / <b>✅ Approve & post to Facebook</b> / <b>✅ Approve</b> / <b>❌ Reject</b> (sampai 5 kad setiap run).</li>
     <li>📋 Laporan Pak Guard, Tester, Kerani. ❌ Job gagal. 🧠 Cadangan skill. 💤 Budget habis.</li>
   </ul>
-  <div class="note">ℹ️ Hanya chat awak dilayan; butang ada tandatangan. Setting: Settings → Integrations → Telegram.</div>
+  <div class="callout note"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div><div class="callout-body">Hanya chat awak dilayan; butang ada tandatangan. Setting: Settings → Integrations → Telegram.</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#approvals" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> 21. Approvals & keselamatan</a> <a href="#drafts" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> 10. Drafts (inbox)</a> <a href="#kerani" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v12"/></svg> 13. Kerani (tempahan)</a>
+  </div>
 </section>
-
 <section id="schedules">
-  <h2><span class="n">23</span>Schedules</h2>
-  <table>
+  <h2><span class="n">23</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>Schedules</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><th>Agent</th><th>Cron</th><th>Bila</th><th>Default</th></tr>
     <tr><td>Kerani</td><td><code>0 8 * * *</code></td><td>8 pagi setiap hari</td><td>off</td></tr>
     <tr><td>Pak Guard</td><td><code>0 8 * * 1-5</code></td><td>8 pagi Isnin–Jumaat</td><td>off</td></tr>
     <tr><td>Tester</td><td><code>0 2 * * *</code></td><td>2 pagi setiap hari</td><td>off</td></tr>
     <tr><td>Marketing</td><td><code>0 9 * * 1</code></td><td>9 pagi Isnin</td><td>off</td></tr>
   </table>
+</div>
   <p>Toggle on/off, <b>Run now</b>, edit, delete, + tambah sendiri. Waktu Malaysia. Cron: <code>minit jam hari bulan hari-minggu</code>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#kerani" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v12"/></svg> 13. Kerani (tempahan)</a> <a href="#rutin" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg> 04. Rutin harian</a> <a href="#jobs" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg> 16. Jobs, runs & Board</a>
+  </div>
 </section>
-
 <section id="budget">
-  <h2><span class="n">24</span>Budget & kos</h2>
+  <h2><span class="n">24</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></svg><span>Budget & kos</span></h2>
   <ul>
     <li>Budget token harian setiap agent (Agents → Edit; 0 = tiada had).</li>
     <li>Habis: run berhenti, watak "balik rumah", job tunggu esok atau sampai budget dinaikkan. Telegram 💤.</li>
     <li>canopy-ai = server sendiri, jadi $0 kecuali awak set harga.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#panel" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg> 06. Panel agent</a> <a href="#agents" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 07. Semua agent</a> <a href="#settings" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 28. Settings</a>
+  </div>
 </section>
-
 <section id="pause">
-  <h2><span class="n">25</span>Pause all</h2>
+  <h2><span class="n">25</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="10" x2="10" y1="15" y2="9"/><line x1="14" x2="14" y1="15" y2="9"/></svg><span>Pause all</span></h2>
   <p><b>Pause all agents</b>: batalkan semua run, job baru tunggu, watak tidur 💤. <b>Resume all</b> untuk sambung. Satu agent: Agents → ⏸.</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#office" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 05. Pejabat pixel</a> <a href="#jobs" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg> 16. Jobs, runs & Board</a> <a href="#agents" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 07. Semua agent</a>
+  </div>
 </section>
-
 <section id="replay">
-  <h2><span class="n">26</span>Replay</h2>
+  <h2><span class="n">26</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>Replay</span></h2>
   <p><b>Replay</b> → julat masa (atau "Replay in the office" pada run) → 1x / 4x / 16x. Tunggu lama dipendekkan; tak ganggu pejabat live.</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#office" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 05. Pejabat pixel</a> <a href="#jobs" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg> 16. Jobs, runs & Board</a>
+  </div>
 </section>
-
 <section id="runners">
-  <h2><span class="n">27</span>Runners & PC lain</h2>
+  <h2><span class="n">27</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg><span>Runners & PC lain</span></h2>
   <ol class="steps">
     <li><b>Runners → Connect a PC</b> → kod (10 minit) + arahan satu baris.</li>
     <li>PC lain: Windows <code>irm "…/install.ps1?code=…" | iex</code>, Linux/Mac <code>curl -fsSL "…/install.sh?code=…" | sh</code>.</li>
@@ -563,54 +2067,75 @@
     <li>Kad runner: OS, engine, program (git, node, python, ffmpeg, blender…). <b>Revoke</b> untuk buang.</li>
     <li>Ulang arahan dengan kod baru = update (pairing kekal). Dari luar rumah perlu service token Cloudflare.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#settings" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 28. Settings</a> <a href="#maint" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg> 33. Maintenance & arahan</a> <a href="#masalah" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg> 34. Kalau ada masalah</a>
+  </div>
 </section>
-
 <section id="settings">
-  <h2><span class="n">28</span>Settings</h2>
+  <h2><span class="n">28</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Settings</span></h2>
   <h3>AI providers</h3>
   <p>Preset: Anthropic, OpenAI, Google Gemini, OpenRouter, Groq, DeepSeek, Ollama, LM Studio, <b>Hermes Agent</b>, Custom. Key berenkripsi, tak ke browser. Sekarang: <b>canopy-ai</b>, OpenRouter.</p>
   <h3>Integrations</h3>
-  <table>
+  <div class="table-wrap">
+<table>
     <tr><th>Kad</th><th>Guna</th></tr>
     <tr><td>Gitea</td><td>Alamat + token untuk Coder (belum setup).</td></tr>
     <tr><td>Telegram</td><td>Bot token + chat id + Send test.</td></tr>
     <tr><td>Web search</td><td>Try first, SearXNG, key Tavily/Brave, Test search.</td></tr>
     <tr><td>Backups</td><td>Senarai backup + Back up now.</td></tr>
   </table>
+</div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#runners" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg> 27. Runners & PC lain</a> <a href="#backup" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg> 29. Backup & restore</a> <a href="#searxng" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> 31. SearXNG</a>
+  </div>
 </section>
-
 <section id="backup">
-  <h2><span class="n">29</span>Backup & restore</h2>
+  <h2><span class="n">29</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg><span>Backup & restore</span></h2>
   <ul>
     <li>Setiap malam lepas 3 pagi: database + <code>projects/</code> + <code>skills/</code> → <code>data/backups/&lt;tarikh&gt;/</code>; simpan 14 hari. Gagal → Telegram ⚠️.</li>
     <li><b>Back up now</b> di Settings → Integrations → Backups.</li>
     <li><b>Restore</b>: stop hub → salin <code>agent-office.db</code> ke <code>data/agent-office.db</code> (dan folder) → start hub.</li>
     <li>Tidak dibackup: <code>workspaces/</code> dan <code>data/files</code>.</li>
   </ul>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#settings" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 28. Settings</a> <a href="#maint" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg> 33. Maintenance & arahan</a> <a href="#rahsia" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> 35. Di mana rahsia disimpan</a>
+  </div>
 </section>
-
 <section id="hermes">
-  <h2><span class="n">30</span>Hermes Agent</h2>
+  <h2><span class="n">30</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="18" height="12" x="3" y="6" rx="2"/><path d="M12 2v4"/><line x1="8" x2="8.01" y1="12" y2="12"/><line x1="16" x2="16.01" y1="12" y2="12"/></svg><span>Hermes Agent</span></h2>
   <p>Settings → Providers → <b>Hermes Agent</b> → IP PC Hermes, key <code>API_SERVER_KEY</code>, model <code>hermes-agent</code> → buat agent tanpa tools. Hermes guna tools sendiri di PC dia (di luar approval MyOfis). Panduan: <code>docs/hermes-agent.md</code>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#skills" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 19. Skills & Browse</a> <a href="#settings" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 28. Settings</a> <a href="#agents" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 07. Semua agent</a>
+  </div>
 </section>
-
 <section id="searxng">
-  <h2><span class="n">31</span>SearXNG</h2>
+  <h2><span class="n">31</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span>SearXNG</span></h2>
   <p>Search sendiri tanpa had, pasang di Linux (MINTserver) atau WSL tanpa Docker: <code>docs/searxng.md</code>. Pastikan <code>json</code> dalam <code>search.formats</code>. Isi alamat di Settings → Web search.</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#researcher" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg> 14. Researcher & web search</a> <a href="#settings" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 28. Settings</a> <a href="#masalah" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg> 34. Kalau ada masalah</a>
+  </div>
 </section>
-
 <section id="gemini">
-  <h2><span class="n">32</span>Kerja dengan Gemini (UI)</h2>
+  <h2><span class="n">32</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>Kerja dengan Gemini (UI)</span></h2>
   <ol class="steps">
     <li>Claude tulis task di <code>tasks/gemini/NNN-*.md</code> + bagi prompt.</li>
     <li>Awak paste prompt ke Gemini. Gemini hanya ubah rupa (template/style), bukan logik.</li>
     <li>Siap → cakap pada Claude <b>"semak gemini"</b>.</li>
   </ol>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#maint" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg> 33. Maintenance & arahan</a> <a href="#jobs" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 7v7"/><path d="M12 7v4"/><path d="M16 7v9"/></svg> 16. Jobs, runs & Board</a> <a href="#istilah" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> 36. Istilah A–Z</a>
+  </div>
 </section>
-
 <section id="maint">
-  <h2><span class="n">33</span>Maintenance & arahan</h2>
-  <table>
+  <h2><span class="n">33</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg><span>Maintenance & arahan</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><th>Arahan (folder MyOfis)</th><th>Guna</th></tr>
     <tr><td><code>bun run dev</code></td><td>Hidupkan hub + web (biar terminal terbuka).</td></tr>
     <tr><td><code>bun run dev:runner</code></td><td>Hidupkan runner (terminal kedua).</td></tr>
@@ -619,11 +2144,16 @@
     <tr><td><code>bun test</code> · <code>bun run typecheck</code></td><td>Semak sistem.</td></tr>
     <tr><td><code>git add -A; git commit; git push</code></td><td>Simpan ke GitHub.</td></tr>
   </table>
+</div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#backup" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg> 29. Backup & restore</a> <a href="#runners" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg> 27. Runners & PC lain</a> <a href="#masalah" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg> 34. Kalau ada masalah</a>
+  </div>
 </section>
-
 <section id="masalah">
-  <h2><span class="n">34</span>Kalau ada masalah</h2>
-  <table>
+  <h2><span class="n">34</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg><span>Kalau ada masalah</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><th>Gejala</th><th>Cuba</th></tr>
     <tr><td>Domain tak buka</td><td>PC hidup? <code>bun run dev</code> jalan? Service cloudflared jalan?</td></tr>
     <tr><td>Runner 0/1</td><td>Jalankan <code>bun run dev:runner</code>.</td></tr>
@@ -633,23 +2163,33 @@
     <tr><td>Telegram senyap</td><td>Settings → Telegram → Send test; check chat id.</td></tr>
     <tr><td>Perubahan baru tak nampak</td><td>Restart hub + runner, refresh browser.</td></tr>
   </table>
+</div>
   <p>Masih tersangkut: screenshot + bagitahu Claude.</p>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#maint" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg> 33. Maintenance & arahan</a> <a href="#runners" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg> 27. Runners & PC lain</a> <a href="#rahsia" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> 35. Di mana rahsia disimpan</a>
+  </div>
 </section>
-
 <section id="rahsia">
-  <h2><span class="n">35</span>Di mana rahsia disimpan</h2>
-  <table>
+  <h2><span class="n">35</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>Di mana rahsia disimpan</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><th>Rahsia</th><th>Disimpan</th></tr>
     <tr><td>Key AI, token Telegram, key search, secret website, token media sosial</td><td>Database hub, <b>berenkripsi</b> (SECRETS_KEY dalam <code>.env</code>). Tak ke browser.</td></tr>
     <tr><td>Service account Firebase, AGENT_OFFICE_SECRET</td><td>Secret Cloudflare Worker SmashPoint sahaja.</td></tr>
     <tr><td><code>.env</code></td><td>PC ni, tak masuk git. Jangan kongsi.</td></tr>
   </table>
-  <div class="danger">🔑 Tertunda: tukar API key canopy-ai (pernah ter-paste dalam chat).</div>
+</div>
+  <div class="callout danger"><div class="callout-icon-wrap"><svg class="icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg></div><div class="callout-body">Tertunda: tukar API key canopy-ai (pernah ter-paste dalam chat).</div></div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#approvals" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> 21. Approvals & keselamatan</a> <a href="#settings" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> 28. Settings</a> <a href="#backup" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg> 29. Backup & restore</a>
+  </div>
 </section>
-
 <section id="istilah">
-  <h2><span class="n">36</span>Istilah A–Z</h2>
-  <table>
+  <h2><span class="n">36</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>Istilah A–Z</span></h2>
+  <div class="table-wrap">
+<table>
     <tr><td><b>Agent</b></td><td>Pekerja AI.</td></tr>
     <tr><td><b>Approval</b></td><td>Kebenaran awak untuk tindakan berisiko.</td></tr>
     <tr><td><b>Artifact</b></td><td>Fail hasil run.</td></tr>
@@ -668,13 +2208,21 @@
     <tr><td><b>Token (AI)</b></td><td>Unit teks yang AI proses (untuk budget).</td></tr>
     <tr><td><b>Worker</b></td><td>Server kecil Cloudflare untuk website (SmashPoint).</td></tr>
   </table>
+</div>
+  <div class="see-also">
+    <span class="see-also-label">Lihat juga:</span>
+    <a href="#apa" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg> 01. Apa itu MyOfis</a> <a href="#peta" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg> 03. Peta menu</a> <a href="#agents" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> 07. Semua agent</a>
+  </div>
 </section>
 
-<footer>MyOfis manual · dikemas kini 17 Okt 2026. Dokumen teknikal: README.md, CLAUDE.md, folder docs/.</footer>
+<footer>
+  MyOfis · Agent Office Manual Pengguna · dikemas kini 17 Okt 2026 untuk <code>myofis.bijokdev.com</code>. Dokumen teknikal: README.md, CLAUDE.md, folder docs/.
+</footer>
 </main>
 </div>
 
 <script>
+
   const q = document.getElementById("q");
   const sections = [...document.querySelectorAll("main section")];
   const links = [...document.querySelectorAll("nav.toc a")];
@@ -695,20 +2243,33 @@
     const open = nav.classList.toggle("open");
     menu.setAttribute("aria-expanded", String(open));
   });
-  links.forEach((a) => a.addEventListener("click", () => { nav.classList.remove("open"); menu.setAttribute("aria-expanded", "false"); }));
+  links.forEach((a) => a.addEventListener("click", () => {
+    nav.classList.remove("open");
+    menu.setAttribute("aria-expanded", "false");
+  }));
   // theme toggle (remembered in this browser)
   const root = document.documentElement;
-  try { const t = localStorage.getItem("myofis-manual-theme"); if (t) root.dataset.theme = t; } catch {}
+  try {
+    const t = localStorage.getItem("myofis-manual-theme");
+    if (t) root.dataset.theme = t;
+  } catch {}
   document.getElementById("theme").addEventListener("click", () => {
     const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
     root.dataset.theme = dark ? "light" : "dark";
-    try { localStorage.setItem("myofis-manual-theme", root.dataset.theme); } catch {}
+    try {
+      localStorage.setItem("myofis-manual-theme", root.dataset.theme);
+    } catch {}
   });
   // highlight the section in view
   const obs = new IntersectionObserver((es) => {
-    for (const e of es) if (e.isIntersecting) links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + e.target.id));
+    for (const e of es) {
+      if (e.isIntersecting) {
+        links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + e.target.id));
+      }
+    }
   }, { rootMargin: "-20% 0px -70% 0px" });
   sections.forEach((s) => obs.observe(s));
+
 </script>
 </body>
 </html>
