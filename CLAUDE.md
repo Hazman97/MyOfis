@@ -139,7 +139,7 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.
 **PENDING (read first, updated 2026-10-17 end of session)**
-- Latest: Editor (local video edit + TikTok FHD export) built, 236 tests green, web built. Owner: restart hub + runner (migration 0007 adds `uploads.run_id`; Editor is seeded on boot), then test in Chat → Editor. Next: TikTok Content Posting API + YouTube Data API (owner must create the developer apps; ask first). Gemini 008 (manual design) pending review ("semak 008"), then add Editor + Instagram/Threads to docs/manual.html.
+- Latest: Editor (local video edit + TikTok FHD export) built, 236 tests green, web built. Owner: restart hub + runner (migration 0007 adds `uploads.run_id`; Editor is seeded on boot), then test in Chat → Editor. Next: TikTok Content Posting API + YouTube Data API (owner must create the developer apps; ask first). Gemini 008 reviewed, committed and pushed. KIV: add Editor + Instagram/Threads sections to docs/manual.html.
 - Code: everything built and green: 214 tests, typecheck and web build OK. The domain serves the latest build.
 - Owner to do:
   - (done 2026-10-17: `consult_agent` added to Marketing + Researcher in the owner DB; Researcher prompt updated to read named sites with web_fetch and fall back when search is off; DB backup in data/backups/before-researcher-patch-*.db)
