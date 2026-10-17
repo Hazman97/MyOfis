@@ -21,6 +21,7 @@ import {
   Sparkles,
   Sun,
   X,
+  BookOpen,
 } from "lucide-vue-next";
 import BrandMark from "./BrandMark.vue";
 import { api } from "../../api/http.ts";
@@ -93,7 +94,7 @@ const groups: { sign: string; items: NavItem[] }[] = [
     ],
   },
   { sign: "Work", items: [{ to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
-  { sign: "System", items: [{ to: "/runners", label: "Runners", icon: Server }, { to: "/settings", label: "Settings", icon: Settings2 }] },
+  { sign: "System", items: [{ to: "/runners", label: "Runners", icon: Server }, { to: "/settings", label: "Settings", icon: Settings2 }, { to: "/manual", label: "Manual", icon: BookOpen }] },
 ];
 const moreItems: NavItem[] = [
   { to: "/chat", label: "Chat", icon: MessagesSquare },
@@ -104,6 +105,7 @@ const moreItems: NavItem[] = [
   { to: "/projects", label: "Projects", icon: FolderGit2 },
   { to: "/runners", label: "Runners", icon: Server },
   { to: "/settings", label: "Settings", icon: Settings2 },
+  { to: "/manual", label: "Manual", icon: BookOpen },
 ];
 
 const isActive = (to: string, exact = false) =>

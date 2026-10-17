@@ -205,7 +205,7 @@ Read this first when picking the project up in a new session.
 - The owner should rotate the canopy-ai API key (it was pasted in chat once).
 
 **Owner's guide**
-- `docs/panduan-agent-office.html` (Manglish, open in a browser). A copy was also published as a claude.ai artifact on the old account.
+- `docs/manual.html` is the main manual: the hub serves it at `/api/manual` (`MANUAL_PATH`) and the app shows it at **/manual** (menu System → Manual, phone: More → Manual). `docs/panduan-agent-office.html` is the older short guide.
 - Update it when features change.
 
 ## Commands

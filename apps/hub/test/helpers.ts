@@ -21,6 +21,7 @@ export function testConfig(dir: string): HubConfig {
     filesDir: join(dir, "files"),
     webDistDir: join(dir, "no-web"),
     mapsDir: join(import.meta.dir, "../../../maps"),
+    manualPath: join(import.meta.dir, "../../../docs/manual.html"),
     projectsDir: join(dir, "projects"),
     skillsDir: join(dir, "skills"),
     backup: { dir: join(dir, "backups"), keep: 3, hour: 3 },

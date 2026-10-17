@@ -21,6 +21,8 @@ const EnvSchema = z
     WORKSPACES_DIR: z.string().default("./workspaces"),
     WEB_DIST_DIR: z.string().default("./apps/web/dist"),
     MAPS_DIR: z.string().default("./maps"),
+    /** The owner's manual, shown in the app at /manual. */
+    MANUAL_PATH: z.string().default("./docs/manual.html"),
     PROJECTS_DIR: z.string().default("./projects"),
     SKILLS_DIR: z.string().default("./skills"),
     /** Tests point web search at a fake API. */
@@ -80,6 +82,7 @@ export interface HubConfig {
   webDistDir: string;
   /** Office map + sprite art served to the office view (swap files here to re-skin it). */
   mapsDir: string;
+  manualPath: string;
   /** projects/<slug>/brief.yaml and FEATURES.md (spec §4). */
   projectsDir: string;
   /** skills/<name>/SKILL.md (agentskills.io format). */
@@ -125,6 +128,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     filesDir: resolve(e.FILES_DIR),
     webDistDir: resolve(e.WEB_DIST_DIR),
     mapsDir: resolve(e.MAPS_DIR),
+    manualPath: resolve(e.MANUAL_PATH),
     projectsDir: resolve(e.PROJECTS_DIR),
     skillsDir: resolve(e.SKILLS_DIR),
     backup: { dir: resolve(e.BACKUP_DIR), keep: e.BACKUP_KEEP, hour: e.BACKUP_HOUR },

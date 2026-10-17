@@ -665,6 +665,14 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
 
   // office view art: Tiled map, tileset and sprite atlases from MAPS_DIR (swappable without a rebuild)
+  // the owner's manual (docs/manual.html), shown in the app at /manual; its office picture comes from MAPS_DIR
+  api.get("/manual", async (c) => {
+    const file = Bun.file(config.manualPath);
+    if (!(await file.exists())) throw new HttpError(404, "manual not found");
+    const html = (await file.text()).replaceAll('src="../maps/', 'src="/api/office/assets/');
+    return c.html(html, 200, { "cache-control": "private, no-cache", "x-content-type-options": "nosniff" });
+  });
+
   api.get("/office/assets/:name", async (c) => {
     const name = c.req.param("name");
     if (!OFFICE_ASSET_NAME.test(name)) throw new HttpError(400, "invalid asset name");
