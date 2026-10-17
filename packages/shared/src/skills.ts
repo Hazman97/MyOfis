@@ -24,9 +24,18 @@ export function parseSkill(md: string): ParsedSkill {
   const m = md.replace(/^﻿/, "").match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!m) throw new Error("SKILL.md must start with a --- frontmatter block (name, description)");
   const fields: Record<string, string> = {};
-  for (const line of m[1]!.split(/\r?\n/)) {
-    const kv = line.match(/^([a-z_]+):\s*(.*)$/);
-    if (kv) fields[kv[1]!] = kv[2]!.trim().replace(/^(["'])(.*)\1$/, "$2");
+  const lines = m[1]!.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const kv = lines[i]!.match(/^([a-z_]+):\s*(.*)$/);
+    if (!kv) continue;
+    let value = kv[2]!.trim();
+    // YAML block scalars (description: > / |): the value is the indented lines that follow
+    if (/^[>|][+-]?$/.test(value)) {
+      const block: string[] = [];
+      while (i + 1 < lines.length && /^\s+\S|^\s*$/.test(lines[i + 1]!)) block.push(lines[++i]!.trim());
+      value = value.startsWith(">") ? block.filter(Boolean).join(" ") : block.join("\n").trim();
+    }
+    fields[kv[1]!] = value.replace(/^(["'])(.*)\1$/, "$2");
   }
   const name = SkillName.safeParse(fields.name);
   if (!name.success) throw new Error(`frontmatter "name" is missing or invalid (${name.error.issues[0]?.message})`);

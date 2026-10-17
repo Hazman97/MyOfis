@@ -5,16 +5,16 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   ProjectBrief,
   TIMEZONE,
+  WebPost,
   type ContentDraft,
   type DraftDecision,
   type FeatureNote,
   type FeatureNoteInput,
   type ProjectContext,
   type SelfCheck,
-  type WebPost,
 } from "@agent-office/shared";
 import type { Db } from "./db/client.ts";
-import { contentDrafts, featureLog, projects } from "./db/schema.ts";
+import { contentDrafts, featureLog, projects, uploads } from "./db/schema.ts";
 import type { Emit, EventStore } from "./events.ts";
 import { HttpError, newId } from "./repo.ts";
 
@@ -149,6 +149,11 @@ export class Content {
 
   // ---------------------------------------------------------------- drafts
 
+  draft(id: string): ContentDraft | null {
+    const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, id)).get();
+    return row ? toDraft(row) : null;
+  }
+
   listDrafts(filter: { status?: string; project_id?: string; limit?: number }): ContentDraft[] {
     const conds = [];
     if (filter.status === "pending") conds.push(eq(contentDrafts.status, "draft"));
@@ -191,12 +196,23 @@ export class Content {
     if (!row) throw new HttpError(404, "draft not found");
     if (row.status !== "draft") throw new HttpError(409, `draft is already ${row.status}`);
     const at = new Date().toISOString();
-    const body = decision.decision === "approve" ? (decision.body ?? row.body) : row.body;
-    const status = decision.decision === "reject" ? "rejected" : body.trim() !== row.original_body.trim() ? "edited" : "approved";
+    const approve = decision.decision === "approve" ? decision : null;
+    const body = approve?.body ?? row.body;
+    const title = approve?.title ?? row.title;
+    // website posts: the owner may change any field before approving; a cover must be one of the uploads
+    let meta = row.meta;
+    if (approve?.meta && row.meta) {
+      meta = WebPost.parse({ ...row.meta, ...approve.meta });
+      if (meta.cover_upload_id && !this.db.select({ id: uploads.id }).from(uploads).where(eq(uploads.id, meta.cover_upload_id)).get()) {
+        throw new HttpError(400, "unknown cover photo");
+      }
+    }
+    const changed = body.trim() !== row.original_body.trim() || title !== row.title || JSON.stringify(meta) !== JSON.stringify(row.meta);
+    const status = !approve ? "rejected" : changed ? "edited" : "approved";
     const updated = this.store.transact((tx, emit) => {
       const r = tx
         .update(contentDrafts)
-        .set({ status, body, owner_feedback: decision.feedback?.trim() || null, decided_at: at })
+        .set({ status, body, title, meta, owner_feedback: decision.feedback?.trim() || null, decided_at: at })
         .where(eq(contentDrafts.id, id))
         .returning()
         .get()!;
@@ -233,6 +249,14 @@ export class Content {
         name: p.name,
         live_url: p.live_url,
         publish: p.publish?.url && p.publish.info ? p.publish.info : null,
+        published_posts: this.db
+          .select()
+          .from(contentDrafts)
+          .where(and(eq(contentDrafts.project_id, p.id), eq(contentDrafts.kind, "web_post"), eq(contentDrafts.status, "published")))
+          .orderBy(desc(contentDrafts.decided_at))
+          .limit(20)
+          .all()
+          .map((d) => ({ draft_id: d.id, title: d.title, post_type: d.meta?.post_type ?? "", event_date: d.meta?.event_date ?? "", url: d.published_url })),
         brief: this.#briefForAgents(p),
         features: this.db
           .select()

@@ -18,6 +18,8 @@ export function startFakeTelegram(token = "123456:fake-telegram-token-abcdefghij
     hostname: "127.0.0.1",
     port: 0,
     async fetch(req) {
+      const file = new URL(req.url).pathname.match(/^\/file\/bot([^/]+)\/(.+)$/);
+      if (file && file[1] === token) return new Response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]), { headers: { "content-type": "image/jpeg" } });
       const m = new URL(req.url).pathname.match(/^\/bot([^/]+)\/(\w+)$/);
       if (!m || m[1] !== token) return Response.json({ ok: false, description: "Unauthorized" }, { status: 401 });
       const method = m[2]!;
@@ -30,6 +32,7 @@ export function startFakeTelegram(token = "123456:fake-telegram-token-abcdefghij
       }
       sent.push({ method, body });
       if (method === "sendMessage") return Response.json({ ok: true, result: { message_id: nextMessage++, chat: { id: Number(body.chat_id) } } });
+      if (method === "getFile") return Response.json({ ok: true, result: { file_id: body.file_id, file_path: `photos/${String(body.file_id)}.jpg` } });
       return Response.json({ ok: true, result: true });
     },
   });

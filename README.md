@@ -267,9 +267,32 @@ Agents with the learning tools (Coach and Marketing by default; add them to any 
 
 ## Publisher: posts for your own websites
 
-Chat with **Publisher**, press 📷 to add photos (up to 4), and write a few points. Publisher looks at the photos, asks about anything missing, then writes the website post (title, summary, Markdown body, tags, event date/time/place, cover photo) and a matching social caption. Both wait in **Drafts**. **Approve** publishes the post to the website; if the site is down, the draft shows the error and **Publish again**.
+Chat with **Publisher** (here or in Telegram), press 📷 to add photos (up to 4), and write a few points. Before approving you can edit every field (title, summary, date, time, place, tags, cover); after publishing, **Edit live post** and **Take down** change the website, and Publisher can do the same from chat (you approve the change first). Publisher looks at the photos, asks about anything missing, then writes the website post (title, summary, Markdown body, tags, event date/time/place, cover photo) and a matching social caption. Both wait in **Drafts**. **Approve** publishes the post to the website; if the site is down, the draft shows the error and **Publish again**.
 
 Each website exposes one signed endpoint. Set it per project in **Projects → Brief → Website**, then press **Test**. SmashPoint's is in its Worker. The setup and the contract for other sites are in [docs/website-publishing.md](docs/website-publishing.md).
+
+## Telegram as your office phone
+
+Message the bot like a colleague:
+- Text or photos (albums too) go to **Publisher** by default. Its answer comes back in Telegram.
+- Commands: `/agent <slug>` and `/agents` (talk to someone else), `/project <slug>`, `/new` (fresh conversation), `/status`.
+- Every new draft arrives as a card with **✅ Approve** / **❌ Reject**:
+  - approving a website post publishes it;
+  - approving a Facebook caption posts it to the project's Page, when one is connected (docs/facebook-page.md).
+
+## Kerani: bookings
+
+**Kerani** reads SmashPoint's bookings (through the same signed endpoint as Publisher) and writes a short report:
+- today's games;
+- who has not paid, with tap-to-send WhatsApp reminder links;
+- free slots;
+- anything odd.
+
+Ask it in Chat or Telegram, or turn on its 08:00 schedule in **Schedules** (the report then comes to Telegram).
+
+## Skills: Browse
+
+**Skills → Browse** lists about 230 public skills from Anthropic and Hermes Agent, with their licences. **Install** copies the SKILL.md into your library. Skills marked "limited" have source-available terms.
 
 ## Backups
 

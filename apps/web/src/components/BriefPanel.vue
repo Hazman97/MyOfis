@@ -5,6 +5,7 @@ import { ExternalLink, Image, LoaderCircle, Plus, Sparkles, Trash2 } from "lucid
 import { Platform, type ContentLanguage, type FeatureNote, type Project, type ProjectBriefInput } from "@agent-office/shared";
 import SidePanel from "./SidePanel.vue";
 import PublishSettings from "./PublishSettings.vue";
+import FacebookSettings from "./FacebookSettings.vue";
 import { api } from "../api/http.ts";
 import { fmtDateTime } from "../format.ts";
 
@@ -189,7 +190,10 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
     </div>
 
     <!-- WEBSITE PUBLISHING (Publisher) -->
-    <PublishSettings v-if="tab === 'website'" :project="project" />
+    <template v-if="tab === 'website'">
+      <PublishSettings :project="project" />
+      <FacebookSettings :project="project" class="mt-6" />
+    </template>
 
     <!-- BRIEF -->
     <form v-if="tab === 'brief' && loaded" id="brief-form" class="space-y-5" @submit.prevent="save">

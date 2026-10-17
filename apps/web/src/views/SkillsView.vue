@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { MemoryOp } from "@agent-office/shared";
 import PageHeader from "../components/PageHeader.vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
+import SkillCatalog from "../components/SkillCatalog.vue";
 import { api, type Proposal, type Skill } from "../api/http.ts";
 import { compactDiff, lineDiff } from "../diff.ts";
 import { useOffice } from "../stores/office.ts";
@@ -14,7 +15,7 @@ import { AlertTriangle, BookOpen, ChevronRight, Clock, Sparkles, Trash2, Upload 
  * approval is on, memory changes. Nothing lands until the owner approves it here.
  */
 const office = useOffice();
-const tab = ref<"inbox" | "skills" | "history">("inbox");
+const tab = ref<"inbox" | "skills" | "history" | "browse">("inbox");
 const proposals = ref<Proposal[]>([]);
 const skills = ref<Skill[]>([]);
 const writeApproval = ref(false);
@@ -132,6 +133,7 @@ const title = (p: Proposal) =>
             { id: 'inbox', label: 'Waiting' },
             { id: 'skills', label: 'Skills' },
             { id: 'history', label: 'History' },
+            { id: 'browse', label: 'Browse' },
           ] as const"
           :key="t.id"
           role="tab"
@@ -182,7 +184,7 @@ const title = (p: Proposal) =>
     </div>
 
     <!-- Waiting / History: proposals -->
-    <div v-if="tab !== 'skills'" class="space-y-3">
+    <div v-if="tab === 'inbox' || tab === 'history'" class="space-y-3">
       <article
         v-for="p in tab === 'inbox' ? pending : decided"
         :key="p.id"
@@ -304,6 +306,9 @@ const title = (p: Proposal) =>
         </p>
       </div>
     </div>
+
+    <!-- Popular public skills -->
+    <SkillCatalog v-else-if="tab === 'browse'" :installed="skills.map((s) => s.name)" @installed="load" />
 
     <!-- Skills library -->
     <div v-else class="space-y-2.5">

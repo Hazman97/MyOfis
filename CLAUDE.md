@@ -96,6 +96,27 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - Needs `AGENT_OFFICE_SECRET` and `SITE_URL`; the owner must run `wrangler secret put` + `deploy`.
   - Signature compatibility was tested against a local `wrangler dev`.
 
+## Decisions taken beyond the spec (owner's "proceed kesemuanya" list, 2026-10-17)
+- **Telegram chat** (`apps/hub/src/telegram.ts`): any owner message or photo (albums are collected for 1.5 s) goes to the current agent as a chat job with `input.source = "telegram"`. The answer is sent back when the run ends.
+  - Default agent: Publisher. Switch with `/agent <slug>`, `/agents`, `/project <slug>` and `/new`; state is kept in the `settings` key `telegram.chat`.
+  - Photos: `getFile` + `/file/bot…`, the largest size, saved as uploads.
+  - Every new draft arrives as a card with signed `d:<draft>:<y|n>:<hmac>` buttons. Approving runs `hub.afterApprove` (website post → publish, Facebook caption → Page).
+- **Edit before approve:** `DraftDecision.approve` takes `title` and `meta: WebPostEdit` (no defaults, so unsent fields are never wiped). Changing any of them makes the status `edited`. DraftCard edits the title, summary, type, date, time, place, tags and cover.
+- **Skills → Browse** (`apps/hub/src/skillCatalog.ts`): catalogues `anthropics/skills` + `NousResearch/hermes-agent` (229 skills).
+  - The list is built from the GitHub tree + raw SKILL.md, cached for 24 h in `FILES_DIR/skill-catalog.json`.
+  - Licences come from LICENSE.txt or frontmatter; docx/pdf/pptx/xlsx/anatomy are flagged as limited.
+  - Install copies the SKILL.md only, with warnings. `parseSkill` now reads YAML block scalars (`description: >`).
+- **Kerani** (`packages/agents/src/kerani.ts`, schedule 08:00 daily, seeded off, job type `bookings_report` → sent to Telegram):
+  - tool `read_bookings` → runner → `POST /api/runner/site-data` (only agents that have the tool) → `Publisher.siteData`;
+  - a signed GET `?resource=bookings&from&to`; **for GET requests the signed message is `<ts>.<query string>`**;
+  - the SmashPoint Worker returns bookings, weekly regulars projected onto the dates, opening hours and free slots (max 14 days).
+- **Change live posts:** `Publisher.updatePublished` / `takeDown` send POST `action: update | delete` (the Worker PATCHes or DELETEs `posts/ao-<draft>`). Owner routes: `/drafts/:id/update-published`, `/drafts/:id/take-down`.
+  - Agent tools `update_web_post` and `take_down_web_post` are risk **review**, so the owner approves them. They use `project_context.projects[].published_posts`.
+  - A taken-down draft goes back to `approved` and can be published again.
+- **Facebook Page** (`apps/hub/src/social.ts`): a Page id + Page token (encrypted) per project, in `settings` `social.facebook.<project>`.
+  - Approving a `platform: facebook` caption posts to `/{page}/photos` (when `save_draft` got `cover_photo`) or to `/{page}/feed`.
+  - `FACEBOOK_GRAPH_BASE` points tests at a fake. Instagram is not done (it needs a public image URL). Guide: docs/facebook-page.md.
+
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.
 **PENDING (read first, updated 2026-10-17 end of session)**
@@ -113,7 +134,7 @@ Read this first when picking the project up in a new session.
 
   - next: hand over 005 (3 files), then 006 (whole-app UX polish; office pan/recenter and chat stick-to-bottom logic already fixed by Claude).
 - Publisher (website posts) built and **live** 2026-10-17: smashpoint-api Worker deployed (https://smashpoint-api.hazman5001.workers.dev, endpoint /agent-office/publish), secrets AGENT_OFFICE_SECRET + FIREBASE_SERVICE_ACCOUNT set (token + Firestore read verified), SmashPoint project created in the hub and connected (Test passed). Owner should delete the downloaded service-account JSON from Documents. First real publish = owner's own test.
-- Next requested: a "Browse" tab on Skills with popular public SKILL.md skills (one-click install, with licence + source shown).
+- Done 2026-10-17 (owner: "proceed kesemuanya"): Telegram chat + draft buttons, full edit before approve, Skills Browse, Kerani (bookings), update/take down live posts, Facebook Page posting. 227 tests. Owner: restart hub + runner; connect the Facebook Page (docs/facebook-page.md); turn on Kerani's 08:00 schedule if wanted. Instagram auto-post is still open.
 - Not started:
   - "Kerani" camera-rental agent: ask the owner where bookings are stored (Google Calendar / Sheet / own site DB / WhatsApp only).
   - 3D (OpenSCAD/Blender).

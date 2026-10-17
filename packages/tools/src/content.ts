@@ -117,6 +117,7 @@ export const saveDraftTool = defineTool({
     title: z.string().min(1).max(200).describe('Short label, e.g. "Caption A: cuti sekolah"'),
     body: z.string().min(1).max(20_000).describe("The full draft, ready to paste"),
     self_check: SelfCheck,
+    cover_photo: z.number().int().min(1).max(4).optional().describe("A photo the owner sent (1 = first) to post with this caption, e.g. on Facebook"),
   }),
   risk: () => "safe",
   describe: (i) => `save a ${i.platform} ${i.kind} draft: ${i.title}`,
@@ -129,7 +130,13 @@ export const saveDraftTool = defineTool({
     if (banned) throw new ToolDenied(`the draft says "${banned}", which the brief forbids. Rewrite without it.`);
     const copied = i.kind === "style_guide" ? null : copiedFrom(i.body, p.brief?.good_examples ?? []);
     if (copied) throw new ToolDenied(`the draft copies an example post word for word ("${copied}…"). Learn the style; write new sentences.`);
-    ctx.saveDraft({ project_id: p.id, platform: i.platform, kind: i.kind, title: i.title, body: i.body, self_check: i.self_check });
+    let meta: WebPost | undefined;
+    if (i.cover_photo) {
+      const a = ctx.attachments[i.cover_photo - 1];
+      if (!a) throw new ToolDenied(`there is no photo ${i.cover_photo}; the owner sent ${ctx.attachments.length}`);
+      meta = WebPost.parse({ post_type: "social", cover_upload_id: a.id });
+    }
+    ctx.saveDraft({ project_id: p.id, platform: i.platform, kind: i.kind, title: i.title, body: i.body, self_check: i.self_check, ...(meta ? { meta } : {}) });
     return { ok: true, summary: `draft saved: ${i.platform} ${i.kind}`, output: { saved: true, project: p.slug, status: "waiting for the owner" } };
   },
 });
@@ -186,6 +193,90 @@ export const draftWebPostTool = defineTool({
   },
 });
 
+export const readBookingsTool = defineTool({
+  name: "read_bookings",
+  description:
+    "Read a project's bookings from its website (e.g. SmashPoint's courts): who plays when, payment status, weekly regulars, opening hours and free slots. " +
+    "Dates are YYYY-MM-DD in Malaysia time; up to 14 days. The data has customers' names and phone numbers: use it only in reports for the owner, never in public posts.",
+  category: "read_docs",
+  input: z.object({
+    project: projectArg,
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("First day (default: today)"),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Last day (default: same as from)"),
+  }),
+  risk: () => "safe",
+  describe: (i) => `read bookings ${i.from ?? "today"}${i.to ? ` to ${i.to}` : ""}`,
+  async execute(i, ctx) {
+    const p = pickProject(ctx, i.project);
+    if (!p.publish) throw new ToolDenied(`${p.name} is not connected to Agent Office (Projects → Website).`);
+    const params: Record<string, string> = {};
+    if (i.from) params.from = i.from;
+    if (i.to) params.to = i.to;
+    const data = (await ctx.siteData(p.id, "bookings", params)) as { bookings?: unknown[] } | null;
+    return { ok: true, summary: `${data?.bookings?.length ?? 0} bookings from ${p.name}`, output: data };
+  },
+});
+
+/** A live post this project's website got from Agent Office, found by draft id. */
+function livePost(ctx: ToolContext, project: string | undefined, draftId: string) {
+  const p = pickProject(ctx, project);
+  const post = p.published_posts.find((x) => x.draft_id === draftId);
+  if (!post) {
+    const list = p.published_posts.map((x) => `${x.draft_id} "${x.title}"`).join("; ") || "none";
+    throw new ToolDenied(`no live post ${draftId} on ${p.name}. Live posts: ${list}`);
+  }
+  return post;
+}
+
+export const updateWebPostTool = defineTool({
+  name: "update_web_post",
+  description:
+    "Change a post that is already live on a project's website (e.g. new date, fixed price, extra details). Find it in the projects' published_posts by draft_id. " +
+    "Send only the fields that change; body is the full new Markdown body. The owner approves the change before the website is updated.",
+  category: "write",
+  input: z.object({
+    project: projectArg,
+    draft_id: z.string().min(4).max(64),
+    title: z.string().trim().min(3).max(140).optional(),
+    excerpt: z.string().trim().max(300).optional(),
+    body: z.string().min(20).max(20_000).optional(),
+    post_type: z.string().max(40).optional(),
+    tags: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
+    event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    event_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+    location: z.string().max(200).optional(),
+    reason: z.string().min(3).max(300).describe("One line for the owner: what changes and why"),
+  }),
+  risk: () => "review",
+  describe: (i) => {
+    const changes = (["title", "excerpt", "post_type", "event_date", "event_time", "location"] as const).filter((k) => i[k] !== undefined).map((k) => `${k} → ${i[k]}`);
+    if (i.tags) changes.push(`tags → ${i.tags.join(", ")}`);
+    if (i.body) changes.push("new body text");
+    return `update the live post ${i.draft_id}: ${changes.join("; ") || "no changes"} (${i.reason})`;
+  },
+  async execute(i, ctx) {
+    const post = livePost(ctx, i.project, i.draft_id);
+    const meta: Record<string, unknown> = {};
+    for (const k of ["excerpt", "post_type", "tags", "event_date", "event_time", "location"] as const) if (i[k] !== undefined) meta[k] = i[k];
+    const out = (await ctx.webPost("update", post.draft_id, { title: i.title, body: i.body, meta })) as { url?: string | null };
+    return { ok: true, summary: `updated "${i.title ?? post.title}" on the website`, output: { updated: true, url: out?.url ?? post.url } };
+  },
+});
+
+export const takeDownWebPostTool = defineTool({
+  name: "take_down_web_post",
+  description: "Remove a live post from a project's website (e.g. a cancelled event). The owner approves first. It can be published again later from Drafts.",
+  category: "write",
+  input: z.object({ project: projectArg, draft_id: z.string().min(4).max(64), reason: z.string().min(3).max(300) }),
+  risk: () => "review",
+  describe: (i) => `take the live post ${i.draft_id} off the website (${i.reason})`,
+  async execute(i, ctx) {
+    const post = livePost(ctx, i.project, i.draft_id);
+    await ctx.webPost("take_down", post.draft_id, {});
+    return { ok: true, summary: `took "${post.title}" off the website`, output: { removed: true } };
+  },
+});
+
 export const addFeatureNoteTool = defineTool({
   name: "add_feature_note",
   description:
@@ -202,4 +293,4 @@ export const addFeatureNoteTool = defineTool({
   },
 });
 
-export const CONTENT_TOOLS = [readBriefTool, readFeatureLogTool, readPastDraftsTool, saveDraftTool, draftWebPostTool];
+export const CONTENT_TOOLS = [readBriefTool, readFeatureLogTool, readPastDraftsTool, saveDraftTool, draftWebPostTool, readBookingsTool, updateWebPostTool, takeDownWebPostTool];

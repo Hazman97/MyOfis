@@ -31,6 +31,8 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     webSearch: (q, n) => ctx.webSearch(q, n),
     consult: (to, q, ms) => ctx.consult(to, q, ms),
     attachments: attachmentsOf(ctx.assignment.job.input),
+    siteData: (p, r, params) => ctx.siteData(p, r, params),
+    webPost: (a, id, edits) => ctx.webPost(a, id, edits),
   };
 }
 

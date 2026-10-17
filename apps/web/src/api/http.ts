@@ -15,6 +15,7 @@ import type {
   Run,
   Runner,
   Schedule,
+  WebPost,
 } from "@agent-office/shared";
 
 export interface ToolInfo {
@@ -110,6 +111,23 @@ export interface ChatThread {
   messages: number;
 }
 
+export interface CatalogSkill {
+  source: "anthropic" | "hermes";
+  path: string;
+  name: string;
+  description: string;
+  category: string;
+  license: string;
+  open_license: boolean;
+  has_extra_files: boolean;
+  url: string;
+}
+export interface FacebookSettings {
+  page_id: string;
+  page_name: string | null;
+  has_token: boolean;
+  token_hint: string | null;
+}
 export interface PublishSettings {
   url: string;
   has_secret: boolean;
@@ -238,11 +256,19 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
     return request<{ drafts: ContentDraft[] }>(`/drafts${qs.size ? `?${qs}` : ""}`);
   },
+  skillCatalog: (refresh = false) => request<{ skills: CatalogSkill[]; updated_at: string | null }>(`/skills/catalog${refresh ? "?refresh=1" : ""}`),
+  installCatalogSkill: (source: string, path: string) => request<{ skill: Skill; warnings: string[] }>("/skills/catalog/install", { body: { source, path } }),
+  facebookSettings: (projectId: string) => request<{ facebook: FacebookSettings }>(`/projects/${projectId}/facebook`),
+  saveFacebookSettings: (projectId: string, body: { page_id: string; token?: string }) =>
+    request<{ facebook: FacebookSettings }>(`/projects/${projectId}/facebook`, { method: "PUT", body }),
+  testFacebookSettings: (projectId: string) => request<{ facebook: FacebookSettings }>(`/projects/${projectId}/facebook/test`, { method: "POST" }),
   publishSettings: (projectId: string) => request<{ publish: PublishSettings }>(`/projects/${projectId}/publish`),
   savePublishSettings: (projectId: string, body: { url: string; secret?: string }) =>
     request<{ publish: PublishSettings }>(`/projects/${projectId}/publish`, { method: "PUT", body }),
   testPublishSettings: (projectId: string) => request<{ publish: PublishSettings }>(`/projects/${projectId}/publish/test`, { method: "POST" }),
   publishDraft: (id: string) => request<{ draft: ContentDraft }>(`/drafts/${id}/publish`, { method: "POST" }),
+  updatePublished: (id: string, body: { title?: string; body?: string; meta?: Partial<WebPost> }) => request<{ draft: ContentDraft }>(`/drafts/${id}/update-published`, { body }),
+  takeDownPost: (id: string) => request<{ draft: ContentDraft }>(`/drafts/${id}/take-down`, { method: "POST" }),
   decideDraft: (id: string, decision: DraftDecision) => request<{ draft: ContentDraft }>(`/drafts/${id}/decide`, { body: decision }),
 
   chat: (body: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[] }) =>

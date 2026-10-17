@@ -165,6 +165,22 @@ description: Write a short TikTok caption for a Malaysian camera-rental promo, i
 - [ ] **Buat:** Drafts → kad post (ada cover, chip jenis post dan tarikh) → **Approve**.
   **Betul kalau:** kad tunjuk **View it on the website →**, dan post betul-betul keluar kat page News smashpoint.
 
+## 15. Telegram, Kerani, edit post, Browse, Facebook
+- [ ] **Buat:** dalam Telegram, hantar gambar dan teks ke bot (contoh poster event).
+  **Betul kalau:** Publisher balas dalam Telegram, lepas tu datang kad draf dengan butang **✅ Approve & publish**.
+- [ ] **Buat:** tekan ✅ pada kad post website.
+  **Betul kalau:** bot balas "✅ Published: https://smashpoint…" dan post keluar kat website.
+- [ ] **Buat:** Drafts → kad post yang belum approve → ubah tarikh dan tukar cover → **Approve my edit**.
+  **Betul kalau:** website tunjuk tarikh dan cover yang baru.
+- [ ] **Buat:** kad post yang dah live → **Edit live post** → ubah tajuk → **Save to website**. Lepas tu cuba **Take down**.
+  **Betul kalau:** website berubah, lepas tu post hilang. Kad tunjuk "Publish now" untuk naikkan semula.
+- [ ] **Buat:** Telegram `/agent kerani` → `siapa main hari ni?`
+  **Betul kalau:** dapat senarai tempahan, link WhatsApp untuk yang belum bayar, dan slot kosong.
+- [ ] **Buat:** Skills → **Browse** → cari `social` → **Install**.
+  **Betul kalau:** skill masuk tab Skills dan agent boleh guna.
+- [ ] **Buat (pilihan):** sambung Facebook Page ikut `docs/facebook-page.md`, lepas tu approve satu caption Facebook.
+  **Betul kalau:** post keluar kat Page, dengan gambar.
+
 ## Habis test?
 Bagitahu Claude:
 1. Test mana yang **tak lulus**, dengan screenshot atau mesej error.

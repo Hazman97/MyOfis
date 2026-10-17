@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { Check, Copy, LoaderCircle, ShieldCheck, TriangleAlert, X } from "lucide-vue-next";
-import type { ContentDraft } from "@agent-office/shared";
+import type { ContentDraft, WebPost } from "@agent-office/shared";
 import AgentAvatar from "./AgentAvatar.vue";
+import ConfirmButton from "./ConfirmButton.vue";
 import StatusBadge from "./StatusBadge.vue";
 import { api } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
@@ -23,7 +24,50 @@ const showOriginal = ref(false);
 
 const agent = computed(() => office.agentById[props.draft.agent_id]);
 const pending = computed(() => props.draft.status === "draft");
-const edited = computed(() => body.value.trim() !== props.draft.original_body.trim());
+// the owner may edit the title and (website posts) every post field before approving
+const title = ref(props.draft.title);
+const post = reactive({
+  post_type: props.draft.meta?.post_type ?? "",
+  excerpt: props.draft.meta?.excerpt ?? "",
+  tags: (props.draft.meta?.tags ?? []).join(", "),
+  event_date: props.draft.meta?.event_date ?? "",
+  event_time: props.draft.meta?.event_time ?? "",
+  location: props.draft.meta?.location ?? "",
+  cover_upload_id: props.draft.meta?.cover_upload_id ?? null,
+});
+const coverBusy = ref(false);
+const postEdits = computed<Partial<WebPost> | undefined>(() => {
+  const m = props.draft.meta;
+  if (!m) return undefined;
+  const next: Partial<WebPost> = {
+    post_type: post.post_type.trim(),
+    excerpt: post.excerpt.trim(),
+    tags: post.tags.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 12),
+    event_date: post.event_date,
+    event_time: post.event_time,
+    location: post.location.trim(),
+    cover_upload_id: post.cover_upload_id,
+  };
+  const same = (Object.keys(next) as (keyof WebPost)[]).every((k) => JSON.stringify(next[k]) === JSON.stringify(m[k]));
+  return same ? undefined : next;
+});
+const titleEdited = computed(() => title.value.trim() !== props.draft.title);
+const edited = computed(() => body.value.trim() !== props.draft.original_body.trim() || titleEdited.value || !!postEdits.value);
+async function changeCover(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  coverBusy.value = true;
+  error.value = "";
+  try {
+    post.cover_upload_id = (await api.uploadImage(file)).id;
+  } catch (err) {
+    error.value = (err as Error).message;
+  } finally {
+    coverBusy.value = false;
+  }
+}
 const rows = computed(() => Math.min(18, Math.max(4, body.value.split("\n").length + 1)));
 
 const PLATFORM: Record<string, string> = {
@@ -78,6 +122,47 @@ async function copy() {
   }
 }
 
+// a post that is already on the website: edit it there, or take it down
+const editingLive = ref(false);
+const editable = computed(() => pending.value || editingLive.value);
+const isLive = computed(() => props.draft.kind === "web_post" && props.draft.status === "published");
+function startLiveEdit() {
+  title.value = props.draft.title;
+  body.value = props.draft.body;
+  const m = props.draft.meta;
+  Object.assign(post, {
+    post_type: m?.post_type ?? "",
+    excerpt: m?.excerpt ?? "",
+    tags: (m?.tags ?? []).join(", "),
+    event_date: m?.event_date ?? "",
+    event_time: m?.event_time ?? "",
+    location: m?.location ?? "",
+    cover_upload_id: m?.cover_upload_id ?? null,
+  });
+  editingLive.value = true;
+}
+async function liveAction(fn: () => Promise<{ draft: ContentDraft }>) {
+  busy.value = true;
+  error.value = "";
+  try {
+    emit("decided", (await fn()).draft);
+    editingLive.value = false;
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
+}
+const saveLive = () =>
+  liveAction(() =>
+    api.updatePublished(props.draft.id, {
+      title: titleEdited.value ? title.value.trim() : undefined,
+      body: body.value.trim() !== props.draft.body.trim() ? body.value : undefined,
+      meta: postEdits.value,
+    }),
+  );
+const takeDown = () => liveAction(() => api.takeDownPost(props.draft.id));
+
 async function decide(decision: "approve" | "reject") {
   busy.value = true;
   error.value = "";
@@ -85,7 +170,15 @@ async function decide(decision: "approve" | "reject") {
     const fb = feedback.value.trim() || undefined;
     const { draft } = await api.decideDraft(
       props.draft.id,
-      decision === "approve" ? { decision, body: edited.value ? body.value : undefined, feedback: fb } : { decision, feedback: fb },
+      decision === "approve"
+        ? {
+            decision,
+            body: body.value.trim() !== props.draft.original_body.trim() ? body.value : undefined,
+            title: titleEdited.value ? title.value.trim() : undefined,
+            meta: postEdits.value,
+            feedback: fb,
+          }
+        : { decision, feedback: fb },
     );
     emit("decided", draft);
   } catch (e) {
@@ -105,8 +198,55 @@ async function decide(decision: "approve" | "reject") {
       <span v-if="projectName" class="text-xs font-medium text-muted">· {{ projectName }}</span>
       <span class="ml-auto font-mono text-[11px] text-faint">{{ fmtDateTime(draft.created_at) }}</span>
     </header>
-    <h3 class="px-4 pt-3 font-semibold text-sm tracking-tight text-fg">{{ draft.title }}</h3>
-    <div v-if="isWebPost && draft.meta" class="px-4 pt-2.5 space-y-2">
+    <div v-if="editable" class="px-4 pt-3">
+      <label :for="`dt-${draft.id}`" class="sr-only">Title</label>
+      <input :id="`dt-${draft.id}`" v-model="title" class="input text-sm font-semibold" maxlength="200" />
+    </div>
+    <h3 v-else class="px-4 pt-3 font-semibold text-sm tracking-tight text-fg">{{ draft.title }}</h3>
+
+    <!-- website post: every field can be changed before approving -->
+    <div v-if="editable && isWebPost" class="grid gap-2 px-4 pt-2.5 sm:grid-cols-2">
+      <div class="sm:col-span-2">
+        <div class="relative">
+          <img v-if="post.cover_upload_id" :src="api.uploadUrl(post.cover_upload_id)" alt="Cover photo" class="max-h-56 w-full rounded-lg border border-line object-cover" />
+          <p v-else class="rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs text-muted">No cover photo</p>
+        </div>
+        <div class="mt-1.5 flex flex-wrap gap-2 text-xs">
+          <label class="btn btn-sm cursor-pointer" :class="coverBusy && 'opacity-60'">
+            <input type="file" accept="image/jpeg,image/png,image/webp" class="hidden" :disabled="coverBusy" @change="changeCover" />
+            {{ coverBusy ? "Uploading…" : post.cover_upload_id ? "Change cover" : "Add cover" }}
+          </label>
+          <button v-if="post.cover_upload_id" type="button" class="btn btn-sm btn-ghost" @click="post.cover_upload_id = null">Remove cover</button>
+        </div>
+      </div>
+      <div class="sm:col-span-2">
+        <label :for="`dx-${draft.id}`" class="label">Summary (on the post card)</label>
+        <textarea :id="`dx-${draft.id}`" v-model="post.excerpt" rows="2" maxlength="400" class="input text-sm" />
+      </div>
+      <div>
+        <label :for="`dp-${draft.id}`" class="label">Post type</label>
+        <input :id="`dp-${draft.id}`" v-model="post.post_type" class="input text-sm" maxlength="40" />
+      </div>
+      <div>
+        <label :for="`dg-${draft.id}`" class="label">Tags (comma separated)</label>
+        <input :id="`dg-${draft.id}`" v-model="post.tags" class="input text-sm" />
+      </div>
+      <div>
+        <label :for="`dd-${draft.id}`" class="label">Event date</label>
+        <input :id="`dd-${draft.id}`" v-model="post.event_date" type="date" class="input text-sm" />
+      </div>
+      <div>
+        <label :for="`dm-${draft.id}`" class="label">Event time</label>
+        <input :id="`dm-${draft.id}`" v-model="post.event_time" type="time" class="input text-sm" />
+      </div>
+      <div class="sm:col-span-2">
+        <label :for="`dl-${draft.id}`" class="label">Location</label>
+        <input :id="`dl-${draft.id}`" v-model="post.location" class="input text-sm" maxlength="200" />
+      </div>
+      <p class="text-xs text-info sm:col-span-2">Approving publishes this post to the website.</p>
+    </div>
+    <img v-if="!isWebPost && draft.meta?.cover_upload_id" :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Photo for this caption" class="mx-4 mt-2.5 max-h-48 rounded-lg border border-line object-cover" />
+    <div v-if="!editable && isWebPost && draft.meta" class="px-4 pt-2.5 space-y-2">
       <img v-if="draft.meta.cover_upload_id" :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Cover photo" class="max-h-56 w-full rounded-lg border border-line object-cover" />
       <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
         <span class="chip">{{ draft.meta.post_type }}</span>
@@ -119,7 +259,7 @@ async function decide(decision: "approve" | "reject") {
 
     <div class="px-4 pt-2.5">
       <textarea
-        v-if="pending"
+        v-if="editable"
         v-model="body"
         :rows="rows"
         class="input font-sans text-[14px] leading-relaxed bg-surface/50 border-line focus:bg-surface transition-colors shadow-inner"
@@ -177,8 +317,8 @@ async function decide(decision: "approve" | "reject") {
       />
     </div>
 
-    <div v-if="draft.kind === 'web_post' && !pending && draft.status !== 'rejected'" class="mx-4 mt-2 text-xs">
-      <a v-if="draft.published_url?.startsWith('http')" :href="draft.published_url" target="_blank" rel="noopener" class="text-accent hover:underline">View it on the website →</a>
+    <div v-if="!pending && draft.status !== 'rejected' && (draft.kind === 'web_post' || draft.published_url || draft.publish_error)" class="mx-4 mt-2 text-xs">
+      <a v-if="draft.published_url?.startsWith('http')" :href="draft.published_url" target="_blank" rel="noopener" class="text-accent hover:underline">{{ draft.platform === 'facebook' && draft.kind !== 'web_post' ? 'View it on Facebook →' : 'View it on the website →' }}</a>
       <div v-else-if="draft.publish_error" class="flex flex-wrap items-center gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-danger">
         <span class="min-w-0 flex-1">Not published: {{ draft.publish_error }}</span>
         <button class="btn btn-sm" :disabled="busy" @click="publishAgain">
@@ -218,6 +358,16 @@ async function decide(decision: "approve" | "reject") {
         </div>
       </template>
 
+      <div v-else-if="isLive && editingLive" class="ml-auto flex items-center gap-2">
+        <button class="btn btn-sm btn-ghost" :disabled="busy" @click="editingLive = false">Cancel</button>
+        <button class="btn btn-sm btn-primary" :disabled="busy || !edited" @click="saveLive">
+          <LoaderCircle v-if="busy" :size="13" class="motion-safe:animate-spin" /> Save to website
+        </button>
+      </div>
+      <div v-else-if="isLive" class="ml-auto flex items-center gap-2">
+        <ConfirmButton small confirm-label="Take it off the website?" @confirm="takeDown">Take down</ConfirmButton>
+        <button class="btn btn-sm" :disabled="busy" @click="startLiveEdit">Edit live post</button>
+      </div>
       <span v-else class="ml-auto inline-flex items-center gap-2 text-xs text-muted">
         <StatusBadge :status="draft.status" />
         <span v-if="draft.decided_at" class="font-mono text-[11px] text-faint">{{ fmtDateTime(draft.decided_at) }}</span>

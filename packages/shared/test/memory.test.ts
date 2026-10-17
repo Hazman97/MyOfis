@@ -37,3 +37,11 @@ describe("memory ops (Hermes-style)", () => {
     expect(memoryPromptSection("MEMORY", ["one", "two"], 100)).toBe("## MEMORY [9% — 9/100 chars]\none\n§\ntwo");
   });
 });
+
+describe("parseSkill frontmatter", () => {
+  test("reads folded descriptions and ignores extra fields (Hermes / Anthropic skills)", async () => {
+    const { parseSkill } = await import("../src/index.ts");
+    const md = ["---", "name: social-calendar", "description: >", "  Plan multi-platform social campaigns,", "  from briefs to posting.", "version: 0.1.0", "license: MIT", "metadata:", "  hermes:", "    tags: [Social]", "---", "", "# Body"].join("\n");
+    expect(parseSkill(md)).toMatchObject({ name: "social-calendar", description: "Plan multi-platform social campaigns, from briefs to posting.", version: "0.1.0" });
+  });
+});

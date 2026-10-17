@@ -85,6 +85,10 @@ export interface ToolContext {
   consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
   /** Photos the owner sent with this job's message (chat), in order. */
   attachments: { id: string; name: string; content_type: string }[];
+  /** Data a project's website shares with Agent Office (Kerani: bookings). */
+  siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
+  /** Change or remove a live website post (after the owner approved the tool call). */
+  webPost(action: "update" | "take_down", draftId: string, edits: { title?: string; body?: string; meta?: Record<string, unknown> }): Promise<unknown>;
 }
 
 export interface DraftRequest {

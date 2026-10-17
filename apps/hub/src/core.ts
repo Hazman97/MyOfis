@@ -5,6 +5,7 @@ import {
   dayKey,
   fixEscapedNewlines,
   type HubToRunner,
+  type ContentDraft,
   type Job,
   type RunAssignment,
   type RunnerCapabilities,
@@ -18,6 +19,7 @@ import type { Db } from "./db/client.ts";
 import { agents, approvals, contentDrafts, featureLog, jobs, projects, runners, runs } from "./db/schema.ts";
 import type { Backups } from "./backup.ts";
 import type { Publisher } from "./publisher.ts";
+import type { Social } from "./social.ts";
 import type { Learning } from "./learning.ts";
 import type { Emit, EventStore } from "./events.ts";
 import type { Integrations } from "./integrations.ts";
@@ -85,6 +87,7 @@ export class Hub {
   learning!: Learning;
   backups!: Backups;
   publisher!: Publisher;
+  social!: Social;
   /** Agents told they are over today's token budget, with the day they were told. */
   readonly #overBudget = new Map<string, string>();
 
@@ -267,7 +270,18 @@ Error: ${r.error}` : ""}` });
    * `chat` job (so budgets, approvals and the office all apply); earlier
    * messages and replies of the thread ride along as `input.history`.
    */
-  chat(input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[] }): { job: Job; thread_id: string } {
+  /**
+   * What approving a draft does beyond recording it: a website post is published, and a Facebook
+   * caption is posted to the project's Page when one is connected. Used by the web and Telegram.
+   */
+  async afterApprove(draft: ContentDraft): Promise<ContentDraft> {
+    if (draft.status !== "approved" && draft.status !== "edited") return draft;
+    if (draft.kind === "web_post") return this.publisher.publish(draft.id);
+    if (draft.platform === "facebook" && this.social.configured(draft.project_id)) return this.social.postToFacebook(draft.id);
+    return draft;
+  }
+
+  chat(input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[]; source?: "telegram" }): { job: Job; thread_id: string } {
     const threadId = input.thread_id || newId("cht");
     const prior = this.chatJobs(threadId);
     if (prior.length && prior[0]!.agent_id !== input.agent_id) throw new HttpError(409, "this chat thread belongs to another agent");
@@ -289,7 +303,7 @@ Error: ${r.error}` : ""}` });
       project_id: input.project_id ?? prior.at(-1)?.project_id ?? null,
       type: "chat",
       title: input.text.trim().replace(/\s+/g, " ").slice(0, 80) || "Chat",
-      input: { text: input.text, thread_id: threadId, history, ...(attachments.length ? { attachments } : {}) },
+      input: { text: input.text, thread_id: threadId, history, ...(attachments.length ? { attachments } : {}), ...(input.source ? { source: input.source } : {}) },
       trigger: "manual",
     });
     return { job, thread_id: threadId };

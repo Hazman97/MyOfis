@@ -25,6 +25,9 @@ export interface RunContext {
   webSearch(query: string, count: number): Promise<WebSearchResult[]>;
   /** Bytes of a photo the owner attached to this job. */
   fetchUpload(id: string): Promise<Uint8Array>;
+  /** Data a project's website shares with Agent Office (through the hub, which holds its secret). */
+  siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
+  webPost(action: "update" | "take_down", draftId: string, edits: { title?: string; body?: string; meta?: Record<string, unknown> }): Promise<unknown>;
   /** Ask another agent (by slug) and wait for its answer, up to `timeoutMs`. Never throws. */
   consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
   /** Runner-owned folder (outside the workspace) for this agent's screenshot baselines. */

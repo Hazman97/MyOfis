@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { PublishInfo, freshFetch } from "@agent-office/shared";
+import { PublishInfo, WebPost, fixEscapedNewlines, freshFetch, type WebPostEdit } from "@agent-office/shared";
 import { keyHint, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { contentDrafts, projects, uploads, type ProjectPublish } from "./db/schema.ts";
@@ -130,6 +130,21 @@ export class Publisher {
     return this.settings(projectId);
   }
 
+  /**
+   * Read data the website shares with Agent Office (e.g. `resource=bookings` for Kerani). The query
+   * string is part of the signed message, so a captured request cannot be replayed for other data.
+   */
+  async siteData(projectId: string, resource: string, params: Record<string, string>): Promise<unknown> {
+    const { url, secret } = this.#endpoint(projectId);
+    const qs = new URLSearchParams({ resource, ...params }).toString();
+    const res = await freshFetch(`${url}?${qs}`, { timeoutMs: 30_000, headers: signRequest(secret, qs) }).catch((e: Error) => {
+      throw new HttpError(400, `cannot reach the website: ${e.message}`);
+    });
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    if (!res.ok) throw new HttpError(400, `the website answered ${res.status}${body?.error ? `: ${body.error}` : ""}`);
+    return body;
+  }
+
   /** Send an approved web_post draft to its website. Records the URL or the error on the draft. */
   async publish(draftId: string) {
     const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, draftId)).get();
@@ -178,5 +193,50 @@ export class Publisher {
       return r;
     });
     return toDraft(updated);
+  }
+
+  async #post(projectId: string, payload: Record<string, unknown>): Promise<{ id?: string; url?: string }> {
+    const { url, secret } = this.#endpoint(projectId);
+    const body = JSON.stringify({ version: 1, ...payload });
+    const res = await freshFetch(url, { timeoutMs: 60_000, method: "POST", headers: { "content-type": "application/json", ...signRequest(secret, body) }, body });
+    const out = (await res.json().catch(() => null)) as { id?: string; url?: string; error?: string } | null;
+    if (!res.ok) throw new HttpError(400, `the site answered ${res.status}${out?.error ? `: ${out.error}` : ""}`);
+    return out ?? {};
+  }
+
+  #published(draftId: string) {
+    const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, draftId)).get();
+    if (!row) throw new HttpError(404, "draft not found");
+    if (row.kind !== "web_post" || !row.meta) throw new HttpError(400, "only website posts can be changed");
+    if (row.status !== "published") throw new HttpError(409, "this post is not on the website");
+    return { ...row, meta: row.meta };
+  }
+
+  /** Change a post that is already live. The draft keeps the new text only when the website accepted it. */
+  async updatePublished(draftId: string, edits: { title?: string; body?: string; meta?: WebPostEdit }) {
+    const row = this.#published(draftId);
+    const meta = WebPost.parse({ ...row.meta, ...(edits.meta ?? {}) });
+    const title = edits.title?.trim() || row.title;
+    const body = fixEscapedNewlines(edits.body ?? row.body);
+    const coverChanged = meta.cover_upload_id !== row.meta.cover_upload_id;
+    const cover = coverChanged && meta.cover_upload_id ? this.readUpload(meta.cover_upload_id) : null;
+    if (coverChanged && meta.cover_upload_id && !cover) throw new HttpError(400, "unknown cover photo");
+    await this.#post(row.project_id, {
+      action: "update",
+      draft_id: row.id,
+      post: { type: meta.post_type, title, excerpt: meta.excerpt, body, tags: meta.tags, event_date: meta.event_date, event_time: meta.event_time, location: meta.location, video_url: meta.video_url },
+      cover: cover ? { name: cover.row.name, content_type: cover.row.content_type, data_base64: cover.bytes.toString("base64") } : null,
+      remove_cover: coverChanged && !meta.cover_upload_id,
+    });
+    const r = this.db.update(contentDrafts).set({ title, body, meta, publish_error: null }).where(eq(contentDrafts.id, draftId)).returning().get()!;
+    return toDraft(r);
+  }
+
+  /** Take a live post off the website. The draft goes back to "approved", so it can be published again. */
+  async takeDown(draftId: string) {
+    const row = this.#published(draftId);
+    await this.#post(row.project_id, { action: "delete", draft_id: row.id });
+    const r = this.db.update(contentDrafts).set({ status: "approved", published_url: null, publish_error: null }).where(eq(contentDrafts.id, draftId)).returning().get()!;
+    return toDraft(r);
   }
 }

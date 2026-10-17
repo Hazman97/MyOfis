@@ -246,6 +246,30 @@ export class RunnerClient {
     return ((await res.json()) as { results: Awaited<ReturnType<import("@agent-office/tools").ToolContext["searchSessions"]>> }).results;
   }
 
+  async #siteData(runId: string, projectId: string, resource: string, params: Record<string, string>): Promise<unknown> {
+    const res = await freshFetch(new URL("/api/runner/site-data", this.#opts.hubUrl), {
+      method: "POST",
+      timeoutMs: 45_000,
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ run_id: runId, project_id: projectId, resource, params }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { data?: unknown; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `site data failed (${res.status})`);
+    return body.data;
+  }
+
+  async #webPost(runId: string, action: string, draftId: string, edits: Record<string, unknown>): Promise<unknown> {
+    const res = await freshFetch(new URL("/api/runner/web-post", this.#opts.hubUrl), {
+      method: "POST",
+      timeoutMs: 90_000,
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ run_id: runId, action, draft_id: draftId, edits }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { draft?: unknown; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `website change failed (${res.status})`);
+    return body.draft;
+  }
+
   async #fetchUpload(runId: string, id: string): Promise<Uint8Array> {
     const url = new URL(`/api/runner/uploads/${encodeURIComponent(id)}`, this.#opts.hubUrl);
     url.searchParams.set("run_id", runId);
@@ -331,6 +355,8 @@ export class RunnerClient {
         searchSessions: (query, allAgents) => this.#search(a.run_id, query, allAgents),
         webSearch: (query, count) => this.#webSearch(a.run_id, query, count),
         fetchUpload: (id) => this.#fetchUpload(a.run_id, id),
+        siteData: (projectId, resource, params) => this.#siteData(a.run_id, projectId, resource, params),
+        webPost: (action, draftId, edits) => this.#webPost(a.run_id, action, draftId, edits),
         consult: (toAgent, question, timeoutMs) => this.#consult(a.run_id, toAgent, question, timeoutMs, run.abort.signal),
         baselineDir: this.#opts.dataDir ? join(this.#opts.dataDir, "baselines", a.agent.slug) : null,
       });

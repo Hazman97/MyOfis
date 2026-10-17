@@ -93,6 +93,19 @@ export const WebPost = z.object({
 });
 export type WebPost = z.infer<typeof WebPost>;
 
+/** The owner's changes to a website post before approving: only the fields sent (no defaults, so nothing is wiped). */
+export const WebPostEdit = z.object({
+  post_type: z.string().trim().min(1).max(40).optional(),
+  excerpt: z.string().max(400).optional(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
+  event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).optional(),
+  event_time: z.string().regex(/^\d{2}:\d{2}$/).or(z.literal("")).optional(),
+  location: z.string().max(200).optional(),
+  video_url: z.string().url().or(z.literal("")).optional(),
+  cover_upload_id: z.string().max(64).nullable().optional(),
+});
+export type WebPostEdit = z.infer<typeof WebPostEdit>;
+
 /** What a project's website told us it accepts (GET /agent-office/publish). */
 export const PublishInfo = z.object({
   site_name: z.string().max(120),
@@ -137,7 +150,14 @@ export const ContentDraft = z.object({
 export type ContentDraft = z.infer<typeof ContentDraft>;
 
 export const DraftDecision = z.discriminatedUnion("decision", [
-  z.object({ decision: z.literal("approve"), body: z.string().min(1).max(20_000).optional(), feedback: z.string().max(2000).optional() }),
+  z.object({
+    decision: z.literal("approve"),
+    body: z.string().min(1).max(20_000).optional(),
+    feedback: z.string().max(2000).optional(),
+    /** The owner's edits before approving (title, and website-post fields). */
+    title: z.string().trim().min(1).max(200).optional(),
+    meta: WebPostEdit.optional(),
+  }),
   z.object({ decision: z.literal("reject"), feedback: z.string().max(2000).optional() }),
 ]);
 export type DraftDecision = z.infer<typeof DraftDecision>;

@@ -22,8 +22,20 @@ beforeAll(() => {
     hostname: "127.0.0.1",
     port: 0,
     async fetch(req) {
-      const body = req.method === "POST" ? await req.text() : "";
+      // GET signs its query string, POST its body
+      const body = req.method === "POST" ? await req.text() : new URL(req.url).search.replace(/^\?/, "");
       if (!verify(req, body)) return Response.json({ error: "bad signature" }, { status: 401 });
+      const params = new URLSearchParams(body);
+      if (req.method === "GET" && params.get("resource") === "bookings") {
+        return Response.json({
+          site_name: "SmashPoint",
+          from: params.get("from"),
+          bookings: [
+            { date: params.get("from"), time: "20:00", court: "Court 1", customer: "Ali", phone: "60123456789", payment_status: "PENDING" },
+            { date: params.get("from"), time: "21:00", court: "Court 2", customer: "Siti", phone: "60198765432", payment_status: "PAID" },
+          ],
+        });
+      }
       if (req.method === "GET") return Response.json({ site_name: "SmashPoint", post_types: ["news", "tournament", "vlog"] });
       if (siteDown) return Response.json({ error: "firestore unavailable" }, { status: 503 });
       const data = JSON.parse(body);
@@ -119,13 +131,22 @@ describe("Publisher: chat photo → website post → approve → published", () 
     const drafts = (await env.api("/api/drafts?status=pending")).body.drafts;
     expect(drafts).toHaveLength(1); // the unknown post type was refused
 
+    // the owner edits fields before approving; an unknown cover is refused
+    const bad = await env.api(`/api/drafts/${drafts[0].id}/decide`, { body: { decision: "approve", meta: { cover_upload_id: "upl_nope" } } });
+    expect(bad.status).toBe(400);
     siteDown = true;
-    const failed = (await env.api(`/api/drafts/${drafts[0].id}/decide`, { body: { decision: "approve" } })).body.draft;
-    expect(failed).toMatchObject({ status: "approved", published_url: null });
+    const failed = (
+      await env.api(`/api/drafts/${drafts[0].id}/decide`, {
+        body: { decision: "approve", title: "New LED lights on court 3!", meta: { event_date: "2026-11-01", tags: ["court", "lights"] } },
+      })
+    ).body.draft;
+    expect(failed).toMatchObject({ title: "New LED lights on court 3!", meta: { post_type: "news", excerpt: "Brighter LED lights are up on court 3.", event_date: "2026-11-01", tags: ["court", "lights"] } });
+    expect(failed).toMatchObject({ status: "edited", published_url: null });
     expect(failed.publish_error).toContain("503");
     siteDown = false;
     const retried = (await env.api(`/api/drafts/${drafts[0].id}/publish`, { method: "POST" })).body.draft;
     expect(retried.status).toBe("published");
+    expect(received.at(-1)!.post).toMatchObject({ title: "New LED lights on court 3!", event_date: "2026-11-01", tags: ["court", "lights"] });
   });
 
   test("runners can only fetch photos attached to the job they are running", async () => {
@@ -136,5 +157,47 @@ describe("Publisher: chat photo → website post → approve → published", () 
     // the owner can view it
     const own = await freshFetch(`${env.hub.url}/api/uploads/${photo}`, { headers: { authorization: `Bearer ${TOKEN}` } });
     expect(own.headers.get("content-type")).toBe("image/png");
+  });
+});
+
+describe("Kerani: bookings from the website", () => {
+  test("read_bookings goes through the hub with a signed query", async () => {
+    const { project } = await setup();
+    await env.api(`/api/projects/${project.id}/publish`, { method: "PUT", body: { url: `http://127.0.0.1:${site.port}/agent-office/publish`, secret: SECRET } });
+    await env.api(`/api/projects/${project.id}/publish/test`, { method: "POST" });
+    const kerani = (await env.api("/api/agents", { body: { slug: "kr", name: "Kerani", provider: "mock", model: "mock-script", tools: ["read_bookings"], config: { self_review: false } } })).body.agent;
+    const job = (
+      await env.api("/api/jobs", { body: { agent_id: kerani.id, project_id: project.id, title: "today", input: { script: [{ tool: "read_bookings", input: { from: "2026-10-18" } }, { text: "ok" }] } } })
+    ).body.job;
+    await waitFor(() => env.hub.hub.store.state.jobs[job.id]?.status === "done", 8000, "kerani run");
+    const runId = env.hub.hub.store.state.jobs[job.id]!.run_ids[0]!;
+    const result = (await env.api(`/api/runs/${runId}`)).body.events.find((e: { type: string }) => e.type === "agent.tool_result").payload;
+    expect(result).toMatchObject({ tool: "read_bookings", ok: true, summary: "2 bookings from SmashPoint" });
+  });
+});
+
+describe("Publisher: change or take down a live post", () => {
+  test("update sends the edits as action=update; take down removes it and the draft can be published again", async () => {
+    const { project, agent } = await setup();
+    await env.api(`/api/projects/${project.id}/publish`, { method: "PUT", body: { url: `http://127.0.0.1:${site.port}/p`, secret: SECRET } });
+    await env.api(`/api/projects/${project.id}/publish/test`, { method: "POST" });
+    const script = [
+      { tool: "draft_web_post", input: { project: "smashpoint", post_type: "tournament", title: "Open on 24 Oct", excerpt: "Doubles open, RM500 prize.", body: "Doubles open on 24 Oct.", event_date: "2026-10-24", self_check: check } },
+      { text: "ok" },
+    ];
+    const job = (await env.api("/api/jobs", { body: { agent_id: agent.id, project_id: project.id, title: "post", input: { script } } })).body.job;
+    await waitFor(() => env.hub.hub.store.state.jobs[job.id]?.status === "done", 8000, "draft run");
+    const [d] = (await env.api("/api/drafts?status=pending")).body.drafts;
+    expect((await env.api(`/api/drafts/${d.id}/decide`, { body: { decision: "approve" } })).body.draft.status).toBe("published");
+
+    const updated = (await env.api(`/api/drafts/${d.id}/update-published`, { body: { title: "Open moved to 31 Oct", meta: { event_date: "2026-10-31" } } })).body.draft;
+    expect(updated).toMatchObject({ status: "published", title: "Open moved to 31 Oct", meta: { event_date: "2026-10-31", excerpt: "Doubles open, RM500 prize." } });
+    expect(received.at(-1)).toMatchObject({ action: "update", draft_id: d.id, post: { title: "Open moved to 31 Oct", event_date: "2026-10-31" } });
+
+    const down = (await env.api(`/api/drafts/${d.id}/take-down`, { method: "POST" })).body.draft;
+    expect(down).toMatchObject({ status: "approved", published_url: null });
+    expect(received.at(-1)).toMatchObject({ action: "delete", draft_id: d.id });
+    // the context lists only live posts, and a taken-down post is not live
+    expect(env.hub.hub.content.context([project.id]).projects[0]!.published_posts).toEqual([]);
   });
 });

@@ -53,6 +53,8 @@ export function makeCtx(
     webSearch: async () => [],
     consult: async () => ({ ok: false, answer: "", error: "no hub in tests" }),
     attachments: [],
+    siteData: async () => ({}),
+    webPost: async () => ({}),
   };
   return { ctx, events, approvals, handoffs, uploads, drafts, features };
 }

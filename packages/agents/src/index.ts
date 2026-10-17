@@ -4,6 +4,7 @@ import { echoAgent } from "./echo.ts";
 import { englishCoachAgent } from "./englishCoach.ts";
 import { researcherAgent } from "./researcher.ts";
 import { publisherAgent } from "./publisher.ts";
+import { keraniAgent, keraniSchedule } from "./kerani.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
 import { pakGuardAgent, pakGuardSchedule } from "./pakGuard.ts";
 import { testerAgent, testerSchedule } from "./tester.ts";
@@ -16,6 +17,7 @@ export { marketingAgent, MARKETING_PROMPT } from "./marketing.ts";
 export { englishCoachAgent, ENGLISH_COACH_PROMPT } from "./englishCoach.ts";
 export { researcherAgent, RESEARCHER_PROMPT } from "./researcher.ts";
 export { publisherAgent, PUBLISHER_PROMPT } from "./publisher.ts";
+export { keraniAgent, keraniSchedule, KERANI_PROMPT } from "./kerani.ts";
 
 export interface BuiltinAgent {
   agent: AgentInput;
@@ -35,4 +37,5 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: englishCoachAgent, needsLlm: true },
   { agent: researcherAgent, needsLlm: true },
   { agent: publisherAgent, needsLlm: true },
+  { agent: keraniAgent, needsLlm: true, schedules: (id) => [keraniSchedule(id)] },
 ];

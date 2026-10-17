@@ -21,6 +21,7 @@ import {
   ProviderInput,
   ScheduleInput,
   TIMEZONE,
+  WebPostEdit,
 } from "@agent-office/shared";
 import { TOOL_REGISTRY } from "@agent-office/tools";
 import { SESSION_COOKIE, SESSION_TTL_MS, isHttps, requireOwner, type Authenticator } from "./auth.ts";
@@ -30,6 +31,7 @@ import { agents, approvals, jobs, pairingCodes, projects, providers, runners, ru
 import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
+import { CATALOG_SOURCES, SkillCatalog } from "./skillCatalog.ts";
 import type { Integrations } from "./integrations.ts";
 import type { TelegramBot } from "./telegram.ts";
 import {
@@ -242,6 +244,44 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.body(new Uint8Array(f.bytes), 200, { "content-type": f.row.content_type });
   });
 
+  /** Runner changes or takes down a live post (update_web_post / take_down_web_post, after the owner's approval). */
+  app.post("/api/runner/web-post", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const body = z
+      .object({ run_id: z.string(), draft_id: z.string(), action: z.enum(["update", "take_down"]), edits: z.object({ title: z.string().trim().min(1).max(200).optional(), body: z.string().min(1).max(20_000).optional(), meta: WebPostEdit.optional() }).default({}) })
+      .parse(await c.req.json());
+    const run = getRun(db, body.run_id);
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+    const tool = body.action === "update" ? "update_web_post" : "take_down_web_post";
+    if (!getAgent(db, run.agent_id)?.tools.includes(tool)) throw new HttpError(403, `this agent may not use ${tool}`);
+    const draft = body.action === "update" ? await hub.publisher.updatePublished(body.draft_id, body.edits) : await hub.publisher.takeDown(body.draft_id);
+    return c.json({ draft: { id: draft.id, title: draft.title, status: draft.status, url: draft.published_url } });
+  });
+
+  /** Runner reads data a project's website shares (Kerani: bookings). The site's secret stays in the hub. */
+  app.post("/api/runner/site-data", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const body = z
+      .object({
+        run_id: z.string(),
+        project_id: z.string(),
+        resource: z.enum(["bookings"]),
+        params: z.record(z.string().regex(/^[a-z_]{1,20}$/), z.string().max(40)).default({}),
+      })
+      .parse(await c.req.json());
+    const run = getRun(db, body.run_id);
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+    const agent = getAgent(db, run.agent_id);
+    if (!agent?.tools.includes("read_bookings")) throw new HttpError(403, "this agent may not read bookings");
+    return c.json({ data: await hub.publisher.siteData(body.project_id, body.resource, body.params) });
+  });
+
   // ------------------------------------------------------------ owner only
 
   const api = new Hono();
@@ -389,6 +429,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.get("/backups", (c) => c.json({ backups: hub.backups.list(), dir: hub.backups.dir }));
   api.post("/backups", (c) => c.json({ backup: hub.backups.run() }, 201));
   // skills (agentskills.io SKILL.md, the format Hermes uses) and proposals waiting for the owner
+  // popular public skills (Anthropic, Hermes Agent): browse and install one with a click
+  const catalog = new SkillCatalog(join(config.filesDir, "skill-catalog.json"));
+  api.get("/skills/catalog", async (c) => c.json({ ...(await catalog.list(c.req.query("refresh") === "1")), sources: CATALOG_SOURCES }));
+  api.post("/skills/catalog/install", async (c) => {
+    const { source, path } = z.object({ source: z.string(), path: z.string().max(300) }).parse(await c.req.json());
+    const { content, warnings } = await catalog.fetchSkill(source, path);
+    if (content.length > MAX_SKILL_CHARS) throw new HttpError(400, `this skill is too long for Agent Office (${content.length}/${MAX_SKILL_CHARS} characters)`);
+    return c.json({ skill: learning.writeSkill(content), warnings }, 201);
+  });
   api.get("/skills", (c) => c.json({ skills: learning.skillsWithUsage() }));
   api.post("/skills", async (c) => {
     const { content } = z.object({ content: z.string().min(10).max(MAX_SKILL_CHARS) }).parse(await c.req.json());
@@ -421,7 +470,18 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.get("/projects/:id/publish", (c) => c.json({ publish: hub.publisher.settings(c.req.param("id")) }));
   api.put("/projects/:id/publish", async (c) => c.json({ publish: hub.publisher.setSettings(c.req.param("id"), await c.req.json()) }));
   api.post("/projects/:id/publish/test", async (c) => c.json({ publish: await hub.publisher.refresh(c.req.param("id")) }));
-  api.post("/drafts/:id/publish", async (c) => c.json({ draft: await hub.publisher.publish(c.req.param("id")) }));
+  api.post("/drafts/:id/publish", async (c) => {
+    // "Publish now / again": a website post goes to its site, a Facebook caption to the Page
+    const d = hub.content.draft(c.req.param("id"));
+    if (d?.platform === "facebook" && d.kind !== "web_post") return c.json({ draft: await hub.social.postToFacebook(d.id) });
+    return c.json({ draft: await hub.publisher.publish(c.req.param("id")) });
+  });
+  api.get("/projects/:id/facebook", (c) => c.json({ facebook: hub.social.facebook(c.req.param("id")) }));
+  api.put("/projects/:id/facebook", async (c) => c.json({ facebook: hub.social.setFacebook(c.req.param("id"), await c.req.json()) }));
+  api.post("/projects/:id/facebook/test", async (c) => c.json({ facebook: await hub.social.testFacebook(c.req.param("id")) }));
+  const PublishedEdit = z.object({ title: z.string().trim().min(1).max(200).optional(), body: z.string().min(1).max(20_000).optional(), meta: WebPostEdit.optional() });
+  api.post("/drafts/:id/update-published", async (c) => c.json({ draft: await hub.publisher.updatePublished(c.req.param("id"), PublishedEdit.parse(await c.req.json())) }));
+  api.post("/drafts/:id/take-down", async (c) => c.json({ draft: await hub.publisher.takeDown(c.req.param("id")) }));
   api.get("/projects/:id/brief", (c) => {
     const p = hub.content.project(c.req.param("id"));
     return c.json({ brief: hub.content.readBrief(p), example: EXAMPLE_BRIEF, path: `projects/${p.slug}/brief.yaml` });
@@ -449,7 +509,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const decision = DraftDecision.parse(await c.req.json());
     const draft = hub.content.decideDraft(c.req.param("id"), decision);
     // a website post goes live once the owner approves it (the result or error is kept on the draft)
-    if (draft.kind === "web_post" && draft.status !== "rejected") return c.json({ draft: await hub.publisher.publish(draft.id) });
+    if (draft.status !== "rejected") return c.json({ draft: await hub.afterApprove(draft) });
     return c.json({ draft });
   });
 
