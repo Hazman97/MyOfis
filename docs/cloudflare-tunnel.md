@@ -63,6 +63,14 @@ What the hub checks:
 > Opening `http://127.0.0.1:8788` directly on the hub PC now shows the "Sign in with Cloudflare Access" page, which cannot sign you in there. Use the domain, or switch back to `AUTH_MODE=local` for local work.
 
 ## 4. A runner on another PC
+**Easiest: the one-line installer.**
+1. On the other PC, set the service token in the terminal:
+   - PowerShell: `$env:CF_ACCESS_CLIENT_ID="…"; $env:CF_ACCESS_CLIENT_SECRET="…"`
+   - sh: `export CF_ACCESS_CLIENT_ID=… CF_ACCESS_CLIENT_SECRET=…`
+2. Paste the command from **Runners → Connect a PC**. In cf-access mode, the command already sends those headers.
+3. The installer writes the token into the runner's `.env`, so the runner keeps working after a reboot.
+
+**Or from a copy of the repo:**
 On the other machine:
 ```sh
 git clone <this repo> && cd MyOfis && bun install

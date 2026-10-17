@@ -124,6 +124,7 @@ export class RunnerClient {
           arch: arch(),
           runtimes: [mockRuntime.id, aiSdkRuntime.id, ...(resolveOpenCode() ? [opencodeRuntime.id] : [])],
           max_concurrent_runs: this.#opts.maxConcurrentRuns ?? 1,
+          programs: detectPrograms(),
         },
         active_runs: this.activeRunIds,
       });
@@ -299,3 +300,7 @@ export class RunnerClient {
     }
   }
 }
+
+/** Programs agents may want on this machine; reported once per connection. */
+const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "openscad", "blender", "pandoc", "soffice", "gh"];
+export const detectPrograms = (): string[] => PROGRAMS.filter((p) => Bun.which(p));

@@ -30,6 +30,16 @@ async function main() {
     const saved = await loadState(statePath);
     if (saved && saved.hub_url === env.HUB_URL) token = saved.token;
   }
+  // installer step: pair (or confirm an earlier pairing) and exit, so errors show in the terminal
+  if (process.argv.includes("--pair-only")) {
+    if (token) console.log("[runner] already paired with this hub");
+    else if (!env.PAIRING_CODE) throw new Error("no PAIRING_CODE given");
+    else {
+      const state = await pair({ hubUrl: env.HUB_URL, code: env.PAIRING_CODE, name: env.RUNNER_NAME, statePath, headers: extraHeaders });
+      console.log(`[runner] paired as ${state.runner_id}`);
+    }
+    return;
+  }
   if (!token) {
     if (!env.PAIRING_CODE) {
       console.error(

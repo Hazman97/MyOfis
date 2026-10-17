@@ -46,8 +46,25 @@
 - `AUTH_MODE=cf-access` (apps/hub/src/auth.ts) verifies `Cf-Access-Jwt-Assertion` or the `CF_Authorization` cookie with `jose`. It checks: RS256, issuer `https://<team>`, the AUD, and `email` == `OWNER_EMAIL`. JWKS come from `https://<team>/cdn-cgi/access/certs` (`CF_ACCESS_CERTS_URL` overrides it for tests). There is no token login in this mode, and logout returns `/cdn-cgi/access/logout`.
 - Runners behind Access send `CF-Access-Client-Id/Secret` (env `CF_ACCESS_CLIENT_ID/SECRET`) on pairing, WS and uploads. Their own runner token is still required.
 - Replay (`apps/web/src/office/replay.ts`, pure and tested; `views/ReplayView.vue`) rebuilds state from every event before the window and caps gaps at 4 s. It uses its own OfficeWorld, never the live store.
-- Agent memory: `remember` tool → sequenced `run.memory` → `agent_memory` table (keep 200 per agent). The newest 25 go into `RunAssignment.memories`, rendered as "What you remember" (DATA).
+- Agent memory: replaced in Phase 4.5 by Hermes-style memory (see below).
+- **One-line runner install** (owner request, Phase 5 extra):
+  - `apps/hub/src/installer.ts` serves `GET /install.sh` and `GET /install.ps1` (templates in `apps/hub/src/installer/`, with the hub URL taken from the request's Host / X-Forwarded-Proto) plus `/install/runner.js` (Bun.build of the runner, cached for 60 s) and `/install/worker.mjs`.
+  - Every one of these needs a **live, unused pairing code**; the code is only consumed by the pairing itself.
+  - The script installs to `~/.agent-office-runner` (`app/runner.js`, `browser/worker.mjs`, `.env`, `data/`), runs `runner.js --pair-only` (a no-op when already paired, so re-running updates), then registers start-at-login with no admin rights: a Startup-folder `.vbs` on Windows, a systemd `--user` unit on Linux, launchd on Mac. `AGENT_OFFICE_NO_SERVICE=1` skips that step (used by the e2e check).
+  - The runner reports `capabilities.programs` (git, node, ffmpeg, blender…, found via `Bun.which`), shown on the Runners page. Jobs are not routed by programs yet.
+  - Reaching the hub from the LAN needs `HUB_HOST=0.0.0.0` + `PUBLIC_BASE_URL`; the page warns when the URL is loopback.
+- **Hermes Agent** (Nous Research) joins as an OpenAI-compatible provider (preset "Hermes Agent", model `hermes-agent`, `hermes gateway` on :8642). It runs its own tools on its own PC, outside our approvals. Guide: docs/hermes-agent.md.
 - Skipped on purpose: the Docker sandbox (owner: no Docker) and Langfuse (optional).
+
+## Decisions taken beyond the spec (Phase 4.5: Hermes-style learning)
+Owner asked to follow Nous Research's **Hermes Agent** closely. Logic in `packages/shared/src/memory.ts` + `skills.ts`, tools in `packages/tools/src/memory.ts`, hub side in `apps/hub/src/learning.ts`.
+- **Memory = two bounded stores in `settings`**: `memory.agent.<id>` (own notes, 2200 chars) and `memory.user` (owner profile shared by all agents, 1375 chars). `memory` tool: add / patch{old_text} / remove{old_text} or several `operations` at once (all-or-nothing); when full it returns the current entries so the model consolidates in one call. Every write is scanned (injection phrases, invisible unicode, secrets). The old `remember` tool is an alias; old `agent_memory` notes are migrated once at boot.
+- **Frozen snapshot**: `RunAssignment.memory` is rendered once at run start (`memoryNote` in the runner) with usage %; writes during the run do not change the prompt.
+- **`memory.write_approval`** (Skills page switch): memory ops become `proposals` rows the owner approves.
+- **Skills** = `skills/<name>/SKILL.md` (`SKILLS_DIR`, agentskills.io / Hermes frontmatter). Agents only *propose* (`skill_manage` → sequenced `run.skill` → `proposals` + `skill.proposed`); the owner approves on `/skills` (diff + warnings for download/delete commands). Owner can import any SKILL.md (`POST /api/skills`). The prompt carries only the index (progressive disclosure); `skill_view` loads one.
+- **`session_search`**: FTS5 table `search_index` (custom migration 0004) filled when a run ends (`indexRun`, backfilled at boot). Query words are quoted and OR-ed, never raw FTS syntax. Runner calls `POST /api/runner/search`.
+- **Background review** (`wantsReview`): after 5+ tool calls or every 5th chat message, a short `generateText` pass with only the learning tools asks "anything worth saving?". Off per agent with `config.self_review = false`. Tokens count toward the budget.
+- Web: `views/SkillsView.vue` (`/skills`), `components/office/MemoryStores.vue` in the agent panel, pure `diff.ts`.
 
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.
@@ -56,7 +73,8 @@ Read this first when picking the project up in a new session.
 - Phases 1–3: done and signed off by the owner.
 - Phase 4: built and waiting for the owner's sign-off. 175 tests pass (incl. `apps/hub/test/acceptance-phase4.test.ts`); typecheck and build are green.
 - Phase 5: built (cf-access, tunnel docs, remote runners, replay, agent memory) and waiting for the owner's sign-off. The real-world check in docs/cloudflare-tunnel.md §5 needs the owner's domain.
-- UI helper: the owner relays UI tasks to Gemini (Antigravity) from `tasks/gemini/NNN-*.md`; Claude reviews the diff, tests and screenshots. Task 001 passed review; task 002 (Replay in the nav + polish) was handed over.
+- Phase 4.5 (Hermes-style learning): built, 193 tests green. Gemini task 004 polishes the Skills page + Memory panel; task 003 still to be reviewed ("semak 003").
+- UI helper: the owner relays UI tasks to Gemini (Antigravity) from `tasks/gemini/NNN-*.md`; Claude reviews the diff, tests and screenshots. Task 001 passed review; task 002 passed; 003 (work pages) is with Gemini; 004 (Skills + Memory look) is ready to hand over.
 
 **Owner's environment**
 - Hub on :8788, web dev on :5180. Never kill workerd or the canopynet dev servers.
@@ -74,7 +92,7 @@ Read this first when picking the project up in a new session.
   - in `apps/hub/test/telegram.test.ts`, a failing chat job sends no ❌ message.
 - Then add one line about this to the README "Chat" section.
 
-**Open questions for the owner**
+**Open questions for the owner** (Phase 4.5 skills/memory are now done; Researcher, agent-to-agent consult and 3D are still open)
 - Is "Hermes" (set up on another PC) Nous Research's *Hermes Agent* or just a *Hermes model*?
   - Hermes model: add it as a provider.
   - Hermes Agent: a runner-side runtime like OpenCode, and/or import its SKILL.md skills.

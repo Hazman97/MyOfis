@@ -66,6 +66,15 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     hint: "Start the LM Studio local server first.",
   },
   {
+    id: "hermes-agent",
+    name: "Hermes Agent (Nous Research)",
+    kind: "openai_compatible",
+    base_url: "http://192.168.1.50:8642/v1",
+    needs_api_key: true,
+    models: ["hermes-agent"],
+    hint: "Change the IP to the PC running `hermes gateway` (API_SERVER_ENABLED=true, API_SERVER_HOST=0.0.0.0). The key is its API_SERVER_KEY. Hermes uses its own tools there; see docs/hermes-agent.md.",
+  },
+  {
     id: "custom",
     name: "Custom (OpenAI-compatible)",
     kind: "openai_compatible",

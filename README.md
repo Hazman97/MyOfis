@@ -7,7 +7,7 @@ A personal AI agent orchestration system for a single owner. You create agents, 
   - `AUTH_MODE=cf-access` (Cloudflare Access JWT verified against your team and email);
   - a Cloudflare Tunnel guide, and runners on other machines through the tunnel ([docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md));
   - **Replay** of past runs in the office at 1x/4x/16x;
-  - **agent memory** (agents keep short notes across runs; you can delete them).
+  - **learning like Hermes Agent**: bounded memory (own notes + your shared profile), SKILL.md skills you approve, search over past work;
 - **Marketing + chat (Phase 4):**
   - project briefs, a Marketing agent that writes drafts (it never posts), and a drafts inbox where your edits and feedback become its style memory;
   - the feature log (merged PR → Coder's note → Tester screenshot + Marketing announcements);
@@ -63,26 +63,51 @@ The hub binds to `127.0.0.1` only. Never expose it directly. For access from you
 
 ## Pair a runner
 
-The runner is a separate process that **connects out** to the hub, so no inbound ports are needed. It runs the same way on this PC or on another machine.
+The runner is a separate process that **connects out** to the hub, so the runner PC needs no open ports. It runs the same way on this PC or on another machine.
 
-1. In the web UI, open **Runners** and click **New pairing code**. Codes are single-use and expire after 10 minutes.
-2. From the repo root on the machine that should do the work:
+**Another PC, one line (recommended).**
+1. Open **Runners → Connect a PC**. The page shows a pairing code (single use, 10 minutes) and two commands.
+2. Paste the matching command into a terminal on the other PC:
+   ```powershell
+   irm "http://192.168.1.50:8788/install.ps1?code=XXXX-XXXX" | iex     # Windows
+   ```
+   ```sh
+   curl -fsSL "http://192.168.1.50:8788/install.sh?code=XXXX-XXXX" | sh   # Linux / Mac
+   ```
+3. The installer:
+   - installs Bun if it is missing;
+   - downloads the runner from the hub as one bundled file into `~/.agent-office-runner`;
+   - pairs it;
+   - starts it at every boot or login: a hidden launcher in the Startup folder on Windows, a systemd user service on Linux, launchd on Mac. No admin rights needed.
+4. The page shows "… is connected" when the PC is in.
 
+Re-running the command with a new code updates the runner and keeps the same pairing.
+
+For the other PC to reach the hub on your WiFi, set `HUB_HOST=0.0.0.0` and `PUBLIC_BASE_URL=http://<this PC's IP>:8788` in `.env`. Anyone on your network can then reach the login page. From outside your home, use Cloudflare Tunnel ([docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md)).
+
+**Extra programs on the runner PC.**
+- Browser checks need Node 22+ and Playwright: `cd ~/.agent-office-runner && npm i playwright && npx playwright install chromium`.
+- The Coder needs `npm i -g opencode-ai`.
+
+The Runners page shows which helper programs each PC has (git, node, ffmpeg, blender…).
+
+**From a copy of the repo (this PC, development).**
+1. Open **Runners → Connect a PC → Run from a copy of this repo instead**.
+2. Then run:
    ```sh
    HUB_URL=http://127.0.0.1:8787 RUNNER_NAME=main-pc PAIRING_CODE=XXXX-XXXX bun run start:runner
    ```
 
-   ```powershell
-   $env:HUB_URL="http://127.0.0.1:8787"; $env:RUNNER_NAME="main-pc"; $env:PAIRING_CODE="XXXX-XXXX"; bun run start:runner
-   ```
-
-3. The runner stores its long-lived token in `data/runner-state.json`. Later starts only need `bun run start:runner` (or `bun run dev:runner`).
+The runner stores its long-lived token in `data/runner-state.json`. Later starts only need `bun run start:runner` (or `bun run dev:runner`).
 
 You can revoke a runner from the Runners page. Each run gets its own folder under `workspaces/<agent>/<run_id>/`.
+
+**Hermes Agent on another PC** can join as a provider instead: see [docs/hermes-agent.md](docs/hermes-agent.md).
 
 ## Add a provider (LLM)
 
 Open **Providers** and pick a preset: Anthropic, OpenAI, Google Gemini, OpenRouter, Groq, DeepSeek, Ollama, LM Studio, or **Custom (OpenAI-compatible)**.
+
 
 - API keys are encrypted on the hub and never sent back to the browser. The hub passes the key to the paired runner only for the duration of a run.
 - Built-in prices exist for Claude models. For other models, add pricing (`model input output`, in USD per 1M tokens), or cost shows as "no price set". Local URLs (Ollama, LM Studio) count as free.
@@ -204,13 +229,27 @@ Each agent has a daily token budget (Agents → Edit; `0` = no limit). When the 
 - the agent "goes home" in the office;
 - its jobs wait until midnight (Malaysia time) or until you raise the budget.
 
-## Replay and agent memory
+## Replay
 
 **Replay** (`/replay`, or **Replay in the office** on any finished run) rebuilds the office as it was and lets the characters re-enact a run or a time range at 1x/4x/16x. Long waits are shortened. It uses its own copy of the state, so the live office is untouched.
 
-**Agent memory**: agents with the `remember` tool (Coach, Marketing) save short notes that come back in every later run, for example your recurring English mistakes or "no emoji on Facebook". To see or delete them, click the agent in the office: the panel has a **Remembers** section.
-
 Not built, on purpose: the Docker sandbox (you chose no Docker) and Langfuse tracing (optional in the spec).
+
+## Learning: memory, skills, past work (Hermes Agent style)
+
+Agents with the learning tools (Coach and Marketing by default; add them to any agent in **Agents**) get better over time, in the way Nous Research's Hermes Agent does:
+- **Memory.** Each agent keeps short **notes** for itself (2200 characters). All agents share one short **profile of you** (1375 characters), e.g. "prefers casual Manglish", "no emoji on Facebook".
+  - Both are loaded at the start of every job.
+  - When a store is full, the agent merges old entries instead of piling up.
+  - Anything that looks like an injected instruction or a secret is refused.
+  - To see or edit them, click the agent in the office and open its **Memory** section.
+- **Skills.** Reusable procedures saved as `skills/<name>/SKILL.md` (the same format as Hermes Agent).
+  - Agents *propose* new skills or improvements, and nothing is saved until you approve it on **Skills** (`/skills`), which shows a diff and warnings.
+  - You can also paste in a SKILL.md, for example one from your Hermes setup.
+  - Agents see only the list of skills, and open the full text when a task needs it.
+- **Past work.** `session_search` finds earlier jobs and chats ("the caption we did last week").
+- **Looking back.** After a big job (5+ tool calls) or every 5th chat message, the agent takes a short extra pass to decide whether anything is worth saving. Turn it off per agent with **Learn after work** (`self_review`).
+- **Switch "Ask me before agents change their memory".** It is on the Skills page. When it is on, memory changes wait there for your approval too.
 
 ## Kill switch
 

@@ -152,7 +152,7 @@ Each tool returns a risk level: `safe`, `review` or `dangerous`. Together with t
   - Cloudflare Tunnel + Access login (JWT verified with `jose`);
   - remote runners with Access service tokens;
   - replay mode.
-- **Phase 4.5 – learning (Hermes Agent style, in progress)**
+- **Phase 4.5 – learning (Hermes Agent style)**
   - **Memory:** two bounded stores injected as a frozen snapshot at run start:
     - `MEMORY` per agent (2200 characters);
     - `USER PROFILE` shared by all agents (1375 characters).
@@ -165,7 +165,7 @@ Each tool returns a risk level: `safe`, `review` or `dangerous`. Together with t
     - The owner can import a SKILL.md (e.g. from Hermes).
   - **session_search:** SQLite FTS5 over past runs and chats (title + task + answer), scoped to the agent or the whole office.
   - **Background review:** after a big run (5+ tool calls) or every 5th chat message, a short extra LLM pass with only the learning tools asks "anything worth saving?". Its tokens count toward the budget.
-  - Still to build: a Skills page in the web app, and showing and editing memory in the agent panel.
+  - Web: the Skills page (`/skills`: inbox with diff, library, import, memory-approval switch) and the Memory section in the agent panel (edit, remove, add).
 
 ## 6. Safety model
 
@@ -180,7 +180,7 @@ Each tool returns a risk level: `safe`, `review` or `dangerous`. Together with t
 
 ## 7. Quality
 
-- 190 tests (`bun test`), strict TypeScript across all workspaces, Vite build.
+- 193 tests (`bun test`), strict TypeScript across all workspaces, Vite build.
 - Acceptance tests run the whole loop with the mock provider and a fake Gitea.
 - Screenshot check: `apps/web/scripts/shots.mjs`.
 - The office "brain" and replay are pure and unit-tested.

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { and, desc, eq, lt } from "drizzle-orm";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { serveStatic } from "hono/bun";
 import { setCookie, deleteCookie } from "hono/cookie";
 import { csrf } from "hono/csrf";
@@ -28,6 +28,7 @@ import type { Hub } from "./core.ts";
 import { hashToken, keyHint, normalizeCode, pairingCode, randomToken } from "./crypto.ts";
 import { agents, approvals, jobs, pairingCodes, projects, providers, runners, runs, schedules } from "./db/schema.ts";
 import { assertValidCron, type Scheduler } from "./scheduler.ts";
+import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import type { Integrations } from "./integrations.ts";
 import type { TelegramBot } from "./telegram.ts";
 import {
@@ -143,6 +144,34 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     });
     if (!ok) throw new HttpError(401, "pairing code is invalid, used or expired");
     return c.json({ runner_id: runnerId, token });
+  });
+
+  /**
+   * One-line install of a runner on another PC (Runners → Connect a PC). Public like
+   * /api/runners/pair, but every file needs a live pairing code.
+   */
+  const installLimit = limiter(60, 60_000);
+  const installGate = (c: Context) => {
+    if (!installLimit()) throw new HttpError(429, "too many requests, wait a minute");
+    const code = c.req.query("code") ?? "";
+    if (!pairingCodeIsLive(db, code)) throw new HttpError(404, "pairing code is invalid, used or expired: make a new one on the Runners page");
+    return code;
+  };
+  for (const kind of ["sh", "ps1"] as const) {
+    app.get(`/install.${kind}`, (c) => {
+      const code = installGate(c);
+      const base = requestBaseUrl(c.req.url, { host: c.req.header("host"), proto: c.req.header("x-forwarded-proto") });
+      if (!base) throw new HttpError(400, "unexpected Host header");
+      return c.body(installScript(kind, base, code), 200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+    });
+  }
+  app.get("/install/runner.js", async (c) => {
+    installGate(c);
+    return c.body(await runnerBundle(), 200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" });
+  });
+  app.get("/install/worker.mjs", (c) => {
+    installGate(c);
+    return c.body(browserWorker(), 200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" });
   });
 
   /** Runner uploads a run artifact (screenshot, report). Authenticated with the runner's own token. */
@@ -304,6 +333,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const { entries } = z.object({ entries: z.array(z.string().max(1000)).max(100) }).parse(await c.req.json());
     return c.json({ entries: learning.replaceEntries(id, memTarget.parse(c.req.param("target")), entries) });
   });
+  api.get("/memory/settings", (c) => c.json({ write_approval: learning.writeApproval, limits: MEMORY_LIMITS }));
   api.put("/memory/settings", async (c) => {
     learning.writeApproval = z.object({ write_approval: z.boolean() }).parse(await c.req.json()).write_approval;
     return c.json({ write_approval: learning.writeApproval });

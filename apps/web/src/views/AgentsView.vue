@@ -312,6 +312,28 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
               <input v-model="form.enabled" type="checkbox" class="accent-accent" /> Enabled
             </label>
           </div>
+
+          <div v-if="form.runtime === 'ai-sdk'" class="pt-1">
+            <div class="flex flex-col gap-1">
+              <label
+                for="ag-self-review"
+                class="group inline-flex cursor-pointer items-center gap-2.5 select-none"
+              >
+                <span class="relative inline-flex items-center">
+                  <input
+                    id="ag-self-review"
+                    v-model="form.self_review"
+                    type="checkbox"
+                    class="peer sr-only"
+                  />
+                  <div class="h-5 w-9 rounded-full bg-surface-2 border border-line peer-checked:bg-accent peer-checked:border-accent transition-colors duration-200" />
+                  <div class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-fg peer-checked:bg-accent-ink peer-checked:translate-x-4 transition-transform duration-200 shadow-sm" />
+                </span>
+                <span class="text-xs font-medium text-fg">Learn after work</span>
+              </label>
+              <p class="text-[11px] text-faint">After a big job or every 5th chat message, the agent looks back and may save a note or propose a skill. Costs a few extra tokens.</p>
+            </div>
+          </div>
         </fieldset>
       </form>
       <template #footer>

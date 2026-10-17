@@ -189,6 +189,8 @@ export const RunnerCapabilities = z.object({
   arch: z.string(),
   runtimes: z.array(z.string()),
   max_concurrent_runs: z.number().int().positive().default(1),
+  /** Helper programs found on PATH (git, node, ffmpeg, blender…): shown on the Runners page. */
+  programs: z.array(z.string()).default([]),
 });
 export type RunnerCapabilities = z.infer<typeof RunnerCapabilities>;
 

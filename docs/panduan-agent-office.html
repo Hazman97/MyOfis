@@ -1138,6 +1138,8 @@ footer {
       <div class="index-group-title">Pejabat & Ciri-Ciri</div>
       <a href="#pejabat"><span>07</span>Pejabat pixel</a>
       <a href="#marketing"><span>08</span>Marketing & chat</a>
+      <a href="#belajar"><span>08b</span>Agent belajar</a>
+      <a href="#pclain"><span>08c</span>PC lain &amp; Hermes</a>
       <a href="#agent"><span>09</span>Agent-agent</a>
     </div>
 
@@ -1502,6 +1504,43 @@ footer {
       </ul>
     </section>
 
+    <section id="belajar">
+      <div class="sign">08b · Phase 4.5</div>
+      <h2>Agent belajar sendiri (gaya Hermes Agent)</h2>
+      <p class="lede">Agent yang ada tools belajar (Coach dan Marketing secara default) makin lama makin kenal you, ikut cara Hermes Agent dari Nous Research. Semua benda penting tunggu you approve dulu.</p>
+      <ul class="tips">
+        <li><b>Memori:</b> setiap agent ada <b>nota sendiri</b> (max 2200 aksara), dan semua agent kongsi satu <b>profil you</b> (max 1375 aksara), contoh "suka Manglish santai", "tak nak emoji kat Facebook". Kalau dah penuh, agent gabungkan nota lama, bukan tambah je. Benda yang nampak macam arahan pelik atau secret, dia tolak.</li>
+        <li><b>Tengok / edit memori:</b> klik watak dalam pejabat → bahagian <b>Memory</b>. Boleh edit, buang, atau tambah sendiri.</li>
+        <li><b>Skills:</b> cara kerja yang boleh guna semula, disimpan sebagai <code>skills/&lt;nama&gt;/SKILL.md</code> (format sama dengan Hermes). Agent cuma <i>cadang</i>. You approve atau reject di menu <b>Skills</b>, siap dengan diff dan amaran kalau skill suruh download atau delete benda.</li>
+        <li><b>Import dari Hermes:</b> Skills → <b>Import SKILL.md</b> → paste. Terus boleh guna.</li>
+        <li><b>Cari kerja lama:</b> agent boleh cari job dan chat lama sendiri (contoh "caption macam minggu lepas").</li>
+        <li><b>Muhasabah lepas kerja:</b> lepas job besar (5+ tool call) atau setiap 5 mesej chat, agent tanya diri sendiri "ada benda patut simpan tak?". Makan sikit token. Boleh off per agent (Agents → Edit → <b>Learn after work</b>).</li>
+        <li><b>Nak approve semua perubahan memori?</b> On suis "Ask me before agents change their memory" di page Skills.</li>
+      </ul>
+    </section>
+
+    <section id="pclain">
+      <div class="sign">08c · PC lain</div>
+      <h2>Sambung PC lain (runner) dan Hermes Agent</h2>
+      <p class="lede">Ada dua cara guna PC lain. <b>Runner</b>: agent Agent Office buat kerja kat PC tu, ikut approval dan peraturan kita. <b>Hermes Agent</b>: Hermes kat PC tu jadi satu "otak" (provider) untuk agent dalam pejabat.</p>
+      <h3>A. Runner, satu baris je</h3>
+      <ul class="tips">
+        <li>Buka <b>Runners → Connect a PC</b>. Keluar satu kod (sah 10 minit) dan dua arahan.</li>
+        <li>Kat PC lain, buka terminal, paste <b>satu</b> arahan ikut OS. Windows: <code>irm "http://IP-PC-HUB:8788/install.ps1?code=…" | iex</code>. Linux/Mac: <code>curl -fsSL "…/install.sh?code=…" | sh</code>.</li>
+        <li>Skrip pasang Bun kalau belum ada, download runner dari hub, pair, dan set supaya auto start setiap kali PC tu hidup. Tak perlu admin. Page Runners terus tunjuk "… is connected".</li>
+        <li><b>Penting:</b> hub default cuma dengar kat PC sendiri. Untuk PC lain dalam WiFi yang sama, letak <code>HUB_HOST=0.0.0.0</code> dan <code>PUBLIC_BASE_URL=http://IP-PC-HUB:8788</code> dalam <code>.env</code>, lepas tu restart hub. Dari luar rumah, guna Cloudflare Tunnel.</li>
+        <li>Nak update runner kat PC tu? Run je balik arahan dengan kod baru. Pairing kekal sama.</li>
+        <li>Page Runners tunjuk program yang ada kat setiap PC (git, node, ffmpeg, blender…).</li>
+      </ul>
+      <h3>B. Hermes Agent sebagai provider</h3>
+      <ul class="tips">
+        <li>Kat PC Hermes, tambah dalam <code>~/.hermes/.env</code>: <code>API_SERVER_ENABLED=true</code>, <code>API_SERVER_KEY=…</code> (rentetan rawak panjang), <code>API_SERVER_HOST=0.0.0.0</code>, lepas tu jalankan <code>hermes gateway</code>.</li>
+        <li>Kat Agent Office: <b>Settings → Providers → Add → Hermes Agent</b>. Tukar IP, isi key, model <code>hermes-agent</code>.</li>
+        <li>Buat agent baru guna provider tu, <b>tanpa tools</b> (Hermes guna tools dia sendiri). Lepas tu boleh chat atau bagi job macam agent lain.</li>
+        <li>Ingat: apa yang Hermes buat kat PC dia <b>tak lalu approval</b> Agent Office. Hadkan dalam setting Hermes sendiri. Panduan penuh: <code>docs/hermes-agent.md</code>.</li>
+      </ul>
+    </section>
+
     <section id="agent">
       <div class="sign">09 · Pekerja</div>
       <h2>Agent-agent dalam pejabat</h2>
@@ -1640,8 +1679,8 @@ footer {
         <div class="phase"><span class="ph">Phase 4</span><div><h3>Marketing + projek + Telegram</h3><p>Brief projek, feature log, draf content dengan feedback, chat dengan agent (+ English Coach), approve dari Telegram, budget token.</p>
           <div class="sub"><span class="ok">brief + drafts</span><span class="ok">Marketing + gaya penulisan</span><span class="ok">feature log</span><span class="ok">chat + Coach</span><span class="ok">Telegram</span><span class="ok">budget</span><span class="ok">acceptance test</span></div>
         </div><span class="chip"><span class="dot ok"></span>Siap · tunggu sign-off</span></div>
-        <div class="phase"><span class="ph">Phase 4.5</span><div><h3>Researcher + Skills (cadangan)</h3><p>Agent research web, simpan "skill" (SKILL.md, format sama dengan Hermes Agent) selepas you approve, agent tanya agent lain, contoh design 3D (OpenSCAD/Blender).</p></div><span class="chip"><span class="dot wip"></span>Tunggu keputusan you</span></div>
-        <div class="phase"><span class="ph">Phase 5</span><div><h3>Buka ke luar</h3><p>Login dari phone melalui Cloudflare Access (cuma email you), Cloudflare Tunnel, runner kedua di PC lain, <b>Replay</b> (menu Replay atau butang "Replay in the office" pada run lama; 1x/4x/16x), dan <b>memori agent</b> (Coach ingat silap English you; Marketing ingat citarasa you; padam di panel watak). Panduan: <code>docs/cloudflare-tunnel.md</code>.</p></div><span class="chip"><span class="dot ok"></span>Siap · tunggu sign-off</span></div>
+        <div class="phase"><span class="ph">Phase 4.5</span><div><h3>Agent belajar (gaya Hermes)</h3><p>Memori bertingkat (nota sendiri + profil you), Skills (SKILL.md) yang you approve, import dari Hermes, cari kerja lama, muhasabah lepas kerja. Belum: agent Researcher, agent tanya agent lain, 3D.</p></div><span class="chip"><span class="dot ok"></span>Siap · rupa UI tengah dikemas</span></div>
+        <div class="phase"><span class="ph">Phase 5</span><div><h3>Buka ke luar</h3><p>Login dari phone melalui Cloudflare Access (cuma email you), Cloudflare Tunnel, runner kedua di PC lain, <b>Replay</b> (menu Replay atau butang "Replay in the office" pada run lama; 1x/4x/16x). Memori agent kini di Phase 4.5. Panduan: <code>docs/cloudflare-tunnel.md</code>.</p></div><span class="chip"><span class="dot ok"></span>Siap · tunggu sign-off</span></div>
       </div>
     </section>
 

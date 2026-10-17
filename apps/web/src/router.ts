@@ -15,6 +15,7 @@ export const router = createRouter({
     { path: "/replay", name: "replay", component: () => import("./views/ReplayView.vue") },
     { path: "/agents", name: "agents", component: () => import("./views/AgentsView.vue") },
     { path: "/schedules", name: "schedules", component: () => import("./views/SchedulesView.vue") },
+    { path: "/skills", name: "skills", component: () => import("./views/SkillsView.vue") },
     { path: "/projects", name: "projects", component: () => import("./views/ProjectsView.vue") },
     { path: "/runners", name: "runners", component: () => import("./views/RunnersView.vue") },
     { path: "/settings/providers", name: "providers", component: () => import("./views/ProvidersView.vue") },

@@ -49,6 +49,36 @@ export interface TelegramSettings {
   enabled: boolean;
 }
 
+export type MemoryTarget = "memory" | "user";
+export interface AgentMemory {
+  memory: string[];
+  user: string[];
+  limits: Record<MemoryTarget, number>;
+  write_approval: boolean;
+}
+export interface Skill {
+  name: string;
+  description: string;
+  content: string;
+}
+/** A change an agent wants: a skill (create/patch/delete) or memory ops when write approval is on. */
+export interface Proposal {
+  id: string;
+  kind: "skill" | "memory";
+  agent_id: string;
+  run_id: string | null;
+  name: string;
+  action: string;
+  content: string;
+  previous: string | null;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  error: string | null;
+  warnings: string[];
+  created_at: string;
+  decided_at: string | null;
+}
+
 export interface ChatThread {
   thread_id: string;
   title: string;
@@ -115,8 +145,16 @@ export const api = {
 
   agents: () => request<{ agents: Agent[] }>("/agents"),
   createAgent: (body: Partial<Agent>) => request<{ agent: Agent }>("/agents", { body }),
-  agentMemory: (id: string) => request<{ memories: { id: string; content: string; created_at: string }[] }>(`/agents/${id}/memory`),
-  forgetMemory: (id: string, memoryId: string) => request<{ ok: true }>(`/agents/${id}/memory/${memoryId}`, { method: "DELETE" }),
+  agentMemory: (id: string) => request<AgentMemory>(`/agents/${id}/memory`),
+  setMemory: (id: string, target: MemoryTarget, entries: string[]) =>
+    request<{ entries: string[] }>(`/agents/${id}/memory/${target}`, { method: "PUT", body: { entries } }),
+  memorySettings: () => request<{ write_approval: boolean; limits: Record<MemoryTarget, number> }>("/memory/settings"),
+  setMemoryApproval:(write_approval: boolean) => request<{ write_approval: boolean }>("/memory/settings", { method: "PUT", body: { write_approval } }),
+  skills: () => request<{ skills: Skill[] }>("/skills"),
+  importSkill: (content: string) => request<{ skill: Skill }>("/skills", { body: { content } }),
+  deleteSkill: (name: string) => request<{ ok: true }>(`/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  proposals: (pendingOnly = false) => request<{ proposals: Proposal[] }>(`/proposals${pendingOnly ? "?status=pending" : ""}`),
+  decideProposal: (id: string, decision: "approve" | "reject") => request<{ proposal: Proposal }>(`/proposals/${id}/decide`, { body: { decision } }),
   updateAgent: (id: string, body: Partial<Agent>) => request<{ agent: Agent }>(`/agents/${id}`, { method: "PATCH", body }),
 
   jobs: () => request<{ jobs: Job[] }>("/jobs"),

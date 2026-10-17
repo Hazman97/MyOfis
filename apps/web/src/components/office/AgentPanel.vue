@@ -8,6 +8,7 @@ import ApprovalCard from "../ApprovalCard.vue";
 import ConfirmButton from "../ConfirmButton.vue";
 import EventTimeline from "../EventTimeline.vue";
 import SidePanel from "../SidePanel.vue";
+import MemoryStores from "./MemoryStores.vue";
 import StatusBadge from "../StatusBadge.vue";
 import { api, type Approval } from "../../api/http.ts";
 import { useOffice } from "../../stores/office.ts";
@@ -58,20 +59,6 @@ const argSummary = (args: Record<string, unknown>) => {
   return first ? first.slice(0, 80) : "";
 };
 
-/** Agent memory: notes it keeps across runs. The owner can delete any of them. */
-const memories = ref<{ id: string; content: string; created_at: string }[]>([]);
-const loadMemories = async () => {
-  try {
-    memories.value = (await api.agentMemory(props.agentId)).memories;
-  } catch {
-    memories.value = [];
-  }
-};
-const forget = (id: string) => act(async () => {
-  await api.forgetMemory(props.agentId, id);
-  await loadMemories();
-});
-watch(() => office.state.agents[props.agentId]?.current_run_id, loadMemories, { immediate: true });
 
 async function loadApprovals() {
   try {
@@ -159,15 +146,7 @@ const togglePause = () =>
         </div>
       </section>
 
-      <section v-if="memories.length" aria-labelledby="ap-mem">
-        <h3 id="ap-mem" class="sign mb-1.5">Remembers</h3>
-        <ul class="divide-y divide-line rounded-md border border-line text-sm">
-          <li v-for="m in memories.slice(0, 12)" :key="m.id" class="flex items-start gap-2 px-3 py-1.5">
-            <span class="min-w-0 flex-1">{{ m.content }}</span>
-            <button class="shrink-0 text-xs text-faint hover:text-danger" :aria-label="`Forget: ${m.content}`" @click="forget(m.id)">forget</button>
-          </li>
-        </ul>
-      </section>
+      <MemoryStores :agent-id="agentId" :reload-key="view?.current_run_id" />
 
       <section v-if="toolCalls.length" aria-labelledby="ap-tools">
         <h3 id="ap-tools" class="sign mb-1.5">Last tool calls</h3>
