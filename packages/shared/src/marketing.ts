@@ -238,3 +238,14 @@ export const MARKETING_JOB_TYPES: MarketingJobType[] = [
     example: "Tulis bio Instagram (150 aksara) untuk Sewa Kamera.",
   },
 ];
+
+/**
+ * Some models send line breaks as the two characters "\n" (escaped twice in their JSON). When a text
+ * has no real line break but does have "\n" sequences, turn them back into line breaks.
+ */
+export function fixEscapedNewlines(s: string): string {
+  const literal = s.split("\\n").length - 1;
+  const real = s.split("\n").length - 1;
+  if (literal === 0 || real >= literal) return s;
+  return s.replace(/\\r\\n|\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\"/g, '"');
+}

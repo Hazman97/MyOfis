@@ -67,3 +67,17 @@ Agent Office calls the URL you set, signing every request with the shared secret
 Answer `{ "id": "…", "url": "https://…" }` with status 2xx, or `{ "error": "…" }` with 4xx/5xx; the error is shown on the draft. Use `draft_id` to make retries safe.
 
 A reference implementation is `smashpoint/worker/src/agentOffice.ts`: Cloudflare Worker, Web Crypto HMAC, Firestore REST with a service account.
+
+## 4. Adding another website
+
+Ask Claude in one line, with the repo path and where its posts live, e.g.:
+
+> **"Sambung website `<nama>` ke Publisher. Repo: `C:\Users\Hazman\Documents\GitHub\<repo>`."**
+
+Claude then:
+1. reads the repo to find how posts are stored (Firestore, Supabase, D1, Markdown files, a CMS…) and which post types exist;
+2. adds the `/agent-office/publish` endpoint following the contract above, in that site's own backend or Worker;
+3. deploys it (with your OK);
+4. creates the project in Agent Office, sets the secret and runs **Test**.
+
+Things to have ready: the site's live URL, and the admin credentials its backend needs (e.g. a Firebase service account), given as a file path, never pasted in chat.

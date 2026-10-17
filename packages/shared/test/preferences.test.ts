@@ -21,3 +21,17 @@ describe("agent preferences", () => {
     expect(AgentConfig.parse({}).preferences).toEqual(AgentPreferences.parse({}));
   });
 });
+
+describe("fixEscapedNewlines", () => {
+  test("turns literal backslash-n back into line breaks when they outnumber real ones", async () => {
+    const { fixEscapedNewlines } = await import("../src/index.ts");
+    // what the model sent: "## Title\n\n- one" with the backslashes as text
+    expect(fixEscapedNewlines(String.raw`## Title\n\n- **one**\n- two`)).toBe("## Title\n\n- **one**\n- two");
+    // a trailing real line break does not stop the fix
+    expect(fixEscapedNewlines(String.raw`a\nb\nc` + "\n")).toBe("a\nb\nc\n");
+    // real Markdown that mentions \n once (e.g. in code) is left alone
+    const md = "line one\nline two\n`" + String.raw`\n` + "` is a newline\n";
+    expect(fixEscapedNewlines(md)).toBe(md);
+    expect(fixEscapedNewlines("no breaks at all")).toBe("no breaks at all");
+  });
+});

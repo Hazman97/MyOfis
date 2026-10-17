@@ -3,6 +3,7 @@ import {
   JobInput,
   computeCost,
   dayKey,
+  fixEscapedNewlines,
   type HubToRunner,
   type Job,
   type RunAssignment,
@@ -702,10 +703,10 @@ Error: ${r.error}` : ""}` });
         run_id: run.id,
         platform: msg.platform,
         kind: msg.kind,
-        title: msg.title,
-        body: msg.body,
+        title: fixEscapedNewlines(msg.title),
+        body: fixEscapedNewlines(msg.body),
         self_check: msg.self_check,
-        meta: msg.meta ?? null,
+        meta: msg.meta ? { ...msg.meta, excerpt: fixEscapedNewlines(msg.meta.excerpt) } : null,
         feature_id: featureId,
       });
     });

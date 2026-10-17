@@ -177,13 +177,20 @@ async function decide(decision: "approve" | "reject") {
       />
     </div>
 
-    <div v-if="isWebPost && !pending" class="mx-4 mt-2 text-xs">
+    <div v-if="draft.kind === 'web_post' && !pending && draft.status !== 'rejected'" class="mx-4 mt-2 text-xs">
       <a v-if="draft.published_url?.startsWith('http')" :href="draft.published_url" target="_blank" rel="noopener" class="text-accent hover:underline">View it on the website →</a>
       <div v-else-if="draft.publish_error" class="flex flex-wrap items-center gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-danger">
         <span class="min-w-0 flex-1">Not published: {{ draft.publish_error }}</span>
         <button class="btn btn-sm" :disabled="busy" @click="publishAgain">
           <LoaderCircle v-if="busy" :size="13" class="motion-safe:animate-spin" />
           Publish again
+        </button>
+      </div>
+      <div v-else-if="draft.status !== 'published'" class="flex flex-wrap items-center gap-2 rounded-md border border-signal/30 bg-signal-soft px-3 py-2 text-signal">
+        <span class="min-w-0 flex-1">Approved but not on the website yet.</span>
+        <button class="btn btn-sm" :disabled="busy" @click="publishAgain">
+          <LoaderCircle v-if="busy" :size="13" class="motion-safe:animate-spin" />
+          Publish now
         </button>
       </div>
     </div>

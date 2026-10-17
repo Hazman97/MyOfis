@@ -134,13 +134,15 @@ export class Publisher {
   async publish(draftId: string) {
     const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, draftId)).get();
     if (!row) throw new HttpError(404, "draft not found");
-    if (row.kind !== "web_post" || !row.meta) throw new HttpError(400, "only website posts can be published");
+    if (row.kind !== "web_post") throw new HttpError(400, "only website posts can be published");
     if (row.status !== "approved" && row.status !== "edited") throw new HttpError(409, row.status === "published" ? "already published" : "approve the draft first");
     let error: string | null = null;
     let publishedUrl: string | null = null;
     try {
       const { url, secret } = this.#endpoint(row.project_id);
       const m = row.meta;
+      // recorded on the draft like any other failure, so the owner sees it
+      if (!m) throw new Error("this draft has no post details (type, excerpt); ask Publisher to draft it again");
       const cover = m.cover_upload_id ? this.readUpload(m.cover_upload_id) : null;
       const body = JSON.stringify({
         version: 1,
