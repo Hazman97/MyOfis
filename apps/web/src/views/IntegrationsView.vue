@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { Archive, GitBranch, Globe, Send } from "lucide-vue-next";
+import { Archive, GitBranch, Globe, LoaderCircle, Send } from "lucide-vue-next";
 import ConfirmButton from "../components/ConfirmButton.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SettingsTabs from "../components/SettingsTabs.vue";
-import { api, type BackupInfo, type GiteaSettings, type TelegramSettings, type WebSearchSettings } from "../api/http.ts";
+import { api, type BackupInfo, type GiteaSettings, type TelegramSettings, type WebSearchProvider, type WebSearchSettings } from "../api/http.ts";
 import { fmtDateTime } from "../format.ts";
 
 const gitea = ref<GiteaSettings | null>(null);
@@ -23,8 +23,7 @@ onMounted(async () => {
   telegram.value = r.telegram;
   tg.chat_id = r.telegram.chat_id;
   tg.enabled = r.telegram.enabled;
-  webSearch.value = r.web_search;
-  ws.provider = r.web_search.provider;
+  fillWebSearch(r.web_search);
   await loadBackups();
 });
 
@@ -73,15 +72,23 @@ async function test() {
   else error.value = `Connection failed: ${r.error}`;
 }
 
-// Web search for the Researcher (key stays in the hub, encrypted)
+// Web search for the Researcher: DuckDuckGo works with no setup; SearXNG and keys are fallbacks
 const webSearch = ref<WebSearchSettings | null>(null);
-const ws = reactive({ provider: "brave" as "brave" | "tavily", api_key: "" });
+const ws = reactive({ provider: "duckduckgo" as WebSearchProvider, searxng_url: "", key_provider: "tavily" as "tavily" | "brave", api_key: "" });
 const wsMsg = ref("");
 const wsError = ref("");
+const PROVIDER_LABEL: Record<WebSearchProvider, string> = { duckduckgo: "DuckDuckGo", searxng: "SearXNG", tavily: "Tavily", brave: "Brave" };
+function fillWebSearch(s: WebSearchSettings) {
+  webSearch.value = s;
+  ws.provider = s.provider;
+  ws.searxng_url = s.searxng_url;
+  ws.key_provider = s.key_provider ?? "tavily";
+}
 async function saveWebSearch() {
   wsError.value = wsMsg.value = "";
   try {
-    webSearch.value = (await api.saveWebSearch({ provider: ws.provider, ...(ws.api_key ? { api_key: ws.api_key } : {}) })).web_search;
+    const body = { provider: ws.provider, searxng_url: ws.searxng_url.trim(), key_provider: ws.key_provider, ...(ws.api_key ? { api_key: ws.api_key } : {}) };
+    fillWebSearch((await api.saveWebSearch(body)).web_search);
     ws.api_key = "";
     wsMsg.value = "Saved.";
   } catch (e) {
@@ -89,13 +96,13 @@ async function saveWebSearch() {
   }
 }
 async function clearWebSearch() {
-  webSearch.value = (await api.saveWebSearch({ provider: ws.provider, api_key: "" })).web_search;
+  fillWebSearch((await api.saveWebSearch({ provider: ws.provider === "tavily" || ws.provider === "brave" ? "duckduckgo" : ws.provider, api_key: "" })).web_search);
 }
 async function testWebSearch() {
   wsError.value = wsMsg.value = "";
   try {
     const r = await api.testWebSearch();
-    if (r.ok) wsMsg.value = `Works: ${r.results?.length ?? 0} results (first: ${r.results?.[0]?.title ?? "none"}).`;
+    if (r.ok) wsMsg.value = `Works via ${PROVIDER_LABEL[r.provider ?? "duckduckgo"]}: ${r.results?.length ?? 0} results (first: ${r.results?.[0]?.title ?? "none"}).`;
     else wsError.value = `Search failed: ${r.error}`;
   } catch (e) {
     wsError.value = (e as Error).message;
@@ -206,28 +213,69 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
           <span class="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent"><Globe :size="18" /></span>
           <div>
             <h2 class="font-semibold">Web search</h2>
-            <p class="text-xs text-muted">{{ webSearch?.has_key ? `${webSearch.provider} key stored ${webSearch.key_hint}` : "Not set up" }}</p>
+            <div class="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
+              <span class="text-faint text-[10px] uppercase tracking-wider font-medium">Order:</span>
+              <template v-for="(p, i) in (webSearch?.order ?? ['duckduckgo'])" :key="p">
+                <span v-if="i > 0" class="text-faint text-[10px]">→</span>
+                <span class="chip px-1.5 py-0 text-[10px] font-medium bg-surface-2/60 text-muted border-line/60">
+                  {{ PROVIDER_LABEL[p] }}
+                </span>
+              </template>
+            </div>
           </div>
         </div>
         <p class="text-sm text-muted">
-          Lets Researcher (and any agent with <code>web_search</code>) search the web. Reading pages (<code>web_fetch</code>) works without a key. The key stays here, encrypted; runners never see it.
+          For Researcher (and any agent with <code>web_search</code>). DuckDuckGo works with no setup and no monthly limit; if it is busy or asks for a CAPTCHA, the hub tries your SearXNG, then a Tavily or Brave key if you add one. Reading a page (<code>web_fetch</code>) never needs any of this.
         </p>
         <div>
-          <label class="label" for="ws-provider">Search provider</label>
+          <label class="label" for="ws-provider">Try first</label>
           <select id="ws-provider" v-model="ws.provider" class="input">
-            <option value="brave">Brave Search API (api-dashboard.search.brave.com)</option>
-            <option value="tavily">Tavily (app.tavily.com)</option>
+            <option value="duckduckgo">DuckDuckGo (free, no setup)</option>
+            <option value="searxng">SearXNG (your own server)</option>
+            <option value="tavily">Tavily (API key)</option>
+            <option value="brave">Brave (API key)</option>
           </select>
         </div>
-        <div>
-          <label class="label" for="ws-key">API key</label>
-          <input id="ws-key" v-model="ws.api_key" type="password" autocomplete="off" class="input font-mono" :placeholder="webSearch?.has_key ? 'Leave empty to keep the stored key' : 'Paste API key'" />
+
+        <div class="space-y-3 pt-1 border-t border-line/60">
+          <div class="sign text-[10px] text-faint tracking-wider">Fallbacks (optional)</div>
+          <div>
+            <label class="label" for="ws-searxng">SearXNG address (optional fallback)</label>
+            <input id="ws-searxng" v-model="ws.searxng_url" type="url" class="input font-mono" placeholder="http://mintserver:8888" />
+            <p class="mt-1 text-xs text-muted">Its settings.yml needs <code>json</code> in <code>search.formats</code>. See docs/searxng.md.</p>
+          </div>
+          <div>
+            <div class="grid gap-2 sm:grid-cols-[9rem_1fr]">
+              <div>
+                <label class="label" for="ws-key-provider">API key for</label>
+                <select id="ws-key-provider" v-model="ws.key_provider" class="input">
+                  <option value="tavily">Tavily</option>
+                  <option value="brave">Brave</option>
+                </select>
+              </div>
+              <div>
+                <label class="label" for="ws-key">API key (optional)</label>
+                <input
+                  id="ws-key"
+                  v-model="ws.api_key"
+                  type="password"
+                  autocomplete="off"
+                  class="input font-mono"
+                  :placeholder="webSearch?.has_key ? `${webSearch.key_provider} key stored ${webSearch.key_hint}: leave empty to keep` : 'Paste API key'"
+                />
+              </div>
+            </div>
+            <p class="mt-1.5 text-xs text-muted">
+              {{ ws.key_provider === 'tavily' ? 'Tavily: app.tavily.com (1,000 free searches a month, no card).' : 'Brave: api-dashboard.search.brave.com (needs a card).' }}
+            </p>
+          </div>
         </div>
+
         <p v-if="wsMsg" class="rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">{{ wsMsg }}</p>
         <p v-if="wsError" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ wsError }}</p>
         <div class="flex flex-wrap gap-2 border-t border-line pt-4">
           <ConfirmButton v-if="webSearch?.has_key" small confirm-label="Remove key?" @confirm="clearWebSearch">Remove key</ConfirmButton>
-          <button type="button" class="btn btn-sm ml-auto" :disabled="!webSearch?.has_key" @click="testWebSearch">Test search</button>
+          <button type="button" class="btn btn-sm ml-auto" @click="testWebSearch">Test search</button>
           <button class="btn btn-primary btn-sm">Save</button>
         </div>
       </form>
@@ -240,19 +288,33 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
             <p class="text-xs text-muted">{{ backups.length ? `Last: ${backups[0]!.date}` : "None yet" }}</p>
           </div>
         </div>
-        <p class="text-sm text-muted">
-          Every night after 3 am the hub copies the database, project briefs and skills into <code class="break-all">{{ backupDir }}</code> and keeps the last 14 days.
+        <p class="text-sm text-muted leading-relaxed">
+          Every night after 3 am the hub copies the database, project briefs and skills into <code class="break-all font-mono text-xs">{{ backupDir }}</code> and keeps the last 14 days.
           To restore: stop the hub, copy <code>agent-office.db</code> over <code>data/agent-office.db</code> (and the folders back), start it again.
         </p>
-        <ul v-if="backups.length" class="divide-y divide-line rounded-md border border-line text-sm">
-          <li v-for="b in backups.slice(0, 5)" :key="b.date" class="flex items-center justify-between px-3 py-1.5">
-            <span class="font-mono">{{ b.date }}</span>
-            <span class="text-xs text-muted">{{ mb(b.size_bytes) }} · {{ fmtDateTime(b.created_at) }}</span>
-          </li>
-        </ul>
+        <div v-if="backups.length" class="overflow-hidden rounded-xl border border-line bg-surface-2/30">
+          <div class="flex items-center justify-between border-b border-line bg-surface-2/60 px-3.5 py-1.5 text-[11px] font-semibold text-muted select-none">
+            <span>Date</span>
+            <span>Size & Time</span>
+          </div>
+          <ul class="divide-y divide-line text-xs">
+            <li v-for="b in backups.slice(0, 5)" :key="b.date" class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3.5 py-2 hover:bg-surface-2/50 transition-colors">
+              <span class="font-mono font-medium text-fg">{{ b.date }}</span>
+              <span class="text-right text-muted text-[11px] sm:font-mono">{{ mb(b.size_bytes) }} · {{ fmtDateTime(b.created_at) }}</span>
+            </li>
+          </ul>
+        </div>
         <p v-if="backupError" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ backupError }}</p>
-        <div class="flex border-t border-line pt-4">
-          <button type="button" class="btn btn-sm ml-auto" :disabled="backingUp" @click="backupNow">{{ backingUp ? "Backing up…" : "Back up now" }}</button>
+        <div class="flex flex-wrap gap-2 border-t border-line pt-4">
+          <button
+            type="button"
+            class="btn btn-sm ml-auto inline-flex items-center gap-1.5"
+            :disabled="backingUp"
+            @click="backupNow"
+          >
+            <LoaderCircle v-if="backingUp" :size="13" class="animate-spin text-accent" />
+            <span>{{ backingUp ? "Backing up…" : "Back up now" }}</span>
+          </button>
         </div>
       </section>
     </div>

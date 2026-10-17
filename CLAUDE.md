@@ -71,7 +71,7 @@ Owner asked to follow Nous Research's **Hermes Agent** closely. Logic in `packag
 - **Skill usage** is computed, not stored: `Learning.skillsWithUsage()` reads `agent.tool_call` events for `skill_view` plus run status / rejected drafts of those runs. `stale` after 60 days unused, or ≥3 runs with ≥50% bad.
 - **Researcher** (`packages/agents/src/researcher.ts`) with `web_search` + `web_fetch` (`packages/tools/src/research.ts`).
   - `web_fetch` follows redirects by hand and refuses private/loopback addresses (DNS-resolved) unless the exact host is on the agent's `http_allowlist`. It converts HTML to text itself (no library), wraps the output as UNTRUSTED and flags injection with `memoryContentProblem`.
-  - `web_search` goes runner → `POST /api/runner/web-search` → Brave or Tavily. The key is encrypted in `settings` (`integrations.web_search`) and never leaves the hub. `WEB_SEARCH_API_BASE` points tests at a fake. Owner rejected r.jina.ai (it sends every URL to a third party).
+  - `web_search` goes runner → `POST /api/runner/web-search` → hub tries providers in order (owner choice: no monthly limits first): **DuckDuckGo lite HTML** (no key, unofficial, 20/min cap, ads = `y.js` links dropped, CAPTCHA page → next) → **SearXNG** (owner-hosted URL, `format=json`; guide docs/searxng.md, no Docker) → Tavily/Brave key. `settings.integrations.web_search` = `{provider (first), searxng_url, key_provider, key_enc}`; old `{provider: brave|tavily}` rows are read as `key_provider`. Keys never leave the hub. `WEB_SEARCH_API_BASE` points tests at fakes. When every provider fails the tool tells the agent to use web_fetch. Owner rejected r.jina.ai (it sends every URL to a third party).
 - **consult_agent** (ask and wait):
   - The runner sends sequenced `run.consult`, and the hub creates a `consult` job (`input.parent_run_id`, `consult_id`) for the target. When that run ends, `#afterRun` sends `consult.answer` (the run's output) to the asking run.
   - One level only: consult jobs get no `consult_agent` / `handoff`. A run waiting on a consult does not count toward runner capacity, otherwise a one-slot runner deadlocks.
@@ -84,12 +84,24 @@ Owner asked to follow Nous Research's **Hermes Agent** closely. Logic in `packag
   - The domain serves the **built** UI: run `bun run --cwd apps/web build` after UI changes.
 - **Screenshots now need a preview hub**: start a throwaway hub with `AUTH_MODE=local`, the same `LOCAL_AUTH_TOKEN` (read from `.env`, never printed), temp `DATABASE_PATH` / dirs, `WEB_DIST_DIR=apps/web/dist`, port 8811. Then `node apps/web/scripts/shots.mjs --base http://127.0.0.1:8811 …`.
 
+## Decisions taken beyond the spec (Publisher: website posts, 2026-10-17)
+Owner request: chat with one agent, send photos + points, get a post for the project's own website. Owner choices: **approve first**, **an endpoint inside each site's backend** (not hub-held Firebase keys), **agent sees the photos** (canopy-ai/Gemma reads images; verified 2026-10-17).
+- This deviates on purpose from spec §8 "Marketing never publishes": a `web_post` draft is published **only when the owner approves it** (`POST /api/drafts/:id/decide` → `Publisher.publish`). A failed publish keeps the draft `approved` with `publish_error`; `POST /api/drafts/:id/publish` retries. Status becomes `published` with `published_url`.
+- **Contract:** `GET/POST <url>`, HMAC-SHA256 `v1=` over `"<ts>.<body>"`, 5-minute window. See `docs/website-publishing.md`. The secret is per project, in `projects.publish` (migration 0006, encrypted). "Test" stores the site's `{site_name, post_types}`; only then does `project_context.projects[].publish` tell agents the site accepts posts.
+- **Photos:** `POST /api/uploads` (raw image body, ≤10 MB, `uploads` table + `FILES_DIR/uploads/`). Chat jobs carry `input.attachments` (≤4). The runner fetches them with `GET /api/runner/uploads/:id?run_id=` (only photos attached to that running job) and sends them as image parts. If the model fails before any output, it retries once without the photos.
+- **Tool `draft_web_post`** (in `CONTENT_TOOLS`): checks the site's post types, the self-check, the brief's do_not list, and `cover_photo` (the index of the attached photos). It sends `run.draft` with `kind: web_post`, `platform: website` and `meta: WebPost`.
+- Built-in agent **Publisher** (`packages/agents/src/publisher.ts`). UI: the 📷 button and thumbnails in Chat, web posts in DraftCard (cover, chips, link, Publish again), and Projects → Brief → **Website** tab (`components/PublishSettings.vue`).
+- **SmashPoint side** (other repo): `worker/src/agentOffice.ts`.
+  - It verifies the signature, uploads the cover to storage.bijokdev.com, and writes Firestore via a service account (`FIREBASE_SERVICE_ACCOUNT` secret, jose RS256 → OAuth token) as `posts/ao-<draft>`, which makes retries idempotent.
+  - Needs `AGENT_OFFICE_SECRET` and `SITE_URL`; the owner must run `wrangler secret put` + `deploy`.
+  - Signature compatibility was tested against a local `wrangler dev`.
+
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.
 **PENDING (read first, updated 2026-10-17 end of session)**
 - Code: everything built and green: 214 tests, typecheck and web build OK. The domain serves the latest build.
 - Owner to do:
-  - In Agents → Marketing and Agents → Researcher, tick `consult_agent` (both were seeded before the tool existed).
+  - (done 2026-10-17: `consult_agent` added to Marketing + Researcher in the owner DB; Researcher prompt updated to read named sites with web_fetch and fall back when search is off; DB backup in data/backups/before-researcher-patch-*.db)
   - Add a Brave or Tavily key in Settings → Integrations → Web search.
   - Test with `docs/cuba-sistem.md` through https://myofis.bijokdev.com.
   - Sign off Phases 4, 5 and 4.5.
@@ -97,9 +109,11 @@ Read this first when picking the project up in a new session.
   - Commit.
   - Say "padam backup": Claude then deletes the old `.env` copy at `%TEMP%\env.backup`.
 - Gemini queue:
-  - review 003 ("semak 003": check that only its 7 files changed, then typecheck, tests and screenshots via the preview hub);
-  - then hand over 004 (4 files);
-  - then 005 (3 files).
+  - 003 and 004 reviewed and passed (scripts untouched, wiring intact). Owner: `git rm -r --cached shots-004` (now in .gitignore);
+
+  - next: hand over 005 (3 files), then 006 (whole-app UX polish; office pan/recenter and chat stick-to-bottom logic already fixed by Claude).
+- Publisher (website posts) built and **live** 2026-10-17: smashpoint-api Worker deployed (https://smashpoint-api.hazman5001.workers.dev, endpoint /agent-office/publish), secrets AGENT_OFFICE_SECRET + FIREBASE_SERVICE_ACCOUNT set (token + Firestore read verified), SmashPoint project created in the hub and connected (Test passed). Owner should delete the downloaded service-account JSON from Documents. First real publish = owner's own test.
+- Next requested: a "Browse" tab on Skills with popular public SKILL.md skills (one-click install, with licence + source shown).
 - Not started:
   - "Kerani" camera-rental agent: ask the owner where bookings are stored (Google Calendar / Sheet / own site DB / WhatsApp only).
   - 3D (OpenSCAD/Blender).

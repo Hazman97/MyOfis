@@ -141,7 +141,7 @@ async function cancel() {
             <div v-if="report" class="rounded-md border border-line bg-sunken p-4">
               <div class="mb-2 flex items-center gap-2">
                 <h3 class="text-sm font-semibold">{{ report.title }}</h3>
-                <button class="btn btn-ghost btn-sm ml-auto" aria-label="Close report" @click="report = null"><X :size="14" /></button>
+                <button class="btn btn-ghost btn-sm ml-auto" aria-label="Close report" title="Close report" @click="report = null"><X :size="14" /></button>
               </div>
               <pre class="font-sans text-sm leading-relaxed wrap-break-word whitespace-pre-wrap">{{ report.text }}</pre>
             </div>

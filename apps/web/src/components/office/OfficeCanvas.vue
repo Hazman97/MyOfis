@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, toRaw, watch } from "vue";
-import { Minus, Plus } from "lucide-vue-next";
+import { LocateFixed, Minus, Plus } from "lucide-vue-next";
 import type { OfficeState } from "@agent-office/shared";
 import { useOffice } from "../../stores/office.ts";
 import { OFFICE_ASSETS, type CharacterManifest } from "../../office/assets.ts";
@@ -118,24 +118,39 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- -/+ zoom buttons in the bottom-right corner -->
-      <div v-if="status === 'ready'" class="absolute right-2 bottom-2 flex gap-1">
-        <button
-          class="btn btn-sm border-white/15 bg-black/40 text-white hover:bg-black/60"
-          aria-label="Zoom out"
-          title="Zoom out"
-          @click="game?.zoomBy(-1)"
-        >
-          <Minus :size="14" />
-        </button>
-        <button
-          class="btn btn-sm border-white/15 bg-black/40 text-white hover:bg-black/60"
-          aria-label="Zoom in"
-          title="Zoom in"
-          @click="game?.zoomBy(1)"
-        >
-          <Plus :size="14" />
-        </button>
+      <!-- Segmented zoom & center controls with hint in bottom-right corner -->
+      <div v-if="status === 'ready'" class="absolute right-2.5 bottom-2.5 flex flex-col items-end gap-1">
+        <div class="inline-flex rounded-md border border-white/15 bg-black/50 p-0.5 shadow-lg backdrop-blur-sm">
+          <button
+            class="btn btn-sm h-7 rounded-sm border-0 bg-transparent px-2 text-white hover:bg-white/15 active:bg-white/25 focus-visible:ring-1 focus-visible:ring-white/50"
+            aria-label="Zoom out"
+            title="Zoom out"
+            @click="game?.zoomBy(-1)"
+          >
+            <Minus :size="14" />
+          </button>
+          <div class="my-1 w-px bg-white/15" />
+          <button
+            class="btn btn-sm h-7 rounded-sm border-0 bg-transparent px-2 text-white hover:bg-white/15 active:bg-white/25 focus-visible:ring-1 focus-visible:ring-white/50"
+            aria-label="Center the office"
+            title="Center the office"
+            @click="game?.recenter()"
+          >
+            <LocateFixed :size="14" />
+          </button>
+          <div class="my-1 w-px bg-white/15" />
+          <button
+            class="btn btn-sm h-7 rounded-sm border-0 bg-transparent px-2 text-white hover:bg-white/15 active:bg-white/25 focus-visible:ring-1 focus-visible:ring-white/50"
+            aria-label="Zoom in"
+            title="Zoom in"
+            @click="game?.zoomBy(1)"
+          >
+            <Plus :size="14" />
+          </button>
+        </div>
+        <p class="text-[10px] tracking-tight text-white/40 select-none">
+          Drag to move · scroll buttons to zoom
+        </p>
       </div>
     </div>
   </div>

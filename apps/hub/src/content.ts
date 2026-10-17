@@ -11,6 +11,7 @@ import {
   type FeatureNoteInput,
   type ProjectContext,
   type SelfCheck,
+  type WebPost,
 } from "@agent-office/shared";
 import type { Db } from "./db/client.ts";
 import { contentDrafts, featureLog, projects } from "./db/schema.ts";
@@ -40,6 +41,9 @@ export const toDraft = (r: DraftRow): ContentDraft => ({
   original_body: r.original_body,
   created_at: r.created_at,
   decided_at: r.decided_at,
+  meta: r.meta ?? null,
+  published_url: r.published_url,
+  publish_error: r.publish_error,
 });
 
 export const toFeature = (r: FeatureRow): FeatureNote => ({
@@ -163,7 +167,7 @@ export class Content {
   insertDraft(
     tx: Db,
     emit: Emit,
-    d: { project_id: string; agent_id: string; run_id: string; platform: string; kind: string; title: string; body: string; self_check: SelfCheck; feature_id: string | null },
+    d: { project_id: string; agent_id: string; run_id: string; platform: string; kind: string; title: string; body: string; self_check: SelfCheck; feature_id: string | null; meta?: WebPost | null },
   ): DraftRow {
     const row = tx
       .insert(contentDrafts)
@@ -228,6 +232,7 @@ export class Content {
         slug: p.slug,
         name: p.name,
         live_url: p.live_url,
+        publish: p.publish?.url && p.publish.info ? p.publish.info : null,
         brief: this.#briefForAgents(p),
         features: this.db
           .select()

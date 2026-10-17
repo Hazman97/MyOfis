@@ -14,7 +14,7 @@ Three new features, all with working logic and plain markup:
    - `stale` is a sentence like "not used in 60 days", or `null`.
    - It is already in the `skills` ref of `SkillsView.vue` (`s.usage`), but not shown yet.
 3. **Settings → Integrations** has two new cards:
-   - **Web search**: a Brave or Tavily key for the Researcher agent.
+   - **Web search**: Researcher searches DuckDuckGo first (no setup), then the owner's own SearXNG, then a Tavily or Brave key.
    - **Backups**: nightly copies, plus a "Back up now" button.
 
 ## Scope: edit ONLY these files
@@ -52,9 +52,12 @@ For each skill card in the Skills tab, using `s.usage` (it may be missing, so gu
 
 ## C. Integrations (IntegrationsView.vue: the Web search and Backups cards only)
 - Make both cards match the Gitea and Telegram cards exactly: header icon tile, title, status line, help text, form and footer buttons.
-- **Web search:** under the provider select, add one muted line with where to get a key:
-  - "Brave: api-dashboard.search.brave.com → API keys."
-  - "Tavily: app.tavily.com → API keys."
+- **Web search** (Claude changed this card on 2026-10-17: "Try first" select, SearXNG address, a key-provider select + key, and a status line "Order: DuckDuckGo → SearXNG"):
+  - show the order as small chips joined by arrows instead of plain text (keep the same `webSearch?.order` / `PROVIDER_LABEL` expression);
+  - group the SearXNG field and the key fields under a quiet "Fallbacks (optional)" sub-heading;
+  - under the key fields, add one muted line with where to get a key:
+  - "Tavily: app.tavily.com (1,000 free searches a month, no card)."
+  - "Brave: api-dashboard.search.brave.com (needs a card)."
 
   Text only, no links needed.
 - **Backups:**

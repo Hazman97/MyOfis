@@ -237,6 +237,9 @@ const online = (r: Runner) => office.state.runners[r.id]?.online ?? r.status ===
         <p class="text-xs text-muted mt-1 max-w-sm">
           No runners yet. Click <b class="text-fg font-semibold">Connect a PC</b> to add this PC or another one.
         </p>
+        <button class="btn btn-primary btn-sm mt-4 shadow-sm" @click="newCode">
+          <KeyRound :size="14" /> Connect a PC
+        </button>
       </div>
     </div>
   </div>

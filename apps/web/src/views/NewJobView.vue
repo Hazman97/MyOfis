@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watchEffect } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { LoaderCircle } from "lucide-vue-next";
 import { MARKETING_JOB_TYPES, type Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import PageHeader from "../components/PageHeader.vue";
@@ -208,7 +209,10 @@ async function submit() {
         </div>
         <div class="flex gap-2">
           <button type="button" class="btn" @click="router.back()">Back</button>
-          <button class="btn btn-primary flex-1" :disabled="busy || !agentId || !text.trim()">{{ busy ? "Starting…" : "Start job" }}</button>
+          <button class="btn btn-primary flex-1 shadow-sm" :disabled="busy || !agentId || !text.trim()">
+            <LoaderCircle v-if="busy" :size="14" class="motion-safe:animate-spin" />
+            {{ busy ? "Starting…" : "Start job" }}
+          </button>
         </div>
       </aside>
     </form>

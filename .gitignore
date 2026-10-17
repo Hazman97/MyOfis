@@ -11,3 +11,4 @@ workspaces/*
 .DS_Store
 coverage/
 apps/web/dist/
+shots-*/

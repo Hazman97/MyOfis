@@ -1,6 +1,15 @@
 import { sql } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { AgentConfig, SelfCheck } from "@agent-office/shared";
+import type { AgentConfig, PublishInfo, SelfCheck, WebPost } from "@agent-office/shared";
+
+export interface ProjectPublish {
+  url: string;
+  secret_enc: string | null;
+  secret_hint: string | null;
+  /** From the site's GET endpoint, refreshed on "Test". */
+  info: PublishInfo | null;
+  checked_at: string | null;
+}
 
 // Timestamps are ISO-8601 text and JSON is stored as text: both stay portable to Cloudflare D1.
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
@@ -77,6 +86,8 @@ export const projects = sqliteTable("projects", {
   brief_path: text("brief_path"),
   repo_url: text("repo_url"),
   live_url: text("live_url"),
+  /** The website's publish endpoint (Publisher): URL, encrypted shared secret, what it accepts. */
+  publish: json<ProjectPublish>("publish"),
   enabled: bool("enabled").notNull().default(true),
 });
 
@@ -211,6 +222,10 @@ export const contentDrafts = sqliteTable("content_drafts", {
   title: text("title").notNull().default(""),
   self_check: json<SelfCheck>("self_check"),
   decided_at: text("decided_at"),
+  // Publisher (web_post drafts): the post fields, and the publish result.
+  meta: json<WebPost>("meta"),
+  published_url: text("published_url"),
+  publish_error: text("publish_error"),
 });
 
 /**
@@ -238,3 +253,13 @@ export const proposals = sqliteTable(
   },
   (t) => [index("proposals_status_idx").on(t.status, t.created_at)],
 );
+
+/** Files the owner sends in chat (images for Publisher). Stored under FILES_DIR/uploads/. */
+export const uploads = sqliteTable("uploads", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  content_type: text("content_type").notNull(),
+  size: integer("size").notNull(),
+  path: text("path").notNull(),
+  created_at: text("created_at").notNull().default(now),
+});

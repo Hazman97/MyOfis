@@ -1546,9 +1546,10 @@ footer {
       <div class="sign">08d · Baru</div>
       <h2>Researcher, agent tanya agent, citarasa awak, backup</h2>
       <ul class="tips">
-        <li><b>Researcher:</b> agent baru yang cari maklumat kat internet dan bagi jawapan siap dengan sumber. Setup: <b>Settings → Integrations → Web search</b>, masukkan key Brave atau Tavily. Baca satu page (<code>web_fetch</code>) boleh walaupun tanpa key.</li>
+        <li><b>Researcher:</b> agent baru yang cari maklumat kat internet dan bagi jawapan siap dengan sumber. Search jalan <b>tanpa setup</b>: DuckDuckGo dulu, kalau kena sekat guna SearXNG awak sendiri (<code>docs/searxng.md</code>, tanpa Docker), lepas tu key Tavily/Brave kalau ada. Tetapan di <b>Settings → Integrations → Web search</b>.</li>
         <li><b>Agent tanya agent (<code>consult_agent</code>):</b> contoh, Marketing tanya Researcher harga sewa semasa, tunggu jawapan, baru tulis promo. Soalan tu keluar sebagai job kecil "Question from …". Hanya satu tingkat: agent yang menjawab tak boleh tanya agent lain pula.</li>
         <li><b>Cara awak suka:</b> klik watak agent → <b>How you like it</b> → pilih bahasa, nada, panjang jawapan, emoji, format, dan nota bebas (contoh "Panggil saya boss") → Save. Agent ikut dari job atau mesej seterusnya.</li>
+        <li><b>Publisher (post website):</b> Chat → <b>Publisher</b> → tekan 📷, letak gambar dan beberapa point. Dia tengok gambar, tanya kalau ada maklumat kurang, lepas tu tulis post website dan caption FB/IG. Semua masuk <b>Drafts</b>; tekan <b>Approve</b> dan post terus keluar kat website. Setup sekali: Projects → Brief → tab <b>Website</b> (panduan <code>docs/website-publishing.md</code>).</li>
         <li><b>Backup automatik:</b> setiap malam lepas pukul 3 pagi, DB, brief dan skills disalin ke <code>data/backups/&lt;tarikh&gt;/</code> dan disimpan 14 hari. Kalau gagal, Telegram bagitahu. Ada butang <b>Back up now</b> di Settings → Integrations.</li>
         <li><b>Domain:</b> buka <code>https://myofis.bijokdev.com</code> dari mana-mana. Login email Cloudflare sekali, tahan seminggu.</li>
       </ul>

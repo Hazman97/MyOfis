@@ -133,7 +133,16 @@ const projectName = (id: string | null) => (id ? projects.value.find((p) => p.id
           <ConfirmButton small confirm-label="Delete?" @confirm="remove(s)">Delete</ConfirmButton>
         </div>
       </article>
-      <div v-if="!schedules.length" class="rounded-lg border border-dashed border-line px-6 py-10 text-center text-sm text-muted">No schedules yet.</div>
+      <div v-if="!schedules.length" class="card flex flex-col items-center justify-center border-dashed p-12 text-center text-xs text-muted">
+        <CalendarClock :size="28" class="text-faint mb-2" :stroke-width="1.5" />
+        <p class="font-semibold text-sm text-fg">No schedules yet</p>
+        <p class="mt-1 max-w-sm text-muted">
+          Set up recurring jobs (daily testing, morning standup digests, weekly backups) for your agents.
+        </p>
+        <button class="btn btn-primary btn-sm mt-4 shadow-sm" @click="edit(null)">
+          <Plus :size="14" /> New schedule
+        </button>
+      </div>
     </div>
 
     <SidePanel v-if="editing" :sign="editing === 'new' ? 'New schedule' : 'Edit schedule'" :title="form.title || 'Schedule'" @close="editing = null">

@@ -36,6 +36,7 @@ import {
   HttpError,
   getAgent,
   getProviderBySlug,
+  getJob,
   getRun,
   getRunner,
   newId,
@@ -220,9 +221,25 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const run = getRun(db, body.run_id);
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     if (!webSearchLimit()) throw new HttpError(429, "too many web searches, wait a minute");
-    const cfg = integrations.webSearch.config();
-    if (!cfg) throw new HttpError(400, "web search is not set up: the owner adds a Brave or Tavily key in Settings → Integrations");
-    return c.json({ results: await searchWeb(cfg, body.query, body.count, hub.config.webSearchApiBase) });
+    try {
+      return c.json(await searchWeb(integrations.webSearch.plan(), body.query, body.count, hub.config.webSearchApiBase));
+    } catch (err) {
+      throw new HttpError(400, `${(err as Error).message}. You can still read any known URL with web_fetch: do that instead of giving up`);
+    }
+  });
+
+  /** Runner fetches a photo the owner sent with the job it is running (Publisher). */
+  app.get("/api/runner/uploads/:id", (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const run = getRun(db, c.req.query("run_id") ?? "");
+    const job = run && run.runner_id === runner.id && run.status === "running" ? getJob(db, run.job_id) : undefined;
+    const attached = Array.isArray(job?.input.attachments) && (job.input.attachments as { id?: unknown }[]).some((a) => a.id === c.req.param("id"));
+    const f = attached ? hub.publisher.readUpload(c.req.param("id")) : null;
+    if (!f) throw new HttpError(404, "not found");
+    return c.body(new Uint8Array(f.bytes), 200, { "content-type": f.row.content_type });
   });
 
   // ------------------------------------------------------------ owner only
@@ -256,11 +273,9 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   );
   api.put("/settings/integrations/web-search", async (c) => c.json({ web_search: integrations.webSearch.set(await c.req.json()) }));
   api.post("/settings/integrations/web-search/test", async (c) => {
-    const cfg = integrations.webSearch.config();
-    if (!cfg) throw new HttpError(400, "add an API key first");
     try {
-      const results = await searchWeb(cfg, "sewa kamera Kuala Lumpur", 3, hub.config.webSearchApiBase);
-      return c.json({ ok: true, results });
+      const r = await searchWeb(integrations.webSearch.plan(), "sewa kamera Kuala Lumpur", 3, hub.config.webSearchApiBase);
+      return c.json({ ok: true, ...r });
     } catch (err) {
       return c.json({ ok: false, error: (err as Error).message });
     }
@@ -390,6 +405,23 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
 
   // project briefs (projects/<slug>/brief.yaml) and the feature log
+
+  // Publisher: photos sent in chat, website publishing per project, publishing approved posts
+  api.post("/uploads", async (c) => {
+    const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    const u = hub.publisher.saveUpload(c.req.query("name") ?? "image", type, bytes);
+    return c.json({ upload: { id: u.id, name: u.name, content_type: u.content_type, size: u.size } }, 201);
+  });
+  api.get("/uploads/:id", (c) => {
+    const f = hub.publisher.readUpload(c.req.param("id"));
+    if (!f) throw new HttpError(404, "upload not found");
+    return c.body(new Uint8Array(f.bytes), 200, { "content-type": f.row.content_type, "cache-control": "private, max-age=86400" });
+  });
+  api.get("/projects/:id/publish", (c) => c.json({ publish: hub.publisher.settings(c.req.param("id")) }));
+  api.put("/projects/:id/publish", async (c) => c.json({ publish: hub.publisher.setSettings(c.req.param("id"), await c.req.json()) }));
+  api.post("/projects/:id/publish/test", async (c) => c.json({ publish: await hub.publisher.refresh(c.req.param("id")) }));
+  api.post("/drafts/:id/publish", async (c) => c.json({ draft: await hub.publisher.publish(c.req.param("id")) }));
   api.get("/projects/:id/brief", (c) => {
     const p = hub.content.project(c.req.param("id"));
     return c.json({ brief: hub.content.readBrief(p), example: EXAMPLE_BRIEF, path: `projects/${p.slug}/brief.yaml` });
@@ -415,13 +447,22 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
   api.post("/drafts/:id/decide", async (c) => {
     const decision = DraftDecision.parse(await c.req.json());
-    return c.json({ draft: hub.content.decideDraft(c.req.param("id"), decision) });
+    const draft = hub.content.decideDraft(c.req.param("id"), decision);
+    // a website post goes live once the owner approves it (the result or error is kept on the draft)
+    if (draft.kind === "web_post" && draft.status !== "rejected") return c.json({ draft: await hub.publisher.publish(draft.id) });
+    return c.json({ draft });
   });
 
   // chat with an agent (each message is a "chat" job; replies are the run's text)
   api.post("/chat", async (c) => {
     const body = z
-      .object({ agent_id: z.string().min(1), text: z.string().trim().min(1).max(8000), thread_id: z.string().regex(/^cht_[a-z0-9]+$/).nullish(), project_id: z.string().nullish() })
+      .object({
+        agent_id: z.string().min(1),
+        text: z.string().trim().min(1).max(8000),
+        thread_id: z.string().regex(/^cht_[a-z0-9]+$/).nullish(),
+        project_id: z.string().nullish(),
+        attachments: z.array(z.string().max(64)).max(4).optional(),
+      })
       .parse(await c.req.json());
     const { job, thread_id } = hub.chat(body);
     return c.json({ job, thread_id }, 201);
@@ -460,6 +501,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         status: j.status,
         run_id: hub.store.state.jobs[j.id]?.run_ids.at(-1) ?? null,
         reply: hub.chatReply(j),
+        attachments: Array.isArray(j.input.attachments) ? j.input.attachments : [],
       })),
     });
   });

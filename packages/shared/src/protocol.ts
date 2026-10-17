@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AgentConfig, PermissionLevel, ProviderRuntimeConfig, RiskLevel, RunnerCapabilities } from "./entities.ts";
 import { AgentEvent, RunnerEventBody } from "./events.ts";
-import { DraftKind, DraftStatus, FeatureNoteInput, Platform, ProjectBrief, SelfCheck } from "./marketing.ts";
+import { DraftKind, DraftStatus, FeatureNoteInput, Platform, ProjectBrief, PublishInfo, SelfCheck, WebPost } from "./marketing.ts";
 import { MemoryOp } from "./memory.ts";
 import { SkillName } from "./skills.ts";
 import type { OfficeState } from "./reducer.ts";
@@ -73,6 +73,8 @@ export const RunnerToHub = z.discriminatedUnion("type", [
     title: z.string().max(200),
     body: z.string().min(1).max(20_000),
     self_check: SelfCheck,
+    /** web_post drafts only. */
+    meta: WebPost.optional(),
   }),
   /** A user-facing note for a released change (Coder after a merge). Hub writes the feature log and emits feature.released. */
   z.object({ type: z.literal("run.feature_note"), ...runMsg, project_id: z.string(), note: FeatureNoteInput }),
@@ -106,6 +108,8 @@ export const ProjectContext = z.object({
       name: z.string(),
       live_url: z.string().nullable(),
       brief: ProjectBrief.nullable(),
+      /** The website accepts posts from Publisher (set in Projects → Website publishing). */
+      publish: PublishInfo.nullable().default(null),
       features: z.array(z.object({ title: z.string(), user_facing_note: z.string(), released_at: z.string() })),
       /** Recent decided drafts with the owner's edits and feedback: the agent's style memory. */
       past_drafts: z.array(

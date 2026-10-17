@@ -42,10 +42,15 @@ export interface GiteaSettings {
   token_hint: string | null;
 }
 
+export type WebSearchProvider = "duckduckgo" | "searxng" | "tavily" | "brave";
 export interface WebSearchSettings {
-  provider: "brave" | "tavily";
+  /** Tried first; the other providers that are set up are fallbacks (`order`). */
+  provider: WebSearchProvider;
+  searxng_url: string;
+  key_provider: "tavily" | "brave" | null;
   has_key: boolean;
   key_hint: string | null;
+  order: WebSearchProvider[];
 }
 export interface BackupInfo {
   date: string;
@@ -105,6 +110,18 @@ export interface ChatThread {
   messages: number;
 }
 
+export interface PublishSettings {
+  url: string;
+  has_secret: boolean;
+  secret_hint: string | null;
+  info: { site_name: string; post_types: string[] } | null;
+  checked_at: string | null;
+}
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  content_type: string;
+}
 export interface ChatMessage {
   job_id: string;
   agent_id: string;
@@ -113,6 +130,8 @@ export interface ChatMessage {
   status: Job["status"];
   run_id: string | null;
   reply: string | null;
+  /** Photos sent with the message (Publisher). */
+  attachments?: ChatAttachment[];
 }
 
 export class ApiError extends Error {
@@ -191,10 +210,10 @@ export const api = {
   tools: () => request<{ tools: ToolInfo[] }>("/tools"),
 
   integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings }>("/settings/integrations"),
-  saveWebSearch: (body: { provider: "brave" | "tavily"; api_key?: string }) =>
+  saveWebSearch: (body: { provider: WebSearchProvider; searxng_url?: string; key_provider?: "tavily" | "brave"; api_key?: string }) =>
     request<{ web_search: WebSearchSettings }>("/settings/integrations/web-search", { method: "PUT", body }),
   testWebSearch: () =>
-    request<{ ok: boolean; results?: { title: string; url: string }[]; error?: string }>("/settings/integrations/web-search/test", { method: "POST" }),
+    request<{ ok: boolean; provider?: WebSearchProvider; results?: { title: string; url: string }[]; error?: string }>("/settings/integrations/web-search/test", { method: "POST" }),
   backups: () => request<{ backups: BackupInfo[]; dir: string }>("/backups"),
   backupNow: () => request<{ backup: BackupInfo }>("/backups", { method: "POST" }),
   saveTelegram: (body: { token?: string; chat_id?: string; enabled?: boolean }) =>
@@ -219,10 +238,24 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
     return request<{ drafts: ContentDraft[] }>(`/drafts${qs.size ? `?${qs}` : ""}`);
   },
+  publishSettings: (projectId: string) => request<{ publish: PublishSettings }>(`/projects/${projectId}/publish`),
+  savePublishSettings: (projectId: string, body: { url: string; secret?: string }) =>
+    request<{ publish: PublishSettings }>(`/projects/${projectId}/publish`, { method: "PUT", body }),
+  testPublishSettings: (projectId: string) => request<{ publish: PublishSettings }>(`/projects/${projectId}/publish/test`, { method: "POST" }),
+  publishDraft: (id: string) => request<{ draft: ContentDraft }>(`/drafts/${id}/publish`, { method: "POST" }),
   decideDraft: (id: string, decision: DraftDecision) => request<{ draft: ContentDraft }>(`/drafts/${id}/decide`, { body: decision }),
 
-  chat: (body: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null }) =>
+  chat: (body: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[] }) =>
     request<{ job: Job; thread_id: string }>("/chat", { body }),
+  /** Upload a photo to send in chat (raw body, not JSON). */
+  uploadImage: async (file: File): Promise<ChatAttachment> => {
+    const res = await fetch(`/api/uploads?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file, headers: { "content-type": file.type }, credentials: "same-origin" });
+    const data = (await res.json().catch(() => ({}))) as { upload?: ChatAttachment; error?: string };
+    if (res.status === 401) onUnauthorized();
+    if (!res.ok || !data.upload) throw new ApiError(res.status, data.error ?? res.statusText);
+    return data.upload;
+  },
+  uploadUrl: (id: string) => `/api/uploads/${encodeURIComponent(id)}`,
   chatThreads: (agentId: string) => request<{ threads: ChatThread[] }>(`/chat/threads?agent_id=${encodeURIComponent(agentId)}`),
   chatThread: (threadId: string) => request<{ messages: ChatMessage[] }>(`/chat/threads/${threadId}`),
 

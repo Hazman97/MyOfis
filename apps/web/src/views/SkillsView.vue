@@ -320,10 +320,33 @@ const title = (p: Proposal) =>
               :class="open === s.name ? 'rotate-90 text-accent' : 'group-hover:text-muted'"
             />
             <div class="min-w-0 flex-1">
-              <div class="font-mono text-xs font-semibold text-fg tracking-tight group-hover:text-accent transition-colors">
-                {{ s.name }}
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-xs font-semibold text-fg tracking-tight group-hover:text-accent transition-colors">
+                  {{ s.name }}
+                </span>
+                <span
+                  v-if="s.usage?.stale"
+                  class="chip border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold text-[10px]"
+                  :title="s.usage.stale"
+                >
+                  Stale
+                </span>
+                <span v-if="s.usage?.stale" class="text-[11px] text-amber-500 font-medium">
+                  {{ s.usage.stale }}
+                </span>
               </div>
               <div class="text-xs text-muted mt-0.5 leading-relaxed">{{ s.description }}</div>
+              <div v-if="s.usage" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                <span>Used in {{ s.usage.runs }} runs</span>
+                <span v-if="s.usage.last_used_at">· last used {{ fmtTime(s.usage.last_used_at) }}</span>
+                <span v-else>· never used</span>
+                <span
+                  v-if="s.usage.bad_runs > 0"
+                  class="chip border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold text-[10px] py-0 px-1.5"
+                >
+                  {{ s.usage.bad_runs }} went badly
+                </span>
+              </div>
             </div>
           </button>
           <button

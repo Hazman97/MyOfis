@@ -30,5 +30,15 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     searchSessions: (q, all) => ctx.searchSessions(q, all),
     webSearch: (q, n) => ctx.webSearch(q, n),
     consult: (to, q, ms) => ctx.consult(to, q, ms),
+    attachments: attachmentsOf(ctx.assignment.job.input),
   };
+}
+
+/** Photos the owner sent with a chat message (`input.attachments`, set by the hub). */
+export function attachmentsOf(input: Record<string, unknown>): { id: string; name: string; content_type: string }[] {
+  if (!Array.isArray(input.attachments)) return [];
+  return input.attachments.filter(
+    (a): a is { id: string; name: string; content_type: string } =>
+      !!a && typeof a === "object" && typeof (a as { id?: unknown }).id === "string" && typeof (a as { content_type?: unknown }).content_type === "string",
+  );
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { Check, ShieldAlert, X } from "lucide-vue-next";
+import { Check, LoaderCircle, ShieldAlert, X } from "lucide-vue-next";
 import AgentAvatar from "./AgentAvatar.vue";
 import StatusBadge from "./StatusBadge.vue";
 import { api, type Approval } from "../api/http.ts";
@@ -60,7 +60,11 @@ async function decide(decision: "approved" | "rejected") {
       <RouterLink v-if="showRunLink" :to="{ name: 'run', params: { id: approval.run_id } }" class="text-xs text-muted hover:text-fg hover:underline">Open run</RouterLink>
       <template v-if="pending">
         <button class="btn btn-danger btn-sm ml-auto" :disabled="busy" @click="decide('rejected')"><X :size="14" /> Reject</button>
-        <button class="btn btn-primary btn-sm" :disabled="busy" @click="decide('approved')"><Check :size="14" /> Approve</button>
+        <button class="btn btn-primary btn-sm" :disabled="busy" @click="decide('approved')">
+          <LoaderCircle v-if="busy" :size="14" class="motion-safe:animate-spin" />
+          <Check v-else :size="14" />
+          Approve
+        </button>
       </template>
       <span v-else class="ml-auto inline-flex items-center gap-2 text-xs text-muted">
         <StatusBadge :status="approval.status" />

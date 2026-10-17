@@ -15,6 +15,7 @@ import { Integrations } from "./integrations.ts";
 import { ReleaseWatcher } from "./releases.ts";
 import { TelegramBot } from "./telegram.ts";
 import { Backups } from "./backup.ts";
+import { Publisher } from "./publisher.ts";
 import { Scheduler } from "./scheduler.ts";
 import { seed } from "./seed.ts";
 import { LocalStorage } from "./storage.ts";
@@ -55,6 +56,7 @@ export function startHub(
   hub.storage = storage;
   hub.content = new Content(db, store, config.projectsDir);
   hub.learning = new Learning(db, store, config.skillsDir);
+  hub.publisher = new Publisher(db, store, secrets, config.filesDir);
   hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir });
   hub.boot();
   hub.backfillIndex();

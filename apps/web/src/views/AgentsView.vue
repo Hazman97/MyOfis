@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { Pause, Pencil, Play, Plus } from "lucide-vue-next";
+import { Bot, LoaderCircle, Pause, Pencil, Play, Plus } from "lucide-vue-next";
 import { AgentPreferences, dayKey, type Agent, type ProviderPublic, type Runner } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import PageHeader from "../components/PageHeader.vue";
@@ -189,6 +189,18 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
           <button class="btn btn-sm ml-auto" @click="edit(a)"><Pencil :size="13" /> Edit</button>
         </div>
       </article>
+
+      <!-- Empty state -->
+      <div v-if="!office.agents.length" class="card flex flex-col items-center justify-center border-dashed p-12 text-center text-xs text-muted md:col-span-2 xl:col-span-3">
+        <Bot :size="28" class="text-faint mb-2" :stroke-width="1.5" />
+        <p class="font-semibold text-sm text-fg">No agents configured</p>
+        <p class="mt-1 max-w-sm text-muted">
+          Add an agent to start delegating work to your office team.
+        </p>
+        <button class="btn btn-primary btn-sm mt-4 shadow-sm" @click="edit(null)">
+          <Plus :size="14" /> New agent
+        </button>
+      </div>
     </div>
 
     <!-- Edit Side Panel -->
@@ -342,7 +354,10 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
       <template #footer>
         <p v-if="error" class="min-w-0 flex-1 truncate text-xs text-danger" :title="error">{{ error }}</p>
         <button type="button" class="btn ml-auto" @click="editing = null">Cancel</button>
-        <button form="agent-form" class="btn btn-primary shadow-sm" :disabled="saving">Save agent</button>
+        <button form="agent-form" class="btn btn-primary shadow-sm" :disabled="saving">
+          <LoaderCircle v-if="saving" :size="14" class="motion-safe:animate-spin" />
+          Save agent
+        </button>
       </template>
     </SidePanel>
   </div>

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { Mic, MicOff, Plus, SendHorizontal, Square, Volume2 } from "lucide-vue-next";
+import { ImagePlus, LoaderCircle, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
 import type { Agent, Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import PageHeader from "../components/PageHeader.vue";
-import { api, type ChatMessage, type ChatThread } from "../api/http.ts";
+import { api, type ChatAttachment, type ChatMessage, type ChatThread } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { canDictate, canSpeak, dictate, speak, stopSpeaking, type Dictation } from "../speech.ts";
 import { fmtTime } from "../format.ts";
@@ -84,12 +84,30 @@ async function loadThreads() {
 async function openThread(id: string | null) {
   threadId.value = id;
   messages.value = id ? (await api.chatThread(id)).messages : [];
-  await scrollDown();
+  await scrollDown(true);
 }
 
-async function scrollDown() {
+/** Keep following new text only while the owner is at the bottom; never pull them down while they read. */
+const atBottom = ref(true);
+const newBelow = ref(false);
+function onScroll() {
+  const el = scroller.value;
+  if (!el) return;
+  atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  if (atBottom.value) newBelow.value = false;
+}
+async function scrollDown(force = false) {
   await nextTick();
-  scroller.value?.scrollTo({ top: scroller.value.scrollHeight, behavior: "smooth" });
+  const el = scroller.value;
+  if (!el) return;
+  if (!force && !atBottom.value) {
+    newBelow.value = true;
+    return;
+  }
+  // instant while text streams in (smooth scrolling fights the stream), smooth when jumping
+  el.scrollTo({ top: el.scrollHeight, behavior: force ? "smooth" : "auto" });
+  atBottom.value = true;
+  newBelow.value = false;
 }
 
 watch(
@@ -107,22 +125,51 @@ onMounted(async () => {
   projects.value = (await api.projects()).projects.filter((p) => p.enabled);
 });
 
+// Photos to send with the next message (uploaded right away; Publisher uses them)
+const MAX_PHOTOS = 4;
+const photos = ref<(ChatAttachment & { preview: string })[]>([]);
+const uploading = ref(false);
+const photoInput = ref<HTMLInputElement>();
+async function addPhotos(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const files = [...(input.files ?? [])].slice(0, MAX_PHOTOS - photos.value.length);
+  input.value = "";
+  if (!files.length) return;
+  uploading.value = true;
+  error.value = "";
+  try {
+    for (const file of files) photos.value.push({ ...(await api.uploadImage(file)), preview: URL.createObjectURL(file) });
+  } catch (err) {
+    error.value = (err as Error).message;
+  } finally {
+    uploading.value = false;
+  }
+}
+function removePhoto(id: string) {
+  const p = photos.value.find((x) => x.id === id);
+  if (p) URL.revokeObjectURL(p.preview);
+  photos.value = photos.value.filter((x) => x.id !== id);
+}
+
 async function send(body = text.value) {
-  const t = (body + (interim.value ? ` ${interim.value}` : "")).trim();
-  if (!t || !agent.value || sending.value) return;
+  const t = (body + (interim.value ? ` ${interim.value}` : "")).trim() || (photos.value.length ? "(photo)" : "");
+  if (!t || !agent.value || sending.value || uploading.value) return;
   listening.value?.stop();
   sending.value = true;
   error.value = "";
   try {
-    const res = await api.chat({ agent_id: agent.value.id, text: t, thread_id: threadId.value, project_id: projectId.value || null });
+    const sent = photos.value.map(({ id, name, content_type }) => ({ id, name, content_type }));
+    const res = await api.chat({ agent_id: agent.value.id, text: t, thread_id: threadId.value, project_id: projectId.value || null, attachments: sent.map((p) => p.id) });
     if (!threadId.value) {
       threadId.value = res.thread_id;
       void loadThreads();
     }
-    messages.value.push({ job_id: res.job.id, agent_id: agent.value.id, text: t, created_at: res.job.created_at, status: res.job.status, run_id: null, reply: null });
+    messages.value.push({ job_id: res.job.id, agent_id: agent.value.id, text: t, created_at: res.job.created_at, status: res.job.status, run_id: null, reply: null, attachments: sent });
+    for (const p of photos.value) URL.revokeObjectURL(p.preview);
+    photos.value = [];
     text.value = "";
     interim.value = "";
-    await scrollDown();
+    await scrollDown(true);
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -208,7 +255,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
           <button
             v-for="a in agents"
             :key="a.id"
-            class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-all duration-150"
+            class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-all duration-150 cursor-pointer"
             :class="a.id === agent?.id ? 'bg-accent/10 border-l-2 border-accent text-fg font-semibold' : 'text-muted hover:bg-surface-2 hover:text-fg'"
             @click="pickAgent(a.slug)"
           >
@@ -223,14 +270,17 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
         <div v-if="agent" class="space-y-2">
           <div class="flex items-center justify-between px-1">
             <span class="sign text-[10px] tracking-wider">Conversations</span>
-            <button class="btn btn-ghost btn-sm h-6 px-2 text-[11px]" @click="openThread(null)"><Plus :size="12" /> New</button>
+            <button class="btn btn-ghost btn-sm h-6 px-2 text-[11px] gap-1 hover:bg-surface-2" title="New conversation" @click="openThread(null)">
+              <Plus :size="12" /> New
+            </button>
           </div>
           <div class="space-y-1">
             <button
               v-for="t in threads"
               :key="t.thread_id"
-              class="block w-full truncate rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors"
-              :class="t.thread_id === threadId ? 'bg-surface-2 font-medium text-fg shadow-sm' : 'text-muted hover:bg-surface-2/60 hover:text-fg'"
+              class="block w-full truncate rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer"
+              :class="t.thread_id === threadId ? 'bg-surface-2 font-medium text-fg shadow-xs border border-line' : 'text-muted hover:bg-surface-2/60 hover:text-fg border border-transparent'"
+              :title="t.title"
               @click="openThread(t.thread_id)"
             >
               {{ threadTitle(t) }}
@@ -258,10 +308,10 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
           <label v-if="canSpeak()" class="inline-flex items-center gap-1.5 text-xs text-muted cursor-pointer hover:text-fg transition-colors" title="Read new replies aloud">
             <input v-model="autoSpeak" type="checkbox" class="accent-accent" /> <Volume2 :size="14" /> <span class="max-sm:sr-only">Read aloud</span>
           </label>
-          <button class="btn btn-ghost btn-sm h-7 lg:hidden" @click="openThread(null)"><Plus :size="13" /> New</button>
+          <button class="btn btn-ghost btn-sm h-7 lg:hidden" title="New conversation" @click="openThread(null)"><Plus :size="13" /> New</button>
         </header>
 
-        <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-5">
+        <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-5" @scroll.passive="onScroll">
           <!-- Starters / Empty state -->
           <div v-if="!messages.length" class="mx-auto max-w-lg py-8 text-center">
             <div class="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl border border-line bg-surface-2 text-accent shadow-sm">
@@ -277,11 +327,14 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
               <button
                 v-for="s in starters"
                 :key="s"
-                class="group rounded-xl border border-line bg-surface p-3 text-xs text-fg transition-all duration-150 hover:border-line-strong hover:bg-surface-2 hover:-translate-y-0.5 hover:shadow-card active:scale-[0.99]"
+                class="card group p-3.5 text-left text-xs text-fg transition-all duration-150 hover:border-line-strong hover:bg-surface-2 hover:-translate-y-0.5 hover:shadow-card active:scale-[0.99] cursor-pointer"
                 @click="send(s)"
               >
                 <span class="line-clamp-3 leading-relaxed">{{ s }}</span>
-                <span class="mt-1.5 block text-[10px] font-medium text-accent group-hover:translate-x-0.5 transition-transform">Send prompt →</span>
+                <span class="mt-2 flex items-center gap-1 text-[10px] font-semibold text-accent group-hover:translate-x-0.5 transition-transform">
+                  <span>Send prompt</span>
+                  <span>→</span>
+                </span>
               </button>
             </div>
           </div>
@@ -289,31 +342,39 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
           <!-- Message Bubbles -->
           <template v-for="m in messages" :key="m.job_id">
             <!-- Owner message on right -->
-            <div class="flex justify-end">
+            <div class="group flex flex-col items-end">
               <div class="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-sm bg-accent px-4 py-2.5 text-[14px] leading-relaxed whitespace-pre-wrap text-accent-ink shadow-sm">
+                <div v-if="m.attachments?.length" class="mb-2 flex flex-wrap gap-1.5">
+                  <a v-for="a in m.attachments" :key="a.id" :href="api.uploadUrl(a.id)" target="_blank" rel="noopener" class="group/img block overflow-hidden rounded-xl border border-white/20 transition-transform hover:scale-[1.02]">
+                    <img :src="api.uploadUrl(a.id)" :alt="a.name" class="size-24 rounded-xl object-cover shadow-xs" loading="lazy" />
+                  </a>
+                </div>
                 {{ m.text }}
+              </div>
+              <div class="mt-1 px-1 text-[10px] font-mono text-faint opacity-0 group-hover:opacity-100 max-sm:opacity-80 transition-opacity">
+                {{ fmtTime(m.created_at) }}
               </div>
             </div>
 
             <!-- Agent message on left -->
-            <div class="flex items-start gap-2.5">
+            <div class="group flex items-start gap-2.5">
               <AgentAvatar :name="agent.name" :slug="agent.slug" :size="28" class="mt-0.5 shrink-0" />
               <div class="max-w-[85%] sm:max-w-[75%] min-w-0">
                 <div class="rounded-2xl rounded-tl-sm border border-line bg-surface-2/90 px-4 py-2.5 text-[14px] leading-relaxed text-fg shadow-sm">
-                  <div v-if="live(m).reply" class="whitespace-pre-wrap" v-html="lite(live(m).reply)" />
-                  <p v-else-if="live(m).status === 'failed'" class="text-danger font-medium">Could not answer: {{ live(m).error ?? "the run failed" }}</p>
-                  <p v-else-if="live(m).status === 'cancelled'" class="text-faint">Cancelled.</p>
-                  <div v-else class="flex items-center gap-2 text-muted">
-                    <span class="inline-flex gap-1">
-                      <span class="size-1.5 animate-bounce rounded-full bg-accent" />
-                      <span class="size-1.5 animate-bounce rounded-full bg-accent [animation-delay:120ms]" />
-                      <span class="size-1.5 animate-bounce rounded-full bg-accent [animation-delay:240ms]" />
+                  <div v-if="live(m).reply" class="chat-reply whitespace-pre-wrap text-[13.5px] sm:text-[14px] leading-relaxed" v-html="lite(live(m).reply)" />
+                  <p v-else-if="live(m).status === 'failed'" class="text-danger font-medium text-xs">Could not answer: {{ live(m).error ?? "the run failed" }}</p>
+                  <p v-else-if="live(m).status === 'cancelled'" class="text-faint text-xs">Cancelled.</p>
+                  <div v-else class="flex items-center gap-2.5 py-0.5 text-muted">
+                    <span class="inline-flex items-center gap-1">
+                      <span class="size-2 rounded-full bg-accent motion-safe:animate-bounce" />
+                      <span class="size-2 rounded-full bg-accent motion-safe:animate-bounce [animation-delay:150ms]" />
+                      <span class="size-2 rounded-full bg-accent motion-safe:animate-bounce [animation-delay:300ms]" />
                     </span>
                     <span class="text-xs font-medium">{{ live(m).status === "queued" ? "waiting for a runner…" : live(m).status === "waiting_approval" ? "waiting for your approval" : "thinking…" }}</span>
                   </div>
                 </div>
-                <div class="mt-1.5 flex items-center gap-3 px-1 text-[11px] text-faint">
-                  <span>{{ fmtTime(m.created_at) }}</span>
+                <div class="mt-1.5 flex items-center gap-3 px-1 text-[11px] text-faint opacity-80 group-hover:opacity-100 transition-opacity">
+                  <span class="font-mono">{{ fmtTime(m.created_at) }}</span>
                   <button v-if="live(m).reply && canSpeak()" class="inline-flex items-center gap-1 hover:text-fg transition-colors" @click="say(m)">
                     <component :is="speaking === m.job_id ? Square : Volume2" :size="12" /> {{ speaking === m.job_id ? "Stop" : "Listen" }}
                   </button>
@@ -322,12 +383,55 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
               </div>
             </div>
           </template>
+
+          <!-- you scrolled up to read: new text waits below instead of pulling you down -->
+          <div v-if="newBelow" class="sticky bottom-2 z-10 flex justify-center pointer-events-none">
+            <button
+              class="btn btn-sm pointer-events-auto rounded-full border border-accent/40 bg-surface/95 px-3.5 py-1 text-xs font-semibold text-accent shadow-card backdrop-blur-sm transition-all hover:bg-surface-2 hover:border-accent motion-safe:animate-bounce"
+              @click="scrollDown(true)"
+            >
+              New reply ↓
+            </button>
+          </div>
         </div>
 
         <!-- Composer -->
-        <footer class="border-t border-line bg-surface/50 p-3 backdrop-blur-sm">
+        <footer class="border-t border-line bg-surface/80 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm">
           <p v-if="error" class="mb-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-1.5 text-xs text-danger">{{ error }}</p>
+          <div v-if="photos.length || uploading" class="mb-2.5 flex flex-wrap items-center gap-2" aria-label="Photos to send">
+            <div v-for="p in photos" :key="p.id" class="relative group">
+              <img :src="p.preview" :alt="p.name" class="size-16 rounded-xl border border-line object-cover shadow-xs" />
+              <button
+                class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-line bg-surface text-muted shadow-sm hover:bg-danger-soft hover:text-danger hover:border-danger/30 transition-colors"
+                :aria-label="`Remove ${p.name}`"
+                title="Remove photo"
+                @click="removePhoto(p.id)"
+              >
+                <X :size="12" />
+              </button>
+            </div>
+            <span v-if="uploading" class="text-xs text-muted flex items-center gap-1.5">
+              <LoaderCircle :size="13" class="animate-spin text-accent" />
+              Uploading…
+            </span>
+          </div>
           <div class="flex items-end gap-2">
+            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="hidden" @change="addPhotos" />
+            <button
+              class="btn relative shrink-0 size-9 p-0 rounded-lg text-muted hover:text-fg"
+              :disabled="uploading || photos.length >= MAX_PHOTOS"
+              aria-label="Add photos"
+              title="Add photos (up to 4). Publisher can see them and use one as the cover."
+              @click="photoInput?.click()"
+            >
+              <ImagePlus :size="16" />
+              <span
+                v-if="photos.length"
+                class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-accent-ink shadow-xs"
+              >
+                {{ photos.length }}
+              </span>
+            </button>
             <button
               v-if="canDictate()"
               class="btn shrink-0 size-9 p-0 rounded-lg transition-all duration-150"
@@ -341,8 +445,8 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
             <div class="relative min-w-0 flex-1">
               <textarea
                 v-model="text"
-                rows="2"
-                class="input resize-none text-[14px] leading-relaxed py-2 max-h-32"
+                rows="1"
+                class="input chat-input resize-none text-[16px] sm:text-[14px] leading-relaxed py-2"
                 :placeholder="listening ? 'Listening… speak now' : isCoach ? 'Type or press the mic and answer out loud…' : 'Message ' + agent.name + '…'"
                 @keydown="onKey"
               />
@@ -350,8 +454,10 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
             </div>
             <button
               class="btn btn-primary shrink-0 size-9 p-0 rounded-lg shadow-sm"
-              :disabled="sending || !(text.trim() || interim)"
+              :disabled="sending || uploading || !(text.trim() || interim || photos.length)"
+              :class="!(text.trim() || interim || photos.length) || sending || uploading ? 'opacity-40 cursor-not-allowed' : 'opacity-100'"
               aria-label="Send"
+              title="Send message"
               @click="send()"
             >
               <SendHorizontal :size="16" />
@@ -366,3 +472,23 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
     </div>
   </div>
 </template>
+
+<style scoped>
+.chat-input {
+  field-sizing: content;
+  min-height: 2.375rem;
+  max-height: 9rem;
+}
+.chat-reply :deep(code) {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.375rem;
+  background-color: var(--sunken);
+  border: 1px solid var(--line);
+}
+.chat-reply :deep(strong) {
+  font-weight: 600;
+  color: var(--fg);
+}
+</style>

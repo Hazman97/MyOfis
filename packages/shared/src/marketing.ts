@@ -5,7 +5,7 @@ import { z } from "zod";
  * Marketing writes drafts only; nothing here is ever published automatically.
  */
 
-export const Platform = z.enum(["tiktok", "instagram", "facebook", "threads", "youtube", "whatsapp", "landing_page", "general"]);
+export const Platform = z.enum(["tiktok", "instagram", "facebook", "threads", "youtube", "whatsapp", "landing_page", "website", "general"]);
 export type Platform = z.infer<typeof Platform>;
 
 export const ContentLanguage = z.enum(["manglish", "bahasa_melayu", "english"]);
@@ -68,10 +68,37 @@ export const DraftKind = z.enum([
   "ab_hooks",
   "announcement",
   "style_guide",
+  "web_post",
   "other",
 ]);
 export type DraftKind = z.infer<typeof DraftKind>;
 
+
+/**
+ * A post for a project's own website (news, event, vlog…), written by Publisher and sent to the
+ * site's `POST /agent-office/publish` endpoint when the owner approves it. Title and body (Markdown)
+ * live on the draft itself; these are the other fields.
+ */
+export const WebPost = z.object({
+  /** One of the site's post types (from its publish endpoint), e.g. "news", "tournament", "vlog". */
+  post_type: z.string().trim().min(1).max(40),
+  excerpt: z.string().max(400).default(""),
+  tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
+  event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).default(""),
+  event_time: z.string().regex(/^\d{2}:\d{2}$/).or(z.literal("")).default(""),
+  location: z.string().max(200).default(""),
+  video_url: z.string().url().or(z.literal("")).default(""),
+  /** An image the owner sent in chat (uploads table), used as the cover. */
+  cover_upload_id: z.string().max(64).nullable().default(null),
+});
+export type WebPost = z.infer<typeof WebPost>;
+
+/** What a project's website told us it accepts (GET /agent-office/publish). */
+export const PublishInfo = z.object({
+  site_name: z.string().max(120),
+  post_types: z.array(z.string().max(40)).max(20),
+});
+export type PublishInfo = z.infer<typeof PublishInfo>;
 /** draft → approved | edited (approved with owner edits) | rejected. `published` is reserved for a later posting integration. */
 export const DraftStatus = z.enum(["draft", "approved", "rejected", "edited", "published"]);
 export type DraftStatus = z.infer<typeof DraftStatus>;
@@ -102,6 +129,10 @@ export const ContentDraft = z.object({
   original_body: z.string(),
   created_at: z.string(),
   decided_at: z.string().nullable(),
+  /** web_post only: the post fields, and where it was published (or why not). */
+  meta: WebPost.nullable().default(null),
+  published_url: z.string().nullable().default(null),
+  publish_error: z.string().nullable().default(null),
 });
 export type ContentDraft = z.infer<typeof ContentDraft>;
 

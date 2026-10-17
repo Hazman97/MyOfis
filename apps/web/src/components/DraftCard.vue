@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Check, Copy, ShieldCheck, TriangleAlert, X } from "lucide-vue-next";
+import { Check, Copy, LoaderCircle, ShieldCheck, TriangleAlert, X } from "lucide-vue-next";
 import type { ContentDraft } from "@agent-office/shared";
 import AgentAvatar from "./AgentAvatar.vue";
 import StatusBadge from "./StatusBadge.vue";
@@ -34,6 +34,7 @@ const PLATFORM: Record<string, string> = {
   youtube: "YouTube",
   whatsapp: "WhatsApp",
   landing_page: "Landing page",
+  website: "Website",
   general: "General",
 };
 const kindLabel = (k: string) => k.replace(/_/g, " ");
@@ -48,6 +49,24 @@ const checks = computed(() => {
     { ok: c.tone_and_language_match, label: "tone + language" },
   ];
 });
+
+// Website posts (Publisher): approving publishes them; a failed publish can be retried
+const isWebPost = computed(() => props.draft.kind === "web_post" && !!props.draft.meta);
+const eventLine = computed(() => {
+  const m = props.draft.meta;
+  return m ? [m.event_date, m.event_time, m.location].filter(Boolean).join(" · ") : "";
+});
+async function publishAgain() {
+  busy.value = true;
+  error.value = "";
+  try {
+    emit("decided", (await api.publishDraft(props.draft.id)).draft);
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
+}
 
 async function copy() {
   try {
@@ -87,6 +106,16 @@ async function decide(decision: "approve" | "reject") {
       <span class="ml-auto font-mono text-[11px] text-faint">{{ fmtDateTime(draft.created_at) }}</span>
     </header>
     <h3 class="px-4 pt-3 font-semibold text-sm tracking-tight text-fg">{{ draft.title }}</h3>
+    <div v-if="isWebPost && draft.meta" class="px-4 pt-2.5 space-y-2">
+      <img v-if="draft.meta.cover_upload_id" :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Cover photo" class="max-h-56 w-full rounded-lg border border-line object-cover" />
+      <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span class="chip">{{ draft.meta.post_type }}</span>
+        <span v-if="eventLine" class="chip">{{ eventLine }}</span>
+        <span v-for="t in draft.meta.tags" :key="t" class="chip text-muted">#{{ t }}</span>
+      </div>
+      <p v-if="draft.meta.excerpt" class="text-sm text-muted italic">{{ draft.meta.excerpt }}</p>
+      <p v-if="pending" class="text-xs text-info">Approving publishes this post to the website.</p>
+    </div>
 
     <div class="px-4 pt-2.5">
       <textarea
@@ -148,6 +177,16 @@ async function decide(decision: "approve" | "reject") {
       />
     </div>
 
+    <div v-if="isWebPost && !pending" class="mx-4 mt-2 text-xs">
+      <a v-if="draft.published_url?.startsWith('http')" :href="draft.published_url" target="_blank" rel="noopener" class="text-accent hover:underline">View it on the website →</a>
+      <div v-else-if="draft.publish_error" class="flex flex-wrap items-center gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-danger">
+        <span class="min-w-0 flex-1">Not published: {{ draft.publish_error }}</span>
+        <button class="btn btn-sm" :disabled="busy" @click="publishAgain">
+          <LoaderCircle v-if="busy" :size="13" class="motion-safe:animate-spin" />
+          Publish again
+        </button>
+      </div>
+    </div>
     <p v-if="error" class="mx-4 mt-2 text-xs text-danger">{{ error }}</p>
 
     <!-- Footer -->
@@ -165,7 +204,8 @@ async function decide(decision: "approve" | "reject") {
           <template v-else>
             <button class="btn btn-sm btn-danger" :disabled="busy" @click="mode = 'reject'"><X :size="13" /> Reject…</button>
             <button class="btn btn-sm btn-primary shadow-sm" :disabled="busy || !body.trim()" @click="decide('approve')">
-              <Check :size="13" /> {{ edited ? "Approve my edit" : "Approve" }}
+              <LoaderCircle v-if="busy" :size="13" class="motion-safe:animate-spin" />
+              <Check v-else :size="13" /> {{ edited ? "Approve my edit" : "Approve" }}
             </button>
           </template>
         </div>

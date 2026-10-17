@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { ExternalLink, Image, Plus, Sparkles, Trash2 } from "lucide-vue-next";
+import { ExternalLink, Image, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-vue-next";
 import { Platform, type ContentLanguage, type FeatureNote, type Project, type ProjectBriefInput } from "@agent-office/shared";
 import SidePanel from "./SidePanel.vue";
+import PublishSettings from "./PublishSettings.vue";
 import { api } from "../api/http.ts";
 import { fmtDateTime } from "../format.ts";
 
@@ -11,7 +12,7 @@ import { fmtDateTime } from "../format.ts";
 const props = defineProps<{ project: Project; tab?: "brief" | "features" }>();
 const emit = defineEmits<{ close: [] }>();
 
-const tab = ref<"brief" | "features">(props.tab ?? "brief");
+const tab = ref<"brief" | "features" | "website">(props.tab ?? "brief");
 const loaded = ref(false);
 const exists = ref(false);
 const path = ref("");
@@ -176,7 +177,19 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
         Feature log
         <span class="ml-1 font-mono text-[10px]" :class="tab === 'features' ? 'text-accent-ink/80' : 'text-faint'">({{ features.length }})</span>
       </button>
+      <button
+        role="tab"
+        class="flex-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 text-center"
+        :class="tab === 'website' ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
+        :aria-selected="tab === 'website'"
+        @click="tab = 'website'"
+      >
+        Website
+      </button>
     </div>
+
+    <!-- WEBSITE PUBLISHING (Publisher) -->
+    <PublishSettings v-if="tab === 'website'" :project="project" />
 
     <!-- BRIEF -->
     <form v-if="tab === 'brief' && loaded" id="brief-form" class="space-y-5" @submit.prevent="save">
@@ -273,7 +286,7 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
             class="input min-h-24 font-mono text-xs leading-relaxed bg-surface/50 focus:bg-surface transition-colors shadow-inner"
             :aria-label="`Example post ${i + 1}`"
           />
-          <button type="button" class="btn btn-ghost btn-sm size-8 p-0 text-muted hover:text-danger transition-colors" aria-label="Remove example" @click="form.good_examples.splice(i, 1)">
+          <button type="button" class="btn btn-ghost btn-sm size-8 p-0 text-muted hover:text-danger transition-colors" aria-label="Remove example" title="Remove example" @click="form.good_examples.splice(i, 1)">
             <Trash2 :size="14" />
           </button>
         </div>
@@ -303,7 +316,10 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
         <textarea v-model="note.user_facing_note" class="input min-h-16 text-xs" required minlength="10" maxlength="2000" placeholder="Plain words for customers: what they can do now." aria-label="Note" />
         <div class="flex items-center gap-2">
           <p v-if="noteError" class="min-w-0 flex-1 truncate text-xs text-danger">{{ noteError }}</p>
-          <button class="btn btn-primary btn-sm ml-auto shadow-sm" :disabled="noteBusy">Release note</button>
+          <button class="btn btn-primary btn-sm ml-auto shadow-sm" :disabled="noteBusy">
+            <LoaderCircle v-if="noteBusy" :size="13" class="motion-safe:animate-spin" />
+            Release note
+          </button>
         </div>
       </form>
 
@@ -336,7 +352,10 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
       <p v-if="error" class="min-w-0 flex-1 truncate text-xs text-danger" :title="error">{{ error }}</p>
       <p v-else-if="saved" class="min-w-0 flex-1 text-xs font-semibold text-accent">Saved.</p>
       <button type="button" class="btn ml-auto" @click="emit('close')">Close</button>
-      <button form="brief-form" class="btn btn-primary shadow-sm" :disabled="busy">Save brief</button>
+      <button form="brief-form" class="btn btn-primary shadow-sm" :disabled="busy">
+        <LoaderCircle v-if="busy" :size="14" class="motion-safe:animate-spin" />
+        Save brief
+      </button>
     </template>
   </SidePanel>
 </template>

@@ -21,6 +21,8 @@ export interface OfficeGameOptions {
 
 export interface OfficeGame {
   zoomBy(step: number): void;
+  /** Back to the fitted zoom, centred on the office. */
+  recenter(): void;
   destroy(): void;
 }
 
@@ -51,6 +53,7 @@ class OfficeScene extends Phaser.Scene {
   #label!: Phaser.GameObjects.Text;
   #hover: string | null = null;
   #zoom = 0; // 0 = fit
+  #fitted = false;
   #dragging = false;
 
   constructor() {
@@ -119,6 +122,12 @@ class OfficeScene extends Phaser.Scene {
     this.scale.on("resize", () => this.#fit());
   }
 
+  recenter() {
+    this.#zoom = 0;
+    this.#fitted = false;
+    this.#fit();
+  }
+
   zoomBy(step: number) {
     const fit = this.#fitZoom();
     this.#zoom = Phaser.Math.Clamp((this.#zoom || fit) + step, 1, 6);
@@ -136,17 +145,23 @@ class OfficeScene extends Phaser.Scene {
     return Math.max(1, fit - z >= 0.6 ? z + 1 : z);
   }
 
+  /**
+   * Zoom + pan bounds. Only the first fit centres the map; after that (window resize, zoom
+   * buttons) the spot the owner was looking at stays in the middle, so panning is never undone.
+   */
   #fit() {
     const cam = this.cameras.main;
     const mw = this.#o.layout.width * this.#o.layout.tileSize;
     const mh = this.#o.layout.height * this.#o.layout.tileSize;
+    const keep = this.#fitted ? { x: cam.midPoint.x, y: cam.midPoint.y } : { x: mw / 2, y: mh / 2 };
     cam.setBackgroundColor(BACKGROUND);
     cam.setZoom(this.#zoom || this.#fitZoom());
     // Pan inside the map; on an axis where the map is smaller than the view, the bounds are the view itself, centred.
     const vw = this.scale.width / cam.zoom;
     const vh = this.scale.height / cam.zoom;
     cam.setBounds(Math.min(0, (mw - vw) / 2), Math.min(0, (mh - vh) / 2), Math.max(mw, vw), Math.max(mh, vh));
-    cam.centerOn(mw / 2, mh / 2);
+    cam.centerOn(keep.x, keep.y);
+    this.#fitted = true;
   }
 
   update(time: number, delta: number) {
@@ -266,6 +281,9 @@ export function createOfficeGame(parent: HTMLElement, options: OfficeGameOptions
   return {
     zoomBy(step) {
       (game.scene.getScene("office") as OfficeScene | null)?.zoomBy(step);
+    },
+    recenter() {
+      (game.scene.getScene("office") as OfficeScene | null)?.recenter();
     },
     destroy() {
       game.destroy(true);

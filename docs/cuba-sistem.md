@@ -140,8 +140,8 @@ description: Write a short TikTok caption for a Malaysian camera-rental promo, i
 ---
 
 ## 13. Benda baru: Researcher, tanya-menanya, citarasa, backup
-- [ ] **Buat:** Settings → Integrations → **Web search**: pilih Brave atau Tavily, paste key → **Save** → **Test search**.
-  **Betul kalau:** keluar "Works: 3 results".
+- [ ] **Buat:** Settings → Integrations → **Web search** → **Test search** (tak perlu key: DuckDuckGo dulu, lepas tu SearXNG kalau awak dah pasang).
+  **Betul kalau:** keluar "Works via DuckDuckGo: 3 results".
 - [ ] **Buat:** Chat → **Researcher**: `Berapa harga sewa Sony A7IV sehari kat KL sekarang? Bagi sumber.`
   **Betul kalau:** Researcher search, baca beberapa page, dan jawab dengan bahagian Answer / Details / **Sources** (link).
 - [ ] **Buat:** Agents → **Marketing** → Edit → Tools → tick **consult_agent** → Save. Buat juga untuk Researcher.
@@ -156,6 +156,14 @@ description: Write a short TikTok caption for a Malaysian camera-rental promo, i
   **Betul kalau:** keluar tarikh hari ni dengan saiz (MB). Folder `data/backups/<tarikh>/` ada `agent-office.db`, `projects/` dan `skills/`.
 - [ ] **Buat:** Skills → tab **Skills**.
   **Betul kalau:** (lepas Gemini task 005) setiap skill tunjuk berapa kali diguna, dan tanda **Stale** kalau lama tak diguna.
+
+## 14. Publisher: post terus ke website
+- [ ] **Buat:** setup SmashPoint sekali ikut `docs/website-publishing.md`: service account, secret dan `wrangler deploy`, lepas tu Projects → SmashPoint → Brief → **Website** → **Save** → **Test**.
+  **Betul kalau:** keluar "Connected to SmashPoint · post types: news, match, tournament, event, vlog".
+- [ ] **Buat:** Chat → **Publisher** → pilih projek SmashPoint → 📷 tambah satu gambar → tulis point, contoh `Tournament doubles Sabtu ni 9 pagi, hadiah RM500, daftar kat kaunter`.
+  **Betul kalau:** dia sebut apa yang ada dalam gambar, tanya kalau ada maklumat kurang, lepas tu bagitahu dah draf post dan caption.
+- [ ] **Buat:** Drafts → kad post (ada cover, chip jenis post dan tarikh) → **Approve**.
+  **Betul kalau:** kad tunjuk **View it on the website →**, dan post betul-betul keluar kat page News smashpoint.
 
 ## Habis test?
 Bagitahu Claude:

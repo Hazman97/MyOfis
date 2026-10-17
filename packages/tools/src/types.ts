@@ -10,6 +10,7 @@ import type {
   RiskLevel,
   RunnerEventBody,
   SelfCheck,
+  WebPost,
   ToolCategory,
 } from "@agent-office/shared";
 
@@ -82,6 +83,8 @@ export interface ToolContext {
   webSearch(query: string, count: number): Promise<WebSearchResult[]>;
   /** Ask another agent (by slug) and wait for its answer, up to `timeoutMs`. Never throws. */
   consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
+  /** Photos the owner sent with this job's message (chat), in order. */
+  attachments: { id: string; name: string; content_type: string }[];
 }
 
 export interface DraftRequest {
@@ -91,6 +94,7 @@ export interface DraftRequest {
   title: string;
   body: string;
   self_check: SelfCheck;
+  meta?: WebPost;
 }
 
 export interface ToolOutput {

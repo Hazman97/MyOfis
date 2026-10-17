@@ -92,20 +92,7 @@ const pendingCount = computed(() => Object.keys(office.state.pending_drafts ?? {
       <DraftCard v-for="d in drafts" :key="d.id" :draft="d" :project-name="projectName(d.project_id)" @decided="onDecided" />
       <div v-if="!drafts.length" class="card flex flex-col items-center justify-center p-12 text-center border-dashed">
         <div class="mb-3 flex size-12 items-center justify-center rounded-2xl border border-line bg-surface-2 text-muted shadow-sm">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="size-6 text-faint"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-          </svg>
+          <FilePenLine :size="24" class="text-faint" />
         </div>
         <h3 class="font-semibold text-sm tracking-tight text-fg">{{ tab === "pending" ? "No drafts waiting" : "Nothing decided yet" }}</h3>
         <p class="mt-1 max-w-sm text-xs text-muted leading-relaxed">

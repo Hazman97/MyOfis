@@ -9,7 +9,7 @@ import { MARKETING_JOB_TYPES, MEMORY_LIMITS, freshFetchImpl, memoryPromptSection
 import { TOOL_REGISTRY, runTool } from "@agent-office/tools";
 import { Script, scriptedModel } from "./scripted.ts";
 import { MessageStreamer, jobText } from "./text.ts";
-import { makeToolContext } from "./toolContext.ts";
+import { attachmentsOf, makeToolContext } from "./toolContext.ts";
 import type { AgentRuntime, RunContext, RunResult } from "./types.ts";
 
 /** Appended to every agent's system prompt (spec §7.6). */
@@ -72,7 +72,9 @@ export function contentNote(ctx: RunContext): string {
   const pc = ctx.assignment.project_context;
   if (!pc) return "";
   const type = MARKETING_JOB_TYPES.find((t) => t.type === ctx.assignment.job.type);
-  const projects = pc.projects.map((p) => `- ${p.slug}: ${p.name}${p.brief ? "" : " (no brief yet)"}`).join("\n");
+  const projects = pc.projects
+    .map((p) => `- ${p.slug}: ${p.name}${p.brief ? "" : " (no brief yet)"}${p.publish ? ` | website "${p.publish.site_name}" accepts posts (draft_web_post): ${p.publish.post_types.join(", ")}` : ""}`)
+    .join("\n");
   const job = type ? `\n\n## This job: ${type.label}\n${type.produce}` : "";
   return `\n\n## Today\n${pc.today} (Malaysia time)\n\n## Projects you write for\n${projects}${job}`;
 }
@@ -143,29 +145,49 @@ export const aiSdkRuntime: AgentRuntime = {
     let out = new MessageStreamer(ctx, `m${step}`);
     let full = "";
 
-    const result = streamText({
-      model: languageModel(provider, agent.model, job.input),
-      instructions: `${agent.system_prompt}\n${SAFETY_PREAMBLE}${projectsNote(ctx)}${contentNote(ctx)}${memoryNote(ctx)}${handoffNote(ctx)}${preferencesPrompt(agent.config.preferences)}`,
-      prompt: `Job: ${job.title}\n\n<job_input>\n${jobText(ctx)}\n</job_input>`,
-      tools,
-      stopWhen: [isStepCount(agent.config.max_steps), budgetStop(ctx.assignment.budget_left_tokens)],
-      abortSignal: ctx.signal,
-      maxOutputTokens: 8000,
-      onStepEnd: () => {
-        // One agent.message per model step, so tool calls sit between messages in the timeline.
-        out.flush(true);
-        out = new MessageStreamer(ctx, `m${++step}`);
-      },
-      onError: ({ error }: { error: unknown }) => {
-        streamError = error;
-      },
-    });
+    // Photos the owner sent with a chat message go to the model as images (Publisher).
+    const images = await loadImages(ctx);
+    const promptText = `Job: ${job.title}\n\n<job_input>\n${jobText(ctx)}${photoNote(images.length)}\n</job_input>`;
+    const start = (withImages: boolean) => {
+      streamError = null;
+      const input =
+        withImages && images.length
+          ? { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: promptText }, ...images.map((im) => ({ type: "image" as const, image: im.bytes, mediaType: im.type }))] }] }
+          : { prompt: images.length ? `${promptText}\n(This model cannot see the photos: ask the owner what they show if it matters.)` : promptText };
+      return streamText({
+        model: languageModel(provider, agent.model, job.input),
+        instructions: `${agent.system_prompt}\n${SAFETY_PREAMBLE}${projectsNote(ctx)}${contentNote(ctx)}${memoryNote(ctx)}${handoffNote(ctx)}${preferencesPrompt(agent.config.preferences)}`,
+        ...input,
+        tools,
+        stopWhen: [isStepCount(agent.config.max_steps), budgetStop(ctx.assignment.budget_left_tokens)],
+        abortSignal: ctx.signal,
+        maxOutputTokens: 8000,
+        onStepEnd: () => {
+          // One agent.message per model step, so tool calls sit between messages in the timeline.
+          out.flush(true);
+          out = new MessageStreamer(ctx, `m${++step}`);
+        },
+        onError: ({ error }: { error: unknown }) => {
+          streamError = error;
+        },
+      });
+    };
+    const drain = async (r: ReturnType<typeof start>) => {
+      for await (const delta of r.textStream) {
+        full += delta;
+        out.push(delta);
+      }
+      out.flush(false);
+    };
 
-    for await (const delta of result.textStream) {
-      full += delta;
-      out.push(delta);
+    let result = start(true);
+    await drain(result);
+    // a model without vision usually fails before saying anything: try once more without the photos
+    if (streamError && images.length && !full && !ctx.signal.aborted) {
+      ctx.emit({ type: "agent.thinking", payload: { summary: "This model could not read the photos; continuing without them" } });
+      result = start(false);
+      await drain(result);
     }
-    out.flush(false);
     if (ctx.signal.aborted) throw ctx.signal.reason;
     if (streamError) throw streamError instanceof Error ? streamError : new Error(String(streamError));
 
@@ -206,3 +228,19 @@ export const aiSdkRuntime: AgentRuntime = {
     return { tokens_in: (usage.inputTokens ?? 0) + extraIn, tokens_out: (usage.outputTokens ?? 0) + extraOut };
   },
 };
+
+/** Photos attached to the job (chat), fetched from the hub. A photo that fails to load is skipped. */
+async function loadImages(ctx: RunContext): Promise<{ bytes: Uint8Array; type: string }[]> {
+  const out: { bytes: Uint8Array; type: string }[] = [];
+  for (const a of attachmentsOf(ctx.assignment.job.input).slice(0, 4)) {
+    try {
+      out.push({ bytes: await ctx.fetchUpload(a.id), type: a.content_type });
+    } catch (err) {
+      ctx.emit({ type: "agent.thinking", payload: { summary: `Could not load photo ${a.name}: ${(err as Error).message}`.slice(0, 300) } });
+    }
+  }
+  return out;
+}
+
+const photoNote = (n: number) =>
+  n ? `\n\n[The owner attached ${n} photo${n > 1 ? "s" : ""} (photo 1${n > 1 ? `–${n}` : ""}). Use them for the caption or as cover_photo.]` : "";

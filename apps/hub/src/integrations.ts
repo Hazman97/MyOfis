@@ -148,44 +148,71 @@ export interface TelegramPublic {
 // ---------------------------------------------------------------- web search (Researcher)
 
 const WEB_SEARCH_KEY = "integrations.web_search";
-const StoredWebSearch = z.object({ provider: z.enum(["brave", "tavily"]), key_enc: z.string().nullable(), key_hint: z.string().nullable() });
+const Provider = z.enum(["duckduckgo", "searxng", "tavily", "brave"]);
+const KeyProvider = z.enum(["tavily", "brave"]);
+const StoredWebSearch = z.object({
+  provider: Provider.default("duckduckgo"),
+  key_provider: KeyProvider.nullable().default(null),
+  key_enc: z.string().nullable().default(null),
+  key_hint: z.string().nullable().default(null),
+  searxng_url: z.string().default(""),
+});
 
 export const WebSearchSettingsInput = z.object({
-  provider: z.enum(["brave", "tavily"]),
+  /** Tried first; the others that are set up are the fallbacks. */
+  provider: Provider,
+  searxng_url: z.string().url().or(z.literal("")).optional(),
+  key_provider: KeyProvider.optional(),
   /** Write-only. Omit to keep, "" to clear. */
   api_key: z.string().max(500).optional(),
 });
 
 export interface WebSearchPublic {
-  provider: "brave" | "tavily";
+  provider: z.infer<typeof Provider>;
+  searxng_url: string;
+  key_provider: "tavily" | "brave" | null;
   has_key: boolean;
   key_hint: string | null;
+  /** The order the hub will try, given what is set up. */
+  order: z.infer<typeof Provider>[];
 }
+
+const FALLBACK: z.infer<typeof Provider>[] = ["duckduckgo", "searxng", "tavily", "brave"];
 
 export function webSearchSettings(db: Db, secrets: Secrets) {
   const read = () => {
     const row = db.select().from(settings).where(eq(settings.key, WEB_SEARCH_KEY)).get();
-    const parsed = StoredWebSearch.safeParse(row?.value);
-    return parsed.success ? parsed.data : null;
+    const v = row?.value as Record<string, unknown> | undefined;
+    // before DuckDuckGo/SearXNG the key belonged to `provider` (brave or tavily)
+    const legacy = v && !("key_provider" in v) && (v.provider === "brave" || v.provider === "tavily") ? { key_provider: v.provider } : {};
+    const parsed = StoredWebSearch.safeParse({ ...v, ...legacy });
+    return parsed.success ? parsed.data : StoredWebSearch.parse({});
   };
+  const usable = (s: ReturnType<typeof read>, p: z.infer<typeof Provider>) =>
+    p === "duckduckgo" || (p === "searxng" ? !!s.searxng_url : s.key_provider === p && !!s.key_enc);
+  const order = (s: ReturnType<typeof read>) => [s.provider, ...FALLBACK.filter((p) => p !== s.provider)].filter((p) => usable(s, p));
   const pub = (): WebSearchPublic => {
     const s = read();
-    return { provider: s?.provider ?? "brave", has_key: !!s?.key_enc, key_hint: s?.key_hint ?? null };
+    return { provider: s.provider, searxng_url: s.searxng_url, key_provider: s.key_provider, has_key: !!s.key_enc, key_hint: s.key_hint, order: order(s) };
   };
   return {
     public: pub,
-    /** Decrypted config, or null when no key is stored. */
-    config(): { provider: "brave" | "tavily"; apiKey: string } | null {
+    /** What searchWeb needs: the order and the decrypted key. DuckDuckGo needs nothing, so there is always a plan. */
+    plan(): { order: z.infer<typeof Provider>[]; searxngUrl: string; keys: Partial<Record<"tavily" | "brave", string>> } {
       const s = read();
-      return s?.key_enc ? { provider: s.provider, apiKey: secrets.decrypt(s.key_enc) } : null;
+      const keys = s.key_provider && s.key_enc ? { [s.key_provider]: secrets.decrypt(s.key_enc) } : {};
+      return { order: order(s), searxngUrl: s.searxng_url, keys };
     },
     set(input: z.input<typeof WebSearchSettingsInput>): WebSearchPublic {
       const data = WebSearchSettingsInput.parse(input);
       const prev = read();
+      const keyChanged = data.api_key !== undefined;
       const value = {
         provider: data.provider,
-        key_enc: data.api_key === undefined ? (prev?.key_enc ?? null) : data.api_key ? secrets.encrypt(data.api_key) : null,
-        key_hint: data.api_key === undefined ? (prev?.key_hint ?? null) : data.api_key ? keyHint(data.api_key) : null,
+        searxng_url: (data.searxng_url ?? prev.searxng_url).replace(/\/$/, ""),
+        key_provider: data.key_provider ?? prev.key_provider ?? (data.provider === "brave" || data.provider === "tavily" ? data.provider : null),
+        key_enc: keyChanged ? (data.api_key ? secrets.encrypt(data.api_key) : null) : prev.key_enc,
+        key_hint: keyChanged ? (data.api_key ? keyHint(data.api_key) : null) : prev.key_hint,
       };
       db.insert(settings).values({ key: WEB_SEARCH_KEY, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
       return pub();

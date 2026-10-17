@@ -16,6 +16,7 @@ import type { Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { agents, approvals, contentDrafts, featureLog, jobs, projects, runners, runs } from "./db/schema.ts";
 import type { Backups } from "./backup.ts";
+import type { Publisher } from "./publisher.ts";
 import type { Learning } from "./learning.ts";
 import type { Emit, EventStore } from "./events.ts";
 import type { Integrations } from "./integrations.ts";
@@ -58,6 +59,7 @@ export const MAX_HANDOFF_DEPTH = 5;
 export const MAX_DRAFTS_PER_RUN = 30;
 /** Earlier chat messages sent along with a new one. */
 const CHAT_HISTORY = 10;
+const MAX_CHAT_ATTACHMENTS = 4;
 const CHAT_TEXT_MAX = 2000;
 
 type AgentRow = typeof agents.$inferSelect;
@@ -81,6 +83,7 @@ export class Hub {
   /** Set by the server after construction (memory, skills, session search). */
   learning!: Learning;
   backups!: Backups;
+  publisher!: Publisher;
   /** Agents told they are over today's token budget, with the day they were told. */
   readonly #overBudget = new Map<string, string>();
 
@@ -263,23 +266,29 @@ Error: ${r.error}` : ""}` });
    * `chat` job (so budgets, approvals and the office all apply); earlier
    * messages and replies of the thread ride along as `input.history`.
    */
-  chat(input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null }): { job: Job; thread_id: string } {
+  chat(input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[] }): { job: Job; thread_id: string } {
     const threadId = input.thread_id || newId("cht");
     const prior = this.chatJobs(threadId);
     if (prior.length && prior[0]!.agent_id !== input.agent_id) throw new HttpError(409, "this chat thread belongs to another agent");
     const history = prior.slice(-CHAT_HISTORY).flatMap((j) => {
       const reply = this.chatReply(j);
       return [
-        { role: "owner", text: String(j.input.text ?? j.title).slice(0, CHAT_TEXT_MAX) },
+        { role: "owner", text: `${String(j.input.text ?? j.title).slice(0, CHAT_TEXT_MAX)}${Array.isArray(j.input.attachments) && j.input.attachments.length ? ` [sent ${j.input.attachments.length} photo(s)]` : ""}` },
         ...(reply ? [{ role: "agent", text: reply.slice(0, CHAT_TEXT_MAX) }] : []),
       ];
+    });
+    // photos sent with this message (uploaded first with POST /api/uploads)
+    const attachments = (input.attachments ?? []).slice(0, MAX_CHAT_ATTACHMENTS).map((id) => {
+      const u = this.publisher.upload(id);
+      if (!u) throw new HttpError(400, `unknown upload ${id}`);
+      return { id: u.id, name: u.name, content_type: u.content_type };
     });
     const job = this.createJob({
       agent_id: input.agent_id,
       project_id: input.project_id ?? prior.at(-1)?.project_id ?? null,
       type: "chat",
       title: input.text.trim().replace(/\s+/g, " ").slice(0, 80) || "Chat",
-      input: { text: input.text, thread_id: threadId, history },
+      input: { text: input.text, thread_id: threadId, history, ...(attachments.length ? { attachments } : {}) },
       trigger: "manual",
     });
     return { job, thread_id: threadId };
@@ -696,6 +705,7 @@ Error: ${r.error}` : ""}` });
         title: msg.title,
         body: msg.body,
         self_check: msg.self_check,
+        meta: msg.meta ?? null,
         feature_id: featureId,
       });
     });

@@ -3,6 +3,7 @@ import { coderAgent } from "./coder.ts";
 import { echoAgent } from "./echo.ts";
 import { englishCoachAgent } from "./englishCoach.ts";
 import { researcherAgent } from "./researcher.ts";
+import { publisherAgent } from "./publisher.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
 import { pakGuardAgent, pakGuardSchedule } from "./pakGuard.ts";
 import { testerAgent, testerSchedule } from "./tester.ts";
@@ -14,6 +15,7 @@ export { coderAgent, CODER_PROMPT, FEATURE_NOTE_PROMPT } from "./coder.ts";
 export { marketingAgent, MARKETING_PROMPT } from "./marketing.ts";
 export { englishCoachAgent, ENGLISH_COACH_PROMPT } from "./englishCoach.ts";
 export { researcherAgent, RESEARCHER_PROMPT } from "./researcher.ts";
+export { publisherAgent, PUBLISHER_PROMPT } from "./publisher.ts";
 
 export interface BuiltinAgent {
   agent: AgentInput;
@@ -32,4 +34,5 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: marketingAgent, needsLlm: true, schedules: (id) => [marketingSchedule(id)] },
   { agent: englishCoachAgent, needsLlm: true },
   { agent: researcherAgent, needsLlm: true },
+  { agent: publisherAgent, needsLlm: true },
 ];

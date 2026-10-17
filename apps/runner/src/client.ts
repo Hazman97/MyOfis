@@ -246,6 +246,14 @@ export class RunnerClient {
     return ((await res.json()) as { results: Awaited<ReturnType<import("@agent-office/tools").ToolContext["searchSessions"]>> }).results;
   }
 
+  async #fetchUpload(runId: string, id: string): Promise<Uint8Array> {
+    const url = new URL(`/api/runner/uploads/${encodeURIComponent(id)}`, this.#opts.hubUrl);
+    url.searchParams.set("run_id", runId);
+    const res = await freshFetch(url, { timeoutMs: 60_000, headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}` } });
+    if (!res.ok) throw new Error(`photo download failed (${res.status})`);
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
   async #webSearch(runId: string, query: string, count: number) {
     const res = await freshFetch(new URL("/api/runner/web-search", this.#opts.hubUrl), {
       method: "POST",
@@ -322,6 +330,7 @@ export class RunnerClient {
         proposeSkill: (p) => this.#sendRun(a.run_id, { type: "run.skill", ...p }),
         searchSessions: (query, allAgents) => this.#search(a.run_id, query, allAgents),
         webSearch: (query, count) => this.#webSearch(a.run_id, query, count),
+        fetchUpload: (id) => this.#fetchUpload(a.run_id, id),
         consult: (toAgent, question, timeoutMs) => this.#consult(a.run_id, toAgent, question, timeoutMs, run.abort.signal),
         baselineDir: this.#opts.dataDir ? join(this.#opts.dataDir, "baselines", a.agent.slug) : null,
       });

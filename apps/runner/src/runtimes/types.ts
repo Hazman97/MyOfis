@@ -23,6 +23,8 @@ export interface RunContext {
   searchSessions(query: string, allAgents: boolean): Promise<{ run_id: string; agent_id: string; job_type: string; ts: string; title: string; snippet: string }[]>;
   /** Web search through the hub (it holds the search API key). Throws when search is not set up. */
   webSearch(query: string, count: number): Promise<WebSearchResult[]>;
+  /** Bytes of a photo the owner attached to this job. */
+  fetchUpload(id: string): Promise<Uint8Array>;
   /** Ask another agent (by slug) and wait for its answer, up to `timeoutMs`. Never throws. */
   consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
   /** Runner-owned folder (outside the workspace) for this agent's screenshot baselines. */

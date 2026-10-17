@@ -201,6 +201,7 @@ async function logout() {
       <button
         class="btn btn-ghost btn-sm size-8 p-0 text-muted hover:text-fg ml-auto"
         :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+        :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
         @click="toggleTheme"
       >
         <component :is="isDark ? Sun : Moon" :size="15" />
@@ -257,7 +258,7 @@ async function logout() {
       <div class="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-line bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
         <div class="mb-3 flex items-center">
           <span class="sign">More</span>
-          <button class="btn btn-ghost btn-sm ml-auto" aria-label="Close" @click="moreOpen = false"><X :size="16" /></button>
+          <button class="btn btn-ghost btn-sm ml-auto" aria-label="Close" title="Close" @click="moreOpen = false"><X :size="16" /></button>
         </div>
         <div class="grid grid-cols-2 gap-2">
           <RouterLink v-for="m in moreItems" :key="m.to" :to="m.to" class="flex items-center gap-2 rounded-lg border border-line px-3 py-3 text-sm font-medium">

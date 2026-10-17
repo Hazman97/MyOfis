@@ -254,7 +254,7 @@ Agents with the learning tools (Coach and Marketing by default; add them to any 
 ## Researcher, asking each other, and "How you like it"
 
 - **Researcher** searches the web and reads pages, then answers with sources.
-  - Setup: Settings → Integrations → **Web search**, paste a **Brave Search** or **Tavily** API key. The key stays encrypted in the hub; runners never see it.
+  - Search works with **no setup**: the hub uses DuckDuckGo first, then your own **SearXNG** ([docs/searxng.md](docs/searxng.md), no Docker), then a Tavily or Brave key if you add one (Settings → Integrations → **Web search**). Keys stay encrypted in the hub; runners never see them.
   - Reading a page (`web_fetch`) works without a key.
   - Web content is treated as untrusted data: suspicious pages are flagged, and local or private addresses are refused unless you list the host in the agent's HTTP allowlist.
 - **consult_agent:** an agent asks a colleague and waits for the answer, e.g. Marketing asks Researcher for today's rental prices before writing a promo.
@@ -264,6 +264,12 @@ Agents with the learning tools (Coach and Marketing by default; add them to any 
 - **How you like it:** click an agent in the office and pick language (Manglish / BM / English), tone, reply length, emoji and format, plus free notes such as "Panggil saya boss".
   - It applies to every job and chat from then on, on top of the agent's role.
   - What all agents should know about **you** goes in the shared **About you** memory instead.
+
+## Publisher: posts for your own websites
+
+Chat with **Publisher**, press 📷 to add photos (up to 4), and write a few points. Publisher looks at the photos, asks about anything missing, then writes the website post (title, summary, Markdown body, tags, event date/time/place, cover photo) and a matching social caption. Both wait in **Drafts**. **Approve** publishes the post to the website; if the site is down, the draft shows the error and **Publish again**.
+
+Each website exposes one signed endpoint. Set it per project in **Projects → Brief → Website**, then press **Test**. SmashPoint's is in its Worker. The setup and the contract for other sites are in [docs/website-publishing.md](docs/website-publishing.md).
 
 ## Backups
 

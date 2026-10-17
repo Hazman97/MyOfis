@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { useRoute } from "vue-router";
-import { Pause, Play, RotateCcw } from "lucide-vue-next";
+import { History, Pause, Play, RotateCcw } from "lucide-vue-next";
 import type { AgentEvent } from "@agent-office/shared";
 import EventTimeline from "../components/EventTimeline.vue";
 import PageHeader from "../components/PageHeader.vue";
@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
       </template>
 
       <button class="btn btn-primary w-full sm:w-auto shadow-sm" :disabled="loading" @click="load">
-        <RotateCcw :size="14" :class="loading ? 'animate-spin' : ''" /> {{ loading ? "Loading…" : "Load replay" }}
+        <RotateCcw :size="14" :class="loading ? 'motion-safe:animate-spin' : ''" /> {{ loading ? "Loading…" : "Load replay" }}
       </button>
     </section>
 
@@ -222,21 +222,7 @@ onBeforeUnmount(() => {
     <!-- Empty state when no replay loaded -->
     <section v-if="!replay" class="card flex flex-col items-center justify-center p-12 text-center">
       <div class="mb-3 flex size-12 items-center justify-center rounded-2xl border border-line bg-surface-2 text-muted shadow-sm">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="size-6 text-faint"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-          <path d="M3 3v5h5" />
-          <path d="M12 7v5l4 2" />
-        </svg>
+        <History :size="24" class="text-faint" />
       </div>
       <h3 class="font-semibold text-sm tracking-tight text-fg">No replay loaded</h3>
       <p class="mt-1 max-w-sm text-xs text-muted">

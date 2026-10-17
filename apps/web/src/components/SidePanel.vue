@@ -25,7 +25,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           <div v-if="sign" class="sign">{{ sign }}</div>
           <h2 class="truncate text-lg font-semibold">{{ title }}</h2>
         </div>
-        <button class="btn btn-ghost btn-sm" aria-label="Close" @click="emit('close')"><X :size="16" /></button>
+        <button class="btn btn-ghost btn-sm" aria-label="Close" title="Close" @click="emit('close')"><X :size="16" /></button>
       </header>
       <div class="flex-1 overflow-y-auto px-5 py-4"><slot /></div>
       <footer v-if="$slots.footer" class="flex items-center gap-2 border-t border-line px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">

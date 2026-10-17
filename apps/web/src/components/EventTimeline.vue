@@ -95,7 +95,7 @@ const kindClass: Record<Row["tone"], string> = {
 
 <template>
   <ol class="divide-y divide-line text-xs">
-    <li v-for="r in rows" :key="r.id" class="grid grid-cols-[4.25rem_6rem_minmax(0,1fr)] items-baseline gap-2 px-4 py-2 max-sm:grid-cols-[4.25rem_minmax(0,1fr)]">
+    <li v-for="r in rows" :key="r.id" class="grid grid-cols-[4.25rem_6rem_minmax(0,1fr)] items-baseline gap-2 px-4 py-2 max-sm:grid-cols-[4.25rem_minmax(0,1fr)] hover:bg-surface-2/40 transition-colors">
       <span class="font-mono text-faint tabular-nums">{{ fmtTime(r.ts) }}</span>
       <span class="truncate font-mono max-sm:hidden" :class="kindClass[r.tone]">{{ r.kind }}</span>
       <a v-if="r.href && /^https?:/.test(r.href)" :href="r.href" target="_blank" rel="noopener noreferrer" class="wrap-break-word underline" :class="textClass[r.tone]">{{ r.text }}</a>

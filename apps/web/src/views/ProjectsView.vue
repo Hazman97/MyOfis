@@ -65,7 +65,7 @@ const host = (u: string) => {
             </div>
             <p class="font-mono text-[11px] text-faint">{{ p.slug }}</p>
           </div>
-          <button class="btn btn-ghost btn-sm size-8 p-0 text-muted hover:text-fg" title="Edit project" @click="edit(p)">
+          <button class="btn btn-ghost btn-sm size-8 p-0 text-muted hover:text-fg" aria-label="Edit project" title="Edit project" @click="edit(p)">
             <Pencil :size="13" />
           </button>
         </div>
@@ -122,6 +122,9 @@ const host = (u: string) => {
         <p class="mt-1 max-w-sm text-muted">
           Add your products (ekadkahwin, Sewa Kamera, JomBelajar…) with their live site and repo.
         </p>
+        <button class="btn btn-primary btn-sm mt-4 shadow-sm" @click="edit(null)">
+          <Plus :size="14" /> New project
+        </button>
       </div>
     </div>
 

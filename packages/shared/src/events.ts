@@ -75,7 +75,7 @@ export const EVENT_BODIES = [
   }),
   body("feature.released", { project_id: z.string(), feature_log_id: z.string() }),
   body("draft.created", { draft_id: z.string(), project_id: z.string(), platform: z.string(), kind: z.string() }),
-  body("draft.decided", { draft_id: z.string(), status: z.enum(["approved", "rejected", "edited"]) }),
+  body("draft.decided", { draft_id: z.string(), status: z.enum(["approved", "rejected", "edited", "published"]) }),
   body("budget.exceeded", { agent_id: z.string(), used: z.number().int(), budget: z.number().int() }),
   body("agent.idle", { agent_id: z.string() }),
   /** An agent proposed a new or changed skill (SKILL.md); it waits for the owner. */
