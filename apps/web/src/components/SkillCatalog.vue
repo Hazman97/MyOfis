@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Download, ExternalLink, LoaderCircle, RefreshCw, Search } from "lucide-vue-next";
+import { Check, Download, ExternalLink, LoaderCircle, RefreshCw, Search, TriangleAlert } from "lucide-vue-next";
 import { api, type CatalogSkill } from "../api/http.ts";
 
 /** Popular public skills (Anthropic, Hermes Agent): search, read, install with one click. */
@@ -84,30 +84,60 @@ async function install(s: CatalogSkill) {
     </div>
 
     <p v-if="error" class="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger" role="alert">{{ error }}</p>
-    <p v-if="loading && !skills.length" class="text-xs text-muted">Loading the catalogue from GitHub (the first time takes about 20 seconds)…</p>
+
+    <!-- Loading Skeleton Rows -->
+    <div v-if="loading && !skills.length" class="space-y-2" aria-label="Loading catalogue">
+      <div v-for="i in 5" :key="i" class="card p-3 animate-pulse">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex-1 space-y-2">
+            <div class="flex items-center gap-2">
+              <div class="h-4 w-32 rounded bg-surface-2" />
+              <div class="h-4 w-16 rounded bg-surface-2" />
+              <div class="h-4 w-20 rounded bg-surface-2" />
+            </div>
+            <div class="h-3 w-3/4 rounded bg-surface-2" />
+          </div>
+          <div class="h-7 w-20 rounded bg-surface-2 shrink-0" />
+        </div>
+      </div>
+    </div>
+
     <p v-else class="text-[11px] text-faint">{{ shown.length }} of {{ skills.length }} skills{{ updatedAt ? ` · updated ${new Date(updatedAt).toLocaleDateString()}` : "" }}</p>
 
-    <ul class="space-y-2">
-      <li v-for="s in shown" :key="s.path" class="card p-3">
-        <div class="flex items-start gap-3">
+    <ul v-if="!loading || skills.length" class="space-y-2">
+      <li v-for="s in shown" :key="s.path" class="card p-3 transition-colors hover:border-line-strong">
+        <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-1.5">
-              <span class="font-mono text-sm font-semibold">{{ s.name }}</span>
-              <span class="chip text-[10px]">{{ s.source === "anthropic" ? "Anthropic" : "Hermes" }}</span>
+              <span class="font-mono text-sm font-semibold text-fg">{{ s.name }}</span>
+              <span
+                class="chip text-[10px] font-medium"
+                :class="s.source === 'anthropic' ? 'border-amber-500/30 bg-amber-500/10 text-amber-500' : 'border-info/30 bg-info-soft text-info'"
+              >
+                {{ s.source === "anthropic" ? "Anthropic" : "Hermes" }}
+              </span>
               <span class="chip text-[10px] text-muted">{{ s.category }}</span>
-              <span class="chip text-[10px]" :class="s.open_license ? 'text-muted' : 'border-signal/40 text-signal'" :title="s.open_license ? 'Open licence' : 'Limited licence: check the terms before using it'">
+              <span
+                class="chip text-[10px]"
+                :class="s.open_license ? 'border-line text-muted' : 'border-amber-500/40 bg-amber-500/10 text-amber-500 font-medium'"
+                :title="s.open_license ? 'Open licence' : 'Limited licence: check the terms before using it'"
+              >
                 {{ s.license }}
               </span>
             </div>
-            <p class="mt-1 text-xs text-muted">{{ s.description }}</p>
+            <p class="mt-1 text-xs text-muted line-clamp-2 leading-relaxed">{{ s.description }}</p>
             <p v-if="s.has_extra_files" class="mt-1 text-[11px] text-faint">Comes with scripts or reference files that are not installed (only the SKILL.md is).</p>
-            <ul v-if="notes[s.path]?.length" class="mt-1.5 space-y-1">
-              <li v-for="n in notes[s.path]" :key="n" class="rounded-md border border-signal/30 bg-signal-soft px-2 py-1 text-[11px] text-signal">⚠ {{ n }}</li>
+            <ul v-if="notes[s.path]?.length" class="mt-2 space-y-1">
+              <li v-for="n in notes[s.path]" :key="n" class="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-500">
+                <TriangleAlert :size="12" class="shrink-0" /> {{ n }}
+              </li>
             </ul>
           </div>
-          <div class="flex shrink-0 flex-col items-end gap-1.5">
-            <span v-if="isInstalled(s)" class="text-xs font-medium text-accent">Installed</span>
-            <button v-else class="btn btn-sm btn-primary" :disabled="busy === s.path" @click="install(s)">
+          <div class="flex items-center sm:flex-col sm:items-end justify-between sm:justify-start gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-line/50">
+            <span v-if="isInstalled(s)" class="chip inline-flex items-center gap-1 text-[11px] font-medium border-accent/30 bg-accent-soft text-accent">
+              <Check :size="12" /> Installed
+            </span>
+            <button v-else class="btn btn-sm btn-primary shadow-sm" :disabled="busy === s.path" @click="install(s)">
               <component :is="busy === s.path ? LoaderCircle : Download" :size="13" :class="busy === s.path && 'motion-safe:animate-spin'" /> Install
             </button>
             <a :href="s.url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-[11px] text-muted hover:text-fg">Read <ExternalLink :size="11" /></a>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { Check, Copy, LoaderCircle, ShieldCheck, TriangleAlert, X } from "lucide-vue-next";
+import { Check, Copy, ExternalLink, LoaderCircle, ShieldCheck, TriangleAlert, X } from "lucide-vue-next";
 import type { ContentDraft, WebPost } from "@agent-office/shared";
 import AgentAvatar from "./AgentAvatar.vue";
 import ConfirmButton from "./ConfirmButton.vue";
@@ -205,18 +205,27 @@ async function decide(decision: "approve" | "reject") {
     <h3 v-else class="px-4 pt-3 font-semibold text-sm tracking-tight text-fg">{{ draft.title }}</h3>
 
     <!-- website post: every field can be changed before approving -->
-    <div v-if="editable && isWebPost" class="grid gap-2 px-4 pt-2.5 sm:grid-cols-2">
+    <div v-if="editable && isWebPost" class="grid gap-3 px-4 pt-3 sm:grid-cols-2">
       <div class="sm:col-span-2">
-        <div class="relative">
-          <img v-if="post.cover_upload_id" :src="api.uploadUrl(post.cover_upload_id)" alt="Cover photo" class="max-h-56 w-full rounded-lg border border-line object-cover" />
-          <p v-else class="rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs text-muted">No cover photo</p>
+        <label class="label mb-1">Cover photo</label>
+        <div v-if="post.cover_upload_id" class="group relative overflow-hidden rounded-lg border border-line bg-sunken">
+          <img :src="api.uploadUrl(post.cover_upload_id)" alt="Cover photo" class="max-h-56 w-full object-cover" />
+          <div class="absolute right-2.5 bottom-2.5 flex items-center gap-1.5">
+            <label class="btn btn-sm h-7 cursor-pointer border-white/20 bg-black/60 px-2.5 py-0 text-xs text-white shadow-sm backdrop-blur-sm hover:bg-black/80" :class="coverBusy && 'opacity-60'">
+              <input type="file" accept="image/jpeg,image/png,image/webp" class="hidden" :disabled="coverBusy" @change="changeCover" />
+              {{ coverBusy ? "Uploading…" : "Change cover" }}
+            </label>
+            <button type="button" class="btn btn-sm h-7 border-white/20 bg-black/60 px-2.5 py-0 text-xs text-white shadow-sm backdrop-blur-sm hover:bg-black/80" @click="post.cover_upload_id = null">
+              Remove cover
+            </button>
+          </div>
         </div>
-        <div class="mt-1.5 flex flex-wrap gap-2 text-xs">
-          <label class="btn btn-sm cursor-pointer" :class="coverBusy && 'opacity-60'">
+        <div v-else class="flex flex-col items-center justify-center rounded-lg border border-dashed border-line p-5 text-center">
+          <p class="text-xs text-muted mb-2">No cover photo</p>
+          <label class="btn btn-sm cursor-pointer shadow-sm" :class="coverBusy && 'opacity-60'">
             <input type="file" accept="image/jpeg,image/png,image/webp" class="hidden" :disabled="coverBusy" @change="changeCover" />
-            {{ coverBusy ? "Uploading…" : post.cover_upload_id ? "Change cover" : "Add cover" }}
+            {{ coverBusy ? "Uploading…" : "Add cover" }}
           </label>
-          <button v-if="post.cover_upload_id" type="button" class="btn btn-sm btn-ghost" @click="post.cover_upload_id = null">Remove cover</button>
         </div>
       </div>
       <div class="sm:col-span-2">
@@ -245,7 +254,9 @@ async function decide(decision: "approve" | "reject") {
       </div>
       <p class="text-xs text-info sm:col-span-2">Approving publishes this post to the website.</p>
     </div>
-    <img v-if="!isWebPost && draft.meta?.cover_upload_id" :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Photo for this caption" class="mx-4 mt-2.5 max-h-48 rounded-lg border border-line object-cover" />
+    <div v-if="!isWebPost && draft.meta?.cover_upload_id" class="px-4 pt-2.5">
+      <img :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Photo for this caption" class="max-h-52 w-auto max-w-full rounded-lg border border-line object-cover shadow-sm" />
+    </div>
     <div v-if="!editable && isWebPost && draft.meta" class="px-4 pt-2.5 space-y-2">
       <img v-if="draft.meta.cover_upload_id" :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Cover photo" class="max-h-56 w-full rounded-lg border border-line object-cover" />
       <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -318,7 +329,16 @@ async function decide(decision: "approve" | "reject") {
     </div>
 
     <div v-if="!pending && draft.status !== 'rejected' && (draft.kind === 'web_post' || draft.published_url || draft.publish_error)" class="mx-4 mt-2 text-xs">
-      <a v-if="draft.published_url?.startsWith('http')" :href="draft.published_url" target="_blank" rel="noopener" class="text-accent hover:underline">{{ draft.platform === 'facebook' && draft.kind !== 'web_post' ? 'View it on Facebook →' : 'View it on the website →' }}</a>
+      <a
+        v-if="draft.published_url?.startsWith('http')"
+        :href="draft.published_url"
+        target="_blank"
+        rel="noopener"
+        class="inline-flex items-center gap-1 font-medium text-accent hover:underline"
+      >
+        <span>{{ draft.platform === 'facebook' && draft.kind !== 'web_post' ? 'View it on Facebook' : 'View it on the website' }}</span>
+        <ExternalLink :size="12" />
+      </a>
       <div v-else-if="draft.publish_error" class="flex flex-wrap items-center gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-danger">
         <span class="min-w-0 flex-1">Not published: {{ draft.publish_error }}</span>
         <button class="btn btn-sm" :disabled="busy" @click="publishAgain">
