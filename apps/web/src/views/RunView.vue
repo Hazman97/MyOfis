@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { ArrowLeft, ExternalLink, FileText, GitPullRequest, X } from "lucide-vue-next";
+import { ArrowLeft, ExternalLink, FileText, GitPullRequest, History, X } from "lucide-vue-next";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import ApprovalCard from "../components/ApprovalCard.vue";
 import EventTimeline from "../components/EventTimeline.vue";
@@ -90,6 +90,7 @@ async function cancel() {
         <div class="flex items-center gap-2">
           <StatusBadge :status="run.status" />
           <button v-if="run.status === 'running'" class="btn btn-danger btn-sm" @click="cancel">Cancel run</button>
+          <RouterLink v-else :to="{ path: '/replay', query: { run: run.id } }" class="btn btn-sm"><History :size="14" /> Replay in the office</RouterLink>
         </div>
       </header>
 

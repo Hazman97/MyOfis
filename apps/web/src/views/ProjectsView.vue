@@ -47,39 +47,81 @@ const host = (u: string) => {
 <template>
   <div>
     <PageHeader sign="Work" title="Projects" description="Your products. Tester checks each live site, Coder works in each repo, Marketing writes from each brief.">
-      <button class="btn btn-primary" @click="edit(null)"><Plus :size="16" /> New project</button>
+      <button class="btn btn-primary shadow-sm" @click="edit(null)"><Plus :size="16" /> New project</button>
     </PageHeader>
 
-    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      <article v-for="p in projects" :key="p.id" class="card flex flex-col p-4" :class="!p.enabled && 'opacity-60'">
-        <div class="flex items-start gap-2">
+    <div class="grid gap-3.5 md:grid-cols-2 xl:grid-cols-3">
+      <article
+        v-for="p in projects"
+        :key="p.id"
+        class="card flex flex-col p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card"
+        :class="!p.enabled && 'opacity-65'"
+      >
+        <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex-1">
-            <h2 class="truncate font-semibold">{{ p.name }}</h2>
-            <p class="font-mono text-[11px] text-faint">{{ p.slug }}<template v-if="!p.enabled"> · off</template></p>
+            <div class="flex items-center gap-2">
+              <h2 class="truncate font-semibold text-base tracking-tight text-fg">{{ p.name }}</h2>
+              <span v-if="!p.enabled" class="chip text-[10px] px-1.5 py-0 border-line text-faint">off</span>
+            </div>
+            <p class="font-mono text-[11px] text-faint">{{ p.slug }}</p>
           </div>
-          <button class="btn btn-sm" @click="edit(p)"><Pencil :size="13" /> Edit</button>
+          <button class="btn btn-ghost btn-sm size-8 p-0 text-muted hover:text-fg" title="Edit project" @click="edit(p)">
+            <Pencil :size="13" />
+          </button>
         </div>
-        <dl class="mt-3 space-y-1.5 text-sm">
-          <div class="flex min-w-0 items-center gap-2">
-            <Globe :size="14" class="shrink-0 text-faint" />
-            <a v-if="p.live_url" :href="p.live_url" target="_blank" rel="noopener noreferrer" class="truncate text-accent hover:underline">{{ host(p.live_url) }}</a>
-            <span v-else class="text-faint">No live site</span>
+
+        <dl class="mt-3.5 space-y-2 text-xs">
+          <!-- Live site -->
+          <div class="flex min-w-0 items-center gap-2 rounded-lg border border-line/60 bg-surface-2/40 px-2.5 py-1.5">
+            <Globe :size="13" class="shrink-0 text-faint" />
+            <a v-if="p.live_url" :href="p.live_url" target="_blank" rel="noopener noreferrer" class="truncate font-medium text-accent hover:underline">
+              {{ host(p.live_url) }}
+            </a>
+            <span v-else class="text-faint">No live site configured</span>
           </div>
-          <div class="flex min-w-0 items-center gap-2">
-            <FolderGit2 :size="14" class="shrink-0 text-faint" />
-            <span v-if="p.repo_url" class="truncate font-mono text-xs">{{ p.repo_url }}</span>
-            <span v-else class="text-signal">No repo yet · Coder can't work here</span>
+
+          <!-- Repo -->
+          <div class="flex min-w-0 items-center gap-2 rounded-lg border border-line/60 bg-surface-2/40 px-2.5 py-1.5">
+            <FolderGit2 :size="13" class="shrink-0 text-faint" />
+            <span v-if="p.repo_url" class="truncate font-mono text-[11px] text-fg">{{ p.repo_url }}</span>
+            <span v-else class="text-amber-500 font-medium">No repo yet · Coder can't work</span>
+          </div>
+
+          <!-- Brief status badge -->
+          <div class="flex items-center justify-between px-0.5 pt-1">
+            <span class="sign text-[9px]">Brief status</span>
+            <span v-if="!p.brief_path" class="chip border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold text-[10px]">
+              Brief · empty
+            </span>
+            <span v-else class="chip border-accent/40 bg-accent/10 text-accent font-medium text-[10px]">
+              Brief configured
+            </span>
           </div>
         </dl>
-        <div class="mt-4 flex gap-2 border-t border-line pt-3">
-          <button class="btn btn-sm" @click="briefOf = { project: p, tab: 'brief' }">
-            <FileText :size="13" /> Brief<span v-if="!p.brief_path" class="text-signal">· empty</span>
+
+        <!-- Neat card footer -->
+        <div class="mt-4 flex items-center gap-2 border-t border-line pt-3">
+          <button
+            class="btn btn-sm flex-1"
+            :class="!p.brief_path ? 'border-amber-500/40 text-amber-500 hover:bg-amber-500/10' : ''"
+            @click="briefOf = { project: p, tab: 'brief' }"
+          >
+            <FileText :size="13" /> Brief
+            <span v-if="!p.brief_path" class="text-[10px] font-bold">· to-do</span>
           </button>
-          <button class="btn btn-sm" @click="briefOf = { project: p, tab: 'features' }"><ListChecks :size="13" /> Feature log</button>
+          <button class="btn btn-sm flex-1" @click="briefOf = { project: p, tab: 'features' }">
+            <ListChecks :size="13" /> Feature log
+          </button>
         </div>
       </article>
-      <div v-if="!projects.length" class="rounded-lg border border-dashed border-line px-6 py-10 text-center text-sm text-muted md:col-span-2 xl:col-span-3">
-        No projects yet. Add ekadkahwin, Sewa Kamera, JomBelajar… with their live site and repo.
+
+      <!-- Empty state -->
+      <div v-if="!projects.length" class="card flex flex-col items-center justify-center border-dashed p-12 text-center text-xs text-muted md:col-span-2 xl:col-span-3">
+        <FolderGit2 :size="28" class="text-faint mb-2" :stroke-width="1.5" />
+        <p class="font-semibold text-sm text-fg">No projects yet</p>
+        <p class="mt-1 max-w-sm text-muted">
+          Add your products (ekadkahwin, Sewa Kamera, JomBelajar…) with their live site and repo.
+        </p>
       </div>
     </div>
 
@@ -96,20 +138,20 @@ const host = (u: string) => {
         </div>
         <div>
           <label class="label" for="pj-live">Live site</label>
-          <input id="pj-live" v-model="form.live_url" type="url" class="input font-mono" placeholder="https://…" />
+          <input id="pj-live" v-model="form.live_url" type="url" class="input font-mono text-xs" placeholder="https://…" />
           <p class="mt-1 text-xs text-faint">Tester opens this in a real browser every night.</p>
         </div>
         <div>
           <label class="label" for="pj-repo">Repo (Gitea clone URL)</label>
-          <input id="pj-repo" v-model="form.repo_url" type="url" class="input font-mono" placeholder="https://git.example.com/owner/repo.git" />
+          <input id="pj-repo" v-model="form.repo_url" type="url" class="input font-mono text-xs" placeholder="https://git.example.com/owner/repo.git" />
           <p class="mt-1 text-xs text-faint">Coder clones this, works on a branch and opens a pull request.</p>
         </div>
-        <label class="flex items-center gap-2 text-sm"><input v-model="form.enabled" type="checkbox" class="accent-accent" /> Enabled</label>
+        <label class="flex items-center gap-2 text-xs font-medium cursor-pointer"><input v-model="form.enabled" type="checkbox" class="accent-accent" /> Enabled</label>
       </form>
       <template #footer>
-        <p v-if="error" class="min-w-0 flex-1 truncate text-sm text-danger" :title="error">{{ error }}</p>
+        <p v-if="error" class="min-w-0 flex-1 truncate text-xs text-danger" :title="error">{{ error }}</p>
         <button type="button" class="btn ml-auto" @click="editing = null">Cancel</button>
-        <button form="proj-form" class="btn btn-primary">Save</button>
+        <button form="proj-form" class="btn btn-primary shadow-sm">Save</button>
       </template>
     </SidePanel>
   </div>

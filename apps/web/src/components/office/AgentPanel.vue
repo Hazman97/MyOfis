@@ -58,6 +58,21 @@ const argSummary = (args: Record<string, unknown>) => {
   return first ? first.slice(0, 80) : "";
 };
 
+/** Agent memory: notes it keeps across runs. The owner can delete any of them. */
+const memories = ref<{ id: string; content: string; created_at: string }[]>([]);
+const loadMemories = async () => {
+  try {
+    memories.value = (await api.agentMemory(props.agentId)).memories;
+  } catch {
+    memories.value = [];
+  }
+};
+const forget = (id: string) => act(async () => {
+  await api.forgetMemory(props.agentId, id);
+  await loadMemories();
+});
+watch(() => office.state.agents[props.agentId]?.current_run_id, loadMemories, { immediate: true });
+
 async function loadApprovals() {
   try {
     approvals.value = (await api.approvals("pending")).approvals.filter((a) => a.agent_id === props.agentId);
@@ -142,6 +157,16 @@ const togglePause = () =>
         <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
           <div class="h-full rounded-full" :class="budgetPct > 85 ? 'bg-signal' : 'bg-accent'" :style="{ width: `${budgetPct}%` }" />
         </div>
+      </section>
+
+      <section v-if="memories.length" aria-labelledby="ap-mem">
+        <h3 id="ap-mem" class="sign mb-1.5">Remembers</h3>
+        <ul class="divide-y divide-line rounded-md border border-line text-sm">
+          <li v-for="m in memories.slice(0, 12)" :key="m.id" class="flex items-start gap-2 px-3 py-1.5">
+            <span class="min-w-0 flex-1">{{ m.content }}</span>
+            <button class="shrink-0 text-xs text-faint hover:text-danger" :aria-label="`Forget: ${m.content}`" @click="forget(m.id)">forget</button>
+          </li>
+        </ul>
       </section>
 
       <section v-if="toolCalls.length" aria-labelledby="ap-tools">

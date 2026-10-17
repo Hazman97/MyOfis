@@ -21,5 +21,12 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     projectContext: ctx.assignment.project_context,
     saveDraft: (d) => ctx.saveDraft(d),
     addFeatureNote: (f) => ctx.addFeatureNote(f),
+    // a copy: the memory tool updates it as the run goes, the assignment stays the frozen snapshot
+    memoryStores: { memory: [...ctx.assignment.memory.memory], user: [...ctx.assignment.memory.user] },
+    memoryWriteApproval: ctx.assignment.memory_write_approval,
+    saveMemory: (target, ops) => ctx.saveMemory(target, ops),
+    skills: ctx.assignment.skills,
+    proposeSkill: (p) => ctx.proposeSkill(p),
+    searchSessions: (q, all) => ctx.searchSessions(q, all),
   };
 }

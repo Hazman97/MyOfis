@@ -78,69 +78,102 @@ async function decide(decision: "approve" | "reject") {
 </script>
 
 <template>
-  <article class="card overflow-hidden" :class="pending ? 'shadow-card' : 'opacity-90'">
-    <header class="flex flex-wrap items-center gap-2 px-4 pt-3.5">
+  <article class="card overflow-hidden transition-all duration-200" :class="pending ? 'shadow-card' : 'opacity-85'">
+    <header class="flex flex-wrap items-center gap-2 border-b border-line/60 bg-surface-2/30 px-4 py-3">
       <AgentAvatar :name="agent?.name ?? 'Marketing'" :slug="agent?.slug" :size="26" />
-      <span class="chip border-accent/40 text-accent">{{ PLATFORM[draft.platform] ?? draft.platform }}</span>
-      <span class="chip capitalize">{{ kindLabel(draft.kind) }}</span>
-      <span v-if="projectName" class="text-sm text-muted">{{ projectName }}</span>
-      <span class="ml-auto text-xs text-faint">{{ fmtDateTime(draft.created_at) }}</span>
+      <span class="chip border-accent/40 bg-accent/10 text-accent font-semibold text-[11px]">{{ PLATFORM[draft.platform] ?? draft.platform }}</span>
+      <span class="chip capitalize text-[11px] text-muted">{{ kindLabel(draft.kind) }}</span>
+      <span v-if="projectName" class="text-xs font-medium text-muted">· {{ projectName }}</span>
+      <span class="ml-auto font-mono text-[11px] text-faint">{{ fmtDateTime(draft.created_at) }}</span>
     </header>
-    <h3 class="px-4 pt-2 font-medium">{{ draft.title }}</h3>
+    <h3 class="px-4 pt-3 font-semibold text-sm tracking-tight text-fg">{{ draft.title }}</h3>
 
-    <div class="px-4 pt-2">
+    <div class="px-4 pt-2.5">
       <textarea
         v-if="pending"
         v-model="body"
         :rows="rows"
-        class="input font-sans text-[14px] leading-relaxed"
+        class="input font-sans text-[14px] leading-relaxed bg-surface/50 border-line focus:bg-surface transition-colors shadow-inner"
         :aria-label="`Draft text: ${draft.title}`"
       />
-      <p v-else class="rounded-md border border-line bg-sunken px-3 py-2 text-[14px] leading-relaxed whitespace-pre-wrap">{{ draft.body }}</p>
-      <p v-if="pending && draft.kind === 'style_guide'" class="mt-1.5 text-xs text-info">Approving saves this as the project brief's style notes.</p>
-      <p v-if="pending && edited" class="mt-1.5 text-xs text-review">Edited. Your version is saved and Marketing learns from the change.</p>
+      <div v-else class="card p-3.5 text-[14px] leading-relaxed whitespace-pre-wrap bg-surface-2/40 border-line text-muted">
+        {{ draft.body }}
+      </div>
+      <p v-if="pending && draft.kind === 'style_guide'" class="mt-2 text-xs text-info flex items-center gap-1.5">
+        Approving saves this as the project brief's style notes.
+      </p>
+      <p v-if="pending && edited" class="mt-2 text-xs text-review flex items-center gap-1.5">
+        Edited. Your version is saved and Marketing learns from the change.
+      </p>
     </div>
 
-    <div v-if="checks.length" class="flex flex-wrap items-center gap-1.5 px-4 pt-2.5 text-[11px]">
-      <ShieldCheck :size="13" class="text-faint" />
-      <span v-for="c in checks" :key="c.label" class="chip" :class="c.ok ? '' : 'border-danger/40 text-danger'">{{ c.ok ? "✓" : "✗" }} {{ c.label }}</span>
+    <!-- Self checks -->
+    <div v-if="checks.length" class="flex flex-wrap items-center gap-1.5 px-4 pt-3 text-[11px]">
+      <ShieldCheck :size="13" class="text-faint shrink-0" />
+      <span
+        v-for="c in checks"
+        :key="c.label"
+        class="chip text-[10px] px-2 py-0.5 font-medium transition-colors"
+        :class="c.ok ? 'border-line bg-surface text-muted' : 'border-red-500/40 bg-red-500/10 text-red-500 font-semibold'"
+      >
+        {{ c.ok ? "✓" : "✗" }} {{ c.label }}
+      </span>
     </div>
-    <p v-if="draft.self_check?.notes" class="mx-4 mt-2 flex gap-1.5 rounded-md bg-signal-soft px-3 py-2 text-xs text-signal">
-      <TriangleAlert :size="14" class="mt-px shrink-0" />{{ draft.self_check.notes }}
+
+    <!-- Warning notes in amber -->
+    <p v-if="draft.self_check?.notes" class="mx-4 mt-2.5 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-500">
+      <TriangleAlert :size="14" class="mt-0.5 shrink-0" />
+      <span class="leading-relaxed">{{ draft.self_check.notes }}</span>
     </p>
 
-    <div v-if="!pending" class="px-4 pt-2.5 text-xs text-muted">
+    <!-- Decided feedback -->
+    <div v-if="!pending" class="px-4 pt-3 text-xs text-muted space-y-1">
       <p v-if="draft.owner_feedback"><span class="font-medium text-fg">Your feedback:</span> {{ draft.owner_feedback }}</p>
-      <button v-if="draft.status === 'edited'" class="mt-1 text-accent hover:underline" @click="showOriginal = !showOriginal">
+      <button v-if="draft.status === 'edited'" class="mt-1 text-accent font-medium hover:underline inline-block" @click="showOriginal = !showOriginal">
         {{ showOriginal ? "Hide" : "Show" }} Marketing's original
       </button>
-      <p v-if="showOriginal" class="mt-1.5 rounded-md border border-dashed border-line px-3 py-2 whitespace-pre-wrap">{{ draft.original_body }}</p>
+      <div v-if="showOriginal" class="mt-1.5 rounded-lg border border-dashed border-line bg-surface-2/30 p-3 text-muted whitespace-pre-wrap">
+        {{ draft.original_body }}
+      </div>
     </div>
 
-    <div v-if="pending" class="px-4 pt-2.5">
+    <!-- Pending feedback input -->
+    <div v-if="pending" class="px-4 pt-3">
       <label class="label" :for="`fb-${draft.id}`">{{ mode === "reject" ? "What is wrong? (Marketing reads this next time)" : "Feedback · optional" }}</label>
-      <input :id="`fb-${draft.id}`" v-model="feedback" class="input" :placeholder="mode === 'reject' ? 'e.g. too salesy, price is wrong, use more Manglish' : 'e.g. love the hook, keep it this short'" />
+      <input
+        :id="`fb-${draft.id}`"
+        v-model="feedback"
+        class="input text-xs py-1.5"
+        :placeholder="mode === 'reject' ? 'e.g. too salesy, price is wrong, use more Manglish' : 'e.g. love the hook, keep it this short'"
+      />
     </div>
 
-    <p v-if="error" class="mx-4 mt-2 text-sm text-danger">{{ error }}</p>
+    <p v-if="error" class="mx-4 mt-2 text-xs text-danger">{{ error }}</p>
 
-    <footer class="mt-3 flex flex-wrap items-center gap-2 border-t border-line bg-surface-2/50 px-4 py-2.5">
-      <button class="btn btn-sm" @click="copy"><component :is="copied ? Check : Copy" :size="13" /> {{ copied ? "Copied" : "Copy" }}</button>
+    <!-- Footer -->
+    <footer class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface-2/40 px-4 py-2.5">
+      <button class="btn btn-sm" @click="copy">
+        <component :is="copied ? Check : Copy" :size="13" /> {{ copied ? "Copied" : "Copy" }}
+      </button>
+
       <template v-if="pending">
-        <template v-if="mode === 'reject'">
-          <button class="btn btn-sm btn-ghost ml-auto" :disabled="busy" @click="mode = 'idle'">Back</button>
-          <button class="btn btn-sm btn-danger" :disabled="busy" @click="decide('reject')"><X :size="13" /> Reject</button>
-        </template>
-        <template v-else>
-          <button class="btn btn-sm btn-danger ml-auto" :disabled="busy" @click="mode = 'reject'"><X :size="13" /> Reject…</button>
-          <button class="btn btn-sm btn-primary" :disabled="busy || !body.trim()" @click="decide('approve')">
-            <Check :size="13" /> {{ edited ? "Approve my edit" : "Approve" }}
-          </button>
-        </template>
+        <div class="ml-auto flex items-center gap-2">
+          <template v-if="mode === 'reject'">
+            <button class="btn btn-sm btn-ghost" :disabled="busy" @click="mode = 'idle'">Back</button>
+            <button class="btn btn-sm btn-danger" :disabled="busy" @click="decide('reject')"><X :size="13" /> Reject</button>
+          </template>
+          <template v-else>
+            <button class="btn btn-sm btn-danger" :disabled="busy" @click="mode = 'reject'"><X :size="13" /> Reject…</button>
+            <button class="btn btn-sm btn-primary shadow-sm" :disabled="busy || !body.trim()" @click="decide('approve')">
+              <Check :size="13" /> {{ edited ? "Approve my edit" : "Approve" }}
+            </button>
+          </template>
+        </div>
       </template>
+
       <span v-else class="ml-auto inline-flex items-center gap-2 text-xs text-muted">
         <StatusBadge :status="draft.status" />
-        <template v-if="draft.decided_at">{{ fmtDateTime(draft.decided_at) }}</template>
+        <span v-if="draft.decided_at" class="font-mono text-[11px] text-faint">{{ fmtDateTime(draft.decided_at) }}</span>
       </span>
     </footer>
   </article>

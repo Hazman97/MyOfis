@@ -15,11 +15,11 @@ export async function loadState(path: string): Promise<RunnerState | null> {
 }
 
 /** Exchange a one-time pairing code for a long-lived runner token and save it locally. */
-export async function pair(opts: { hubUrl: string; code: string; name: string; statePath: string }): Promise<RunnerState> {
+export async function pair(opts: { hubUrl: string; code: string; name: string; statePath: string; headers?: Record<string, string> }): Promise<RunnerState> {
   const res = await freshFetch(new URL("/api/runners/pair", opts.hubUrl), {
     timeoutMs: 30_000,
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...opts.headers },
     body: JSON.stringify({ code: opts.code, name: opts.name }),
   });
   if (!res.ok) {

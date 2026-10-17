@@ -14,12 +14,15 @@ const EnvSchema = z
     CF_ACCESS_TEAM_DOMAIN: z.string().default(""),
     CF_ACCESS_AUD: z.string().default(""),
     OWNER_EMAIL: z.string().default(""),
+    /** Tests point this at a local JWKS; normally https://<team>/cdn-cgi/access/certs. */
+    CF_ACCESS_CERTS_URL: z.string().url().or(z.literal("")).default(""),
     DATABASE_PATH: z.string().default("./data/agent-office.db"),
     FILES_DIR: z.string().default("./data/files"),
     WORKSPACES_DIR: z.string().default("./workspaces"),
     WEB_DIST_DIR: z.string().default("./apps/web/dist"),
     MAPS_DIR: z.string().default("./maps"),
     PROJECTS_DIR: z.string().default("./projects"),
+    SKILLS_DIR: z.string().default("./skills"),
     ANTHROPIC_API_KEY: z.string().default(""),
     OPENAI_API_KEY: z.string().default(""),
     OLLAMA_BASE_URL: z.string().default(""),
@@ -38,6 +41,15 @@ const EnvSchema = z
         message: "set LOCAL_AUTH_TOKEN in .env to a random string of at least 12 characters",
       });
     }
+    if (e.AUTH_MODE === "cf-access") {
+      for (const [key, hint] of [
+        ["CF_ACCESS_TEAM_DOMAIN", "your Zero Trust team domain, e.g. yourteam.cloudflareaccess.com"],
+        ["CF_ACCESS_AUD", "the Application Audience (AUD) tag of the Access application"],
+        ["OWNER_EMAIL", "the email you log in to Cloudflare Access with"],
+      ] as const) {
+        if (!e[key]) ctx.addIssue({ code: "custom", path: [key], message: `AUTH_MODE=cf-access needs ${key}: ${hint}` });
+      }
+    }
     if (e.SECRETS_KEY.length < 32 || e.SECRETS_KEY.startsWith("change-me")) {
       ctx.addIssue({
         code: "custom",
@@ -54,7 +66,7 @@ export interface HubConfig {
   authMode: "local" | "cf-access";
   localAuthToken: string;
   secretsKey: string;
-  cfAccess: { teamDomain: string; aud: string; ownerEmail: string };
+  cfAccess: { teamDomain: string; aud: string; ownerEmail: string; certsUrl: string };
   databasePath: string;
   filesDir: string;
   webDistDir: string;
@@ -62,6 +74,8 @@ export interface HubConfig {
   mapsDir: string;
   /** projects/<slug>/brief.yaml and FEATURES.md (spec §4). */
   projectsDir: string;
+  /** skills/<name>/SKILL.md (agentskills.io format). */
+  skillsDir: string;
   telegramApiBase: string;
   seed: {
     anthropicApiKey: string;
@@ -93,12 +107,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     authMode: e.AUTH_MODE,
     localAuthToken: e.LOCAL_AUTH_TOKEN,
     secretsKey: e.SECRETS_KEY,
-    cfAccess: { teamDomain: e.CF_ACCESS_TEAM_DOMAIN, aud: e.CF_ACCESS_AUD, ownerEmail: e.OWNER_EMAIL },
+    cfAccess: { teamDomain: e.CF_ACCESS_TEAM_DOMAIN, aud: e.CF_ACCESS_AUD, ownerEmail: e.OWNER_EMAIL, certsUrl: e.CF_ACCESS_CERTS_URL },
     databasePath: e.DATABASE_PATH === ":memory:" ? ":memory:" : resolve(e.DATABASE_PATH),
     filesDir: resolve(e.FILES_DIR),
     webDistDir: resolve(e.WEB_DIST_DIR),
     mapsDir: resolve(e.MAPS_DIR),
     projectsDir: resolve(e.PROJECTS_DIR),
+    skillsDir: resolve(e.SKILLS_DIR),
     telegramApiBase: e.TELEGRAM_API_BASE.replace(/\/$/, ""),
     seed: {
       anthropicApiKey: e.ANTHROPIC_API_KEY,

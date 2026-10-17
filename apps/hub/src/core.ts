@@ -15,6 +15,7 @@ import type { HubConfig } from "./env.ts";
 import type { Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { agents, approvals, contentDrafts, featureLog, jobs, projects, runners, runs } from "./db/schema.ts";
+import type { Learning } from "./learning.ts";
 import type { Emit, EventStore } from "./events.ts";
 import type { Integrations } from "./integrations.ts";
 import type { Storage } from "./storage.ts";
@@ -76,6 +77,8 @@ export class Hub {
   storage!: Storage;
   /** Set by the server after construction (briefs, feature log, drafts). */
   content!: Content;
+  /** Set by the server after construction (memory, skills, session search). */
+  learning!: Learning;
   /** Agents told they are over today's token budget, with the day they were told. */
   readonly #overBudget = new Map<string, string>();
 
@@ -227,6 +230,28 @@ export class Hub {
     } else {
       this.dispatch();
     }
+  }
+
+  /** Put a finished run into the session_search index (title, task text, output). */
+  indexRun(runId: string): void {
+    try {
+      const r = this.store.state.runs[runId];
+      const job = r ? getJob(this.db, r.job_id) : undefined;
+      if (!r || !job) return;
+      const task = typeof job.input.text === "string" ? job.input.text : "";
+      this.learning.index({ run_id: r.id, agent_id: r.agent_id, job_type: job.type, ts: r.ended_at ?? r.started_at, title: job.title, body: `${task}
+
+${r.output}${r.error ? `
+
+Error: ${r.error}` : ""}` });
+    } catch (err) {
+      console.error(`[hub] search index for ${runId} failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** Index finished runs from before the search index existed. */
+  backfillIndex(): void {
+    for (const r of Object.values(this.store.state.runs)) if (r.status !== "running" && !this.learning.indexed(r.id)) this.indexRun(r.id);
   }
 
   // ---------------------------------------------------------------- chat
@@ -445,6 +470,7 @@ export class Hub {
       if (!stillBusy) emit({ type: "agent.idle", payload: { agent_id: run.agent_id } }, { agent_id: run.agent_id });
     });
     if (agent) this.#checkBudget(agent);
+    this.indexRun(runId);
     this.dispatch();
   }
 
@@ -513,6 +539,8 @@ export class Hub {
       case "run.handoff":
       case "run.draft":
       case "run.feature_note":
+      case "run.memory":
+      case "run.skill":
         this.#runMessage(conn, msg);
         return;
     }
@@ -606,6 +634,15 @@ export class Hub {
       this.#draft(run, msg);
     } else if (msg.type === "run.feature_note") {
       this.#featureNote(run, msg);
+    } else if (msg.type === "run.memory" || msg.type === "run.skill") {
+      this.db.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
+      const meta = { run_id: run.id, agent_id: run.agent_id };
+      // the runner already checked these against its copy; re-check here (another run may have changed the store)
+      const r =
+        msg.type === "run.memory"
+          ? this.learning.memoryOps(run.agent_id, run.id, msg.target, msg.ops)
+          : this.learning.proposeSkill(run.agent_id, run.id, { name: msg.name, action: msg.action, content: msg.content, reason: msg.reason });
+      if ("error" in r && r.error) this.store.emit({ type: "agent.thinking", payload: { summary: `Not saved: ${r.error}`.slice(0, 500) } }, meta);
     } else if (msg.type === "run.event") {
       this.store.transact((tx, emit) => {
         tx.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
@@ -815,6 +852,9 @@ export class Hub {
       gitea: tools.some((t) => NEEDS_GITEA.has(t)) || (config.runtime === "opencode" && !featureNote) ? this.#giteaForRun() : null,
       project_context: projectContext,
       budget_left_tokens: this.#budgetLeft(agent),
+      memory: { memory: this.learning.entries("memory", agent.id), user: this.learning.entries("user", agent.id) },
+      memory_write_approval: this.learning.writeApproval,
+      skills: tools.some((t) => t.startsWith("skill")) ? this.learning.skills() : [],
       projects: this.db
         .select({ id: projects.id, slug: projects.slug, name: projects.name, live_url: projects.live_url, repo_url: projects.repo_url })
         .from(projects)

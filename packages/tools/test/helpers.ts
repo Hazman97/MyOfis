@@ -44,6 +44,12 @@ export function makeCtx(
     projectContext: opts.projectContext ?? null,
     saveDraft: (d) => drafts.push(d),
     addFeatureNote: (f) => features.push(f),
+    memoryStores: { memory: [], user: [] },
+    memoryWriteApproval: false,
+    saveMemory: () => {},
+    skills: [],
+    proposeSkill: () => {},
+    searchSessions: async () => [],
   };
   return { ctx, events, approvals, handoffs, uploads, drafts, features };
 }

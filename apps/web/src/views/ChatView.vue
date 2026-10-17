@@ -204,110 +204,134 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
     <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
       <!-- who + which conversation -->
       <aside class="space-y-4 max-lg:hidden">
-        <div class="card divide-y divide-line">
+        <div class="card overflow-hidden divide-y divide-line">
           <button
             v-for="a in agents"
             :key="a.id"
-            class="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-surface-2"
-            :class="a.id === agent?.id && 'bg-accent-soft hover:bg-accent-soft'"
+            class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-all duration-150"
+            :class="a.id === agent?.id ? 'bg-accent/10 border-l-2 border-accent text-fg font-semibold' : 'text-muted hover:bg-surface-2 hover:text-fg'"
             @click="pickAgent(a.slug)"
           >
             <AgentAvatar :name="a.name" :slug="a.slug" :size="30" />
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-medium">{{ a.name }}</span>
-              <span class="block truncate text-xs text-muted">{{ a.role }}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-xs font-semibold">{{ a.name }}</span>
+              <span class="block truncate text-[11px] text-muted">{{ a.role }}</span>
             </span>
           </button>
         </div>
-        <div v-if="agent">
-          <div class="mb-1.5 flex items-center">
-            <span class="sign">Conversations</span>
-            <button class="btn btn-ghost btn-sm ml-auto" @click="openThread(null)"><Plus :size="13" /> New</button>
+
+        <div v-if="agent" class="space-y-2">
+          <div class="flex items-center justify-between px-1">
+            <span class="sign text-[10px] tracking-wider">Conversations</span>
+            <button class="btn btn-ghost btn-sm h-6 px-2 text-[11px]" @click="openThread(null)"><Plus :size="12" /> New</button>
           </div>
           <div class="space-y-1">
             <button
               v-for="t in threads"
               :key="t.thread_id"
-              class="block w-full truncate rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-surface-2"
-              :class="t.thread_id === threadId ? 'bg-surface-2 font-medium text-fg' : 'text-muted'"
+              class="block w-full truncate rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors"
+              :class="t.thread_id === threadId ? 'bg-surface-2 font-medium text-fg shadow-sm' : 'text-muted hover:bg-surface-2/60 hover:text-fg'"
               @click="openThread(t.thread_id)"
             >
               {{ threadTitle(t) }}
             </button>
-            <p v-if="!threads.length" class="px-2.5 text-xs text-faint">No conversations yet.</p>
+            <p v-if="!threads.length" class="px-2 text-xs text-faint">No conversations yet.</p>
           </div>
         </div>
       </aside>
 
       <!-- the conversation -->
       <section v-if="agent" class="card flex h-[calc(100dvh-15rem)] min-h-112 flex-col overflow-hidden max-lg:h-[calc(100dvh-17rem)]">
-        <header class="flex flex-wrap items-center gap-2.5 border-b border-line px-4 py-2.5">
-          <select class="input basis-full lg:hidden" :value="agent.slug" aria-label="Chat with" @change="pickAgent(($event.target as HTMLSelectElement).value)">
+        <header class="flex flex-wrap items-center gap-2.5 border-b border-line px-4 py-3 bg-surface/80 backdrop-blur-sm">
+          <select class="input basis-full lg:hidden text-xs py-1.5" :value="agent.slug" aria-label="Chat with" @change="pickAgent(($event.target as HTMLSelectElement).value)">
             <option v-for="a in agents" :key="a.id" :value="a.slug">{{ a.name }}{{ a.role ? ` · ${a.role}` : "" }}</option>
           </select>
-          <AgentAvatar :name="agent.name" :slug="agent.slug" :size="34" />
+          <AgentAvatar :name="agent.name" :slug="agent.slug" :size="32" />
           <div class="min-w-0 flex-1">
-            <div class="truncate font-semibold">{{ agent.name }}</div>
+            <div class="truncate text-sm font-semibold tracking-tight text-fg">{{ agent.name }}</div>
             <div class="truncate text-xs text-muted">{{ agent.role }}</div>
           </div>
-          <select v-if="isMarketing" v-model="projectId" class="input w-auto text-xs" aria-label="Project" :disabled="!!threadId && messages.length > 0">
+          <select v-if="isMarketing" v-model="projectId" class="input w-auto text-xs py-1" aria-label="Project" :disabled="!!threadId && messages.length > 0">
             <option value="">Any project</option>
             <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
-          <label v-if="canSpeak()" class="inline-flex items-center gap-1.5 text-xs text-muted" title="Read new replies aloud">
+          <label v-if="canSpeak()" class="inline-flex items-center gap-1.5 text-xs text-muted cursor-pointer hover:text-fg transition-colors" title="Read new replies aloud">
             <input v-model="autoSpeak" type="checkbox" class="accent-accent" /> <Volume2 :size="14" /> <span class="max-sm:sr-only">Read aloud</span>
           </label>
-          <button class="btn btn-sm lg:hidden" @click="openThread(null)"><Plus :size="13" /> New</button>
+          <button class="btn btn-ghost btn-sm h-7 lg:hidden" @click="openThread(null)"><Plus :size="13" /> New</button>
         </header>
 
-        <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          <div v-if="!messages.length" class="mx-auto max-w-md pt-6 text-center">
-            <p class="font-medium">Start a conversation with {{ agent.name }}</p>
-            <p class="mt-1 text-sm text-muted">
+        <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-5">
+          <!-- Starters / Empty state -->
+          <div v-if="!messages.length" class="mx-auto max-w-lg py-8 text-center">
+            <div class="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl border border-line bg-surface-2 text-accent shadow-sm">
+              <AgentAvatar :name="agent.name" :slug="agent.slug" :size="36" />
+            </div>
+            <h3 class="font-semibold text-base tracking-tight text-fg">Conversation with {{ agent.name }}</h3>
+            <p class="mt-1 text-xs text-muted max-w-md mx-auto">
               <template v-if="isCoach">Speak or type. Coach replies, asks a follow-up and shows a more natural way to say it.</template>
-              <template v-else-if="isMarketing">Ask for posts or ideas. Anything it writes lands in <RouterLink to="/drafts" class="text-accent hover:underline">Drafts</RouterLink> for you to approve.</template>
-              <template v-else>Ask anything about its work.</template>
+              <template v-else-if="isMarketing">Ask for posts or ideas. Anything it writes lands in <RouterLink to="/drafts" class="text-accent hover:underline font-medium">Drafts</RouterLink> for you to approve.</template>
+              <template v-else>Ask anything about its work, progress or active tasks.</template>
             </p>
-            <div class="mt-4 flex flex-col gap-2">
-              <button v-for="s in starters" :key="s" class="rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm hover:bg-surface-2" @click="send(s)">{{ s }}</button>
+            <div class="mt-5 grid gap-2 sm:grid-cols-2 text-left">
+              <button
+                v-for="s in starters"
+                :key="s"
+                class="group rounded-xl border border-line bg-surface p-3 text-xs text-fg transition-all duration-150 hover:border-line-strong hover:bg-surface-2 hover:-translate-y-0.5 hover:shadow-card active:scale-[0.99]"
+                @click="send(s)"
+              >
+                <span class="line-clamp-3 leading-relaxed">{{ s }}</span>
+                <span class="mt-1.5 block text-[10px] font-medium text-accent group-hover:translate-x-0.5 transition-transform">Send prompt →</span>
+              </button>
             </div>
           </div>
 
+          <!-- Message Bubbles -->
           <template v-for="m in messages" :key="m.job_id">
+            <!-- Owner message on right -->
             <div class="flex justify-end">
-              <p class="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap text-accent-ink">{{ m.text }}</p>
+              <div class="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-sm bg-accent px-4 py-2.5 text-[14px] leading-relaxed whitespace-pre-wrap text-accent-ink shadow-sm">
+                {{ m.text }}
+              </div>
             </div>
-            <div class="flex items-start gap-2">
-              <AgentAvatar :name="agent.name" :slug="agent.slug" :size="26" />
-              <div class="max-w-[85%] min-w-0">
-                <div class="rounded-2xl rounded-tl-md border border-line bg-surface-2 px-3.5 py-2 text-[14px] leading-relaxed">
-                  <p v-if="live(m).reply" class="whitespace-pre-wrap" v-html="lite(live(m).reply)" />
-                  <p v-else-if="live(m).status === 'failed'" class="text-danger">Could not answer: {{ live(m).error ?? "the run failed" }}</p>
+
+            <!-- Agent message on left -->
+            <div class="flex items-start gap-2.5">
+              <AgentAvatar :name="agent.name" :slug="agent.slug" :size="28" class="mt-0.5 shrink-0" />
+              <div class="max-w-[85%] sm:max-w-[75%] min-w-0">
+                <div class="rounded-2xl rounded-tl-sm border border-line bg-surface-2/90 px-4 py-2.5 text-[14px] leading-relaxed text-fg shadow-sm">
+                  <div v-if="live(m).reply" class="whitespace-pre-wrap" v-html="lite(live(m).reply)" />
+                  <p v-else-if="live(m).status === 'failed'" class="text-danger font-medium">Could not answer: {{ live(m).error ?? "the run failed" }}</p>
                   <p v-else-if="live(m).status === 'cancelled'" class="text-faint">Cancelled.</p>
-                  <p v-else class="flex items-center gap-2 text-muted">
-                    <span class="inline-flex gap-1"><span class="size-1.5 animate-bounce rounded-full bg-current" /><span class="size-1.5 animate-bounce rounded-full bg-current [animation-delay:120ms]" /><span class="size-1.5 animate-bounce rounded-full bg-current [animation-delay:240ms]" /></span>
-                    {{ live(m).status === "queued" ? "waiting for a runner…" : live(m).status === "waiting_approval" ? "waiting for your approval" : "thinking…" }}
-                  </p>
+                  <div v-else class="flex items-center gap-2 text-muted">
+                    <span class="inline-flex gap-1">
+                      <span class="size-1.5 animate-bounce rounded-full bg-accent" />
+                      <span class="size-1.5 animate-bounce rounded-full bg-accent [animation-delay:120ms]" />
+                      <span class="size-1.5 animate-bounce rounded-full bg-accent [animation-delay:240ms]" />
+                    </span>
+                    <span class="text-xs font-medium">{{ live(m).status === "queued" ? "waiting for a runner…" : live(m).status === "waiting_approval" ? "waiting for your approval" : "thinking…" }}</span>
+                  </div>
                 </div>
-                <div class="mt-1 flex items-center gap-3 text-[11px] text-faint">
+                <div class="mt-1.5 flex items-center gap-3 px-1 text-[11px] text-faint">
                   <span>{{ fmtTime(m.created_at) }}</span>
-                  <button v-if="live(m).reply && canSpeak()" class="inline-flex items-center gap-1 hover:text-fg" @click="say(m)">
+                  <button v-if="live(m).reply && canSpeak()" class="inline-flex items-center gap-1 hover:text-fg transition-colors" @click="say(m)">
                     <component :is="speaking === m.job_id ? Square : Volume2" :size="12" /> {{ speaking === m.job_id ? "Stop" : "Listen" }}
                   </button>
-                  <RouterLink v-if="live(m).runId" :to="{ name: 'run', params: { id: live(m).runId } }" class="hover:text-fg">details</RouterLink>
+                  <RouterLink v-if="live(m).runId" :to="{ name: 'run', params: { id: live(m).runId } }" class="hover:text-fg transition-colors">details</RouterLink>
                 </div>
               </div>
             </div>
           </template>
         </div>
 
-        <footer class="border-t border-line p-3">
-          <p v-if="error" class="mb-2 text-sm text-danger">{{ error }}</p>
+        <!-- Composer -->
+        <footer class="border-t border-line bg-surface/50 p-3 backdrop-blur-sm">
+          <p v-if="error" class="mb-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-1.5 text-xs text-danger">{{ error }}</p>
           <div class="flex items-end gap-2">
             <button
               v-if="canDictate()"
-              class="btn shrink-0"
-              :class="listening ? 'btn-signal' : ''"
+              class="btn shrink-0 size-9 p-0 rounded-lg transition-all duration-150"
+              :class="listening ? 'border-red-500/50 bg-red-500/15 text-red-500 shadow-[0_0_12px_rgba(239,68,68,0.35)] animate-pulse ring-2 ring-red-500/40' : 'text-muted hover:text-fg'"
               :aria-label="listening ? 'Stop dictation' : 'Speak'"
               :title="listening ? 'Stop' : 'Speak instead of typing (your browser turns speech into text)'"
               @click="toggleMic"
@@ -318,15 +342,24 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
               <textarea
                 v-model="text"
                 rows="2"
-                class="input resize-none text-[14px]"
+                class="input resize-none text-[14px] leading-relaxed py-2 max-h-32"
                 :placeholder="listening ? 'Listening… speak now' : isCoach ? 'Type or press the mic and answer out loud…' : 'Message ' + agent.name + '…'"
                 @keydown="onKey"
               />
-              <p v-if="interim" class="pointer-events-none absolute right-2 bottom-1.5 left-2.5 truncate text-xs text-faint italic">{{ interim }}</p>
+              <p v-if="interim" class="pointer-events-none absolute right-2.5 bottom-2 left-2.5 truncate text-xs text-faint italic">{{ interim }}</p>
             </div>
-            <button class="btn btn-primary shrink-0" :disabled="sending || !(text.trim() || interim)" aria-label="Send" @click="send()"><SendHorizontal :size="16" /></button>
+            <button
+              class="btn btn-primary shrink-0 size-9 p-0 rounded-lg shadow-sm"
+              :disabled="sending || !(text.trim() || interim)"
+              aria-label="Send"
+              @click="send()"
+            >
+              <SendHorizontal :size="16" />
+            </button>
           </div>
-          <p class="mt-1.5 text-[11px] text-faint">Enter to send · Shift+Enter for a new line<template v-if="canDictate()"> · the mic uses your browser's speech service</template></p>
+          <p class="mt-1.5 text-[11px] text-faint">
+            Enter to send · Shift+Enter for newline<template v-if="canDictate()"> · mic uses speech recognition</template>
+          </p>
         </footer>
       </section>
       <p v-else class="text-sm text-muted">No enabled agents. <RouterLink to="/agents" class="text-accent hover:underline">Add one</RouterLink>.</p>

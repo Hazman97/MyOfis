@@ -27,6 +27,8 @@ export const REACTIONS: Record<EventType, string | null> = {
   "feature.released": "the agent who wrote the release note pins it on the notice board",
   "draft.created": "Marketing carries the draft to the whiteboard and pins it there",
   "draft.decided": null, // the owner's decision happens in the drafts inbox; nothing moves in the office
+  "skill.proposed": "the agent walks to the library and shelves the new skill",
+  "skill.decided": null, // the owner decides in the Skills inbox; nothing moves in the office
   "budget.exceeded": "the agent walks out through the entrance",
   "agent.idle": "the agent goes back to the pantry",
 };

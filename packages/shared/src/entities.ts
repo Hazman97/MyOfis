@@ -68,6 +68,8 @@ export const AgentConfig = z.object({
    * coding in a cloned repo; Agent Office keeps permissions/approvals and does commit, push and PR itself.
    */
   runtime: z.enum(["ai-sdk", "opencode"]).default("ai-sdk"),
+  /** After big jobs (and every 5th chat message) ask the agent what is worth saving to memory or skills (Hermes-style review). */
+  self_review: z.boolean().default(true),
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 

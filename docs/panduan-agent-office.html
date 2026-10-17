@@ -1,0 +1,1930 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panduan Agent Office</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Modern Design System for Panduan Agent Office
+   Theme: Pixel-art Office meets Modern Developer SaaS Docs */
+:root {
+  --bg: #f4f6f4;
+  --surface: #ffffff;
+  --surface-2: #ebf1ed;
+  --surface-3: #e1e9e3;
+  --fg: #141f1a;
+  --muted: #53645e;
+  --muted-light: #7e918a;
+  --line: rgba(20, 31, 26, 0.08);
+  --line-strong: rgba(20, 31, 26, 0.16);
+  --accent: #0f7a5c;
+  --accent-light: #e6f6f0;
+  --accent-ink: #ffffff;
+  --accent-glow: rgba(15, 122, 92, 0.25);
+  --signal: #b8610b;
+  --signal-bg: #fdf3e7;
+  --danger: #b4232f;
+  --danger-bg: #fcecef;
+  --review: #8a5a00;
+  --review-bg: #fbf4db;
+  --safe-bg: #e5f6ee;
+  --code-bg: #15201c;
+  --code-fg: #dce7e2;
+  --font-display: "Silkscreen", "Courier New", monospace;
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 9999px;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 14px -2px rgba(15, 31, 24, 0.06), 0 2px 6px -2px rgba(15, 31, 24, 0.04);
+  --shadow-lg: 0 12px 28px -4px rgba(15, 31, 24, 0.09), 0 4px 10px -2px rgba(15, 31, 24, 0.04);
+  --transition-fast: 0.18s ease;
+  --transition-normal: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1311;
+    --surface: #131d19;
+    --surface-2: #192722;
+    --surface-3: #22342e;
+    --fg: #e4ece8;
+    --muted: #8d9f97;
+    --muted-light: #63776e;
+    --line: rgba(255, 255, 255, 0.08);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --accent: #3fc296;
+    --accent-light: rgba(63, 194, 150, 0.14);
+    --accent-ink: #05241b;
+    --accent-glow: rgba(63, 194, 150, 0.3);
+    --signal: #f2a44b;
+    --signal-bg: #2d1d0c;
+    --danger: #ff727f;
+    --danger-bg: #321316;
+    --review: #eec867;
+    --review-bg: #2e240a;
+    --safe-bg: #113225;
+    --code-bg: #080d0b;
+    --code-fg: #d2ded8;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px -2px rgba(0, 0, 0, 0.5), 0 2px 6px -2px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 14px 30px -4px rgba(0, 0, 0, 0.65), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0c1311;
+  --surface: #131d19;
+  --surface-2: #192722;
+  --surface-3: #22342e;
+  --fg: #e4ece8;
+  --muted: #8d9f97;
+  --muted-light: #63776e;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --accent: #3fc296;
+  --accent-light: rgba(63, 194, 150, 0.14);
+  --accent-ink: #05241b;
+  --accent-glow: rgba(63, 194, 150, 0.3);
+  --signal: #f2a44b;
+  --signal-bg: #2d1d0c;
+  --danger: #ff727f;
+  --danger-bg: #321316;
+  --review: #eec867;
+  --review-bg: #2e240a;
+  --safe-bg: #113225;
+  --code-bg: #080d0b;
+  --code-fg: #d2ded8;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px -2px rgba(0, 0, 0, 0.5), 0 2px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 14px 30px -4px rgba(0, 0, 0, 0.65), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f6f4;
+  --surface: #ffffff;
+  --surface-2: #ebf1ed;
+  --surface-3: #e1e9e3;
+  --fg: #141f1a;
+  --muted: #53645e;
+  --muted-light: #7e918a;
+  --line: rgba(20, 31, 26, 0.08);
+  --line-strong: rgba(20, 31, 26, 0.16);
+  --accent: #0f7a5c;
+  --accent-light: #e6f6f0;
+  --accent-ink: #ffffff;
+  --accent-glow: rgba(15, 122, 92, 0.25);
+  --signal: #b8610b;
+  --signal-bg: #fdf3e7;
+  --danger: #b4232f;
+  --danger-bg: #fcecef;
+  --review: #8a5a00;
+  --review-bg: #fbf4db;
+  --safe-bg: #e5f6ee;
+  --code-bg: #15201c;
+  --code-fg: #dce7e2;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 14px -2px rgba(15, 31, 24, 0.06), 0 2px 6px -2px rgba(15, 31, 24, 0.04);
+  --shadow-lg: 0 12px 28px -4px rgba(15, 31, 24, 0.09), 0 4px 10px -2px rgba(15, 31, 24, 0.04);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+/* Reading Progress Bar */
+.progress-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: transparent;
+  z-index: 1000;
+}
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent) 0%, #3fc296 100%);
+  transition: width 0.08s ease-out;
+}
+
+a { color: var(--accent); transition: color var(--transition-fast); }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+h1, h2, h3, h4 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-weight: 700; letter-spacing: -0.025em; }
+h2 { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; }
+code, kbd {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-2);
+  color: var(--fg);
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+}
+.sign {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 48px;
+  padding-block: 40px 96px;
+}
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+    padding-block: 24px 64px;
+  }
+}
+
+/* Floor Index / Sidebar */
+.index {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 24px);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 14px;
+  box-shadow: var(--shadow-sm);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.index::-webkit-scrollbar { width: 4px; }
+.index::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px; }
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+.theme-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
+  padding: 6px 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+.theme-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--line-strong);
+}
+.theme-btn svg { width: 15px; height: 15px; }
+
+/* Quick Search */
+.quick-search {
+  position: relative;
+  margin-bottom: 10px;
+}
+.quick-search input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px 7px 30px;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--fg);
+  outline: none;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+.quick-search input:focus {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+.quick-search svg {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.index-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+}
+.index-group-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-light);
+  padding: 4px 8px;
+}
+.index a {
+  color: var(--muted);
+  text-decoration: none;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+  border-left: 2px solid transparent;
+}
+.index a:hover {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.index a.active {
+  color: var(--accent);
+  background: var(--accent-light);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+.index a span {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  min-width: 1.5em;
+  opacity: 0.8;
+}
+.index a.active span { color: var(--accent); opacity: 1; }
+
+@media (max-width: 900px) {
+  .index {
+    position: static;
+    max-height: none;
+    padding: 14px;
+  }
+  .index-group { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .index-group-title { width: 100%; margin-top: 4px; }
+  .index a {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    padding: 5px 10px;
+    font-size: 0.82rem;
+    border-left-width: 1px;
+  }
+  .index a span { display: none; }
+}
+
+main { min-width: 0; display: flex; flex-direction: column; gap: 80px; }
+section { display: flex; flex-direction: column; gap: 24px; scroll-margin-top: 24px; }
+.lede { color: var(--muted); max-width: 68ch; font-size: 1.02rem; line-height: 1.65; }
+
+/* Hero Section */
+.hero { gap: 24px; }
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+  align-self: flex-start;
+  color: var(--fg);
+}
+.ping-wrap { position: relative; width: 8px; height: 8px; display: inline-flex; align-items: center; justify-content: center; }
+.ping-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.75;
+  animation: pingAnimation 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.ping-core { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+@keyframes pingAnimation {
+  75%, 100% { transform: scale(2.4); opacity: 0; }
+}
+
+.hero h1 {
+  font-size: clamp(2.3rem, 5.2vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent) 15%, #2db788 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero p.big { font-size: 1.18rem; max-width: 64ch; color: var(--fg); line-height: 1.6; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+.dot.wip { background: var(--signal); }
+.dot.later { background: var(--line-strong); }
+
+/* Trio Cards (Bento style) */
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 760px) { .trio { grid-template-columns: minmax(0, 1fr); } }
+.trio-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-fast);
+}
+.trio-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--line-strong);
+}
+.trio-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.trio-icon.ok { background: var(--safe-bg); color: var(--accent); }
+.trio-icon.signal { background: var(--signal-bg); color: var(--signal); }
+.trio-icon.dark { background: var(--surface-2); color: var(--fg); }
+.trio-card h3 { font-size: 1.05rem; font-weight: 600; }
+.trio-card p { color: var(--muted); font-size: 0.93rem; line-height: 1.55; }
+
+/* Architecture Diagram */
+.arch {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.lanes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.25fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+@media (max-width: 820px) {
+  .lanes { grid-template-columns: minmax(0, 1fr); }
+  .arrow { transform: rotate(90deg); justify-self: center; margin: 8px 0; }
+}
+.node {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg);
+  min-width: 0;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+.node:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-2px);
+}
+.node.hub {
+  border-color: var(--accent);
+  background: var(--safe-bg);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+.node-badge {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.node-badge.hub-badge { color: var(--accent); font-weight: bold; }
+.node b { font-size: 1.05rem; }
+.node small { color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+.node .where {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  border-radius: 4px;
+  align-self: flex-start;
+  margin-top: auto;
+}
+.arrow {
+  align-self: center;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+  line-height: 1.3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.arrow strong { display: block; font-size: 1.5rem; color: var(--accent); }
+.note {
+  font-size: 0.92rem;
+  color: var(--muted);
+  border-left: 3px solid var(--accent);
+  padding-left: 14px;
+  max-width: 74ch;
+  line-height: 1.6;
+}
+
+/* Glossary A–Z */
+.az { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+@media (max-width: 720px) { .az { grid-template-columns: minmax(0, 1fr); } }
+.term {
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr);
+  gap: 4px 14px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+.term:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+.term .letter {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  color: var(--accent);
+  background: var(--accent-light);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  grid-row: span 2;
+}
+.term h3 { font-size: 1rem; align-self: center; }
+.term p { color: var(--muted); font-size: 0.92rem; line-height: 1.5; grid-column: 2; }
+
+/* Lifecycle Flow */
+.flow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; counter-reset: step; }
+.flow li { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); gap: 16px; position: relative; padding-bottom: 22px; }
+.flow li::before {
+  counter-increment: step;
+  content: counter(step);
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+  z-index: 1;
+}
+.flow li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(1.3rem - 1px);
+  top: 2.6rem;
+  bottom: 0;
+  width: 2px;
+  background: var(--line-strong);
+}
+.flow li.pause::before { border-color: var(--signal); color: var(--signal); }
+.flow .what {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+.flow .what:hover { border-color: var(--line-strong); }
+.flow .what h3 { font-size: 1.05rem; }
+.flow .what p { color: var(--muted); font-size: 0.94rem; }
+.flow .ev {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted-light);
+  margin-top: 4px;
+}
+
+/* Risk & Security */
+.risk { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .risk { grid-template-columns: minmax(0, 1fr); } }
+.lvl {
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  border-top-width: 4px;
+}
+.lvl.safe { background: var(--safe-bg); border-top-color: var(--accent); }
+.lvl.review { background: var(--review-bg); border-top-color: var(--review); }
+.lvl.danger { background: var(--danger-bg); border-top-color: var(--danger); }
+.lvl .tag { font-family: var(--font-display); font-size: 0.82rem; letter-spacing: 0.08em; }
+.lvl.safe .tag { color: var(--accent); }
+.lvl.review .tag { color: var(--review); }
+.lvl.danger .tag { color: var(--danger); }
+.lvl ul { margin: 0; padding-left: 20px; font-size: 0.92rem; line-height: 1.6; }
+.lvl .rule { font-weight: 600; font-size: 0.94rem; }
+
+.guards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 720px) { .guards { grid-template-columns: minmax(0, 1fr); } }
+.guards li {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px 12px 34px;
+  position: relative;
+  font-size: 0.93rem;
+  line-height: 1.55;
+  box-shadow: var(--shadow-sm);
+}
+.guards li::before {
+  content: "✓";
+  position: absolute;
+  left: 12px;
+  top: 11px;
+  color: var(--accent);
+  font-weight: bold;
+}
+
+/* How-to Steps */
+.steps { display: flex; flex-direction: column; gap: 18px; }
+.step {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.step:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-md);
+}
+.step-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.step-head .n {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  background: var(--accent-light);
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+}
+.step p, .step li { font-size: 0.95rem; line-height: 1.6; }
+.step ul, .step ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.expect {
+  font-size: 0.92rem;
+  background: var(--safe-bg);
+  border: 1px solid rgba(15, 122, 92, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  line-height: 1.55;
+}
+.expect b { color: var(--accent); }
+
+/* Modern Terminal / Command Box */
+.cmd {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  box-shadow: var(--shadow-sm);
+}
+.cmd-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.window-dots { display: flex; align-items: center; gap: 6px; }
+.w-dot { width: 10px; height: 10px; border-radius: 50%; opacity: 0.85; }
+.w-dot.red { background: #ff5f56; }
+.w-dot.yellow { background: #ffbd2e; }
+.w-dot.green { background: #27c93f; }
+.cmd-tag {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted-light);
+  letter-spacing: 0.05em;
+}
+.cmd-body {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  overflow-x: auto;
+}
+.cmd-prompt {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--accent);
+  margin-right: 10px;
+  user-select: none;
+  font-weight: 600;
+}
+.cmd pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  white-space: pre;
+  color: var(--code-fg);
+  flex: 1;
+}
+.copy-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #dce7e2;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-fast);
+}
+.copy-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+.copy-btn .icon-check { display: none; color: #3fc296; }
+.copy-btn.done {
+  background: rgba(63, 194, 150, 0.2);
+  border-color: rgba(63, 194, 150, 0.4);
+  color: #3fc296;
+}
+.copy-btn.done .icon-copy { display: none; }
+.copy-btn.done .icon-check { display: inline-block; }
+
+/* Ports */
+.ports { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.port {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast);
+}
+.port:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+.port .num {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.port small { color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+.port.no .num { color: var(--muted-light); text-decoration: line-through; }
+
+/* Agent Cards */
+.agents { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.agent {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+}
+.agent:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--line-strong);
+}
+.agent-top { display: flex; align-items: center; gap: 12px; }
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  background: var(--surface-2);
+  color: var(--fg);
+  flex: none;
+  image-rendering: pixelated;
+  border: 1px solid var(--line);
+}
+.avatar.px { position: relative; overflow: hidden; }
+.avatar.px i {
+  position: absolute;
+  left: 6px;
+  bottom: 0;
+  width: 32px;
+  height: 30px;
+  background: url(../maps/characters.png) no-repeat;
+  background-size: 576px 576px;
+  image-rendering: pixelated;
+}
+.agent-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.agent-name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.agent-role {
+  font-size: 0.78rem;
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.chip-sm {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg);
+}
+.agent p { color: var(--muted); font-size: 0.91rem; line-height: 1.5; margin: 0; }
+.agent-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
+.tag-pill {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+.agent .room { font-size: 0.82rem; color: var(--muted-light); font-style: italic; }
+
+/* Office View */
+.office-shot { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.office-shot img {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  image-rendering: pixelated;
+  background: #1b2622;
+  box-shadow: var(--shadow-md);
+}
+.office-shot figcaption { font-size: 0.86rem; color: var(--muted); }
+.rooms { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.room-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+.room-card:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+.room-card b { font-size: 0.96rem; }
+.room-card small { color: var(--muted); font-size: 0.87rem; line-height: 1.5; }
+
+.legend { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.legend td { padding: 10px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.legend tr:last-child td { border-bottom: 0; }
+.legend td:first-child { font-weight: 600; width: 44%; }
+.legend td:last-child { color: var(--muted); }
+.legend .bang { font-family: var(--font-display); color: var(--signal); }
+
+.tips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 720px) { .tips { grid-template-columns: minmax(0, 1fr); } }
+.tips li {
+  padding-left: 24px;
+  position: relative;
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+.tips li::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: bold;
+}
+
+/* Roadmap Phases */
+.phases {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.phase {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  align-items: start;
+  transition: background-color var(--transition-fast);
+}
+.phase:last-child { border-bottom: 0; }
+.phase:hover { background: var(--surface-2); }
+@media (max-width: 680px) {
+  .phase { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
+.phase .ph { font-family: var(--font-display); font-size: 0.82rem; padding-top: 2px; color: var(--muted); }
+.phase p { font-size: 0.93rem; color: var(--muted); line-height: 1.55; }
+.phase.now { background: var(--signal-bg); }
+.sub { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.sub span {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.sub span.ok { border-color: var(--accent); color: var(--accent); font-weight: 500; }
+.sub span.wip { border-color: var(--signal); color: var(--signal); font-weight: 500; }
+
+/* Modern FAQ Accordion */
+details.faq-item {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  overflow: hidden;
+}
+details.faq-item:hover { border-color: var(--line-strong); }
+details.faq-item[open] { border-color: var(--accent); box-shadow: var(--shadow-md); }
+details.faq-item summary {
+  padding: 14px 18px;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+  font-size: 0.98rem;
+}
+details.faq-item summary::-webkit-details-marker { display: none; }
+.faq-chevron {
+  transition: transform var(--transition-normal);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+details.faq-item[open] .faq-chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.faq-content {
+  padding: 0 18px 16px 18px;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.6;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.faq-content p { margin: 0; }
+
+/* Cheat Sheet Table */
+.cheat { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.cheat-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.cheat tr { transition: background-color var(--transition-fast); }
+.cheat tr:hover { background: var(--surface-2); }
+.cheat td { padding: 10px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cheat tr:last-child td { border-bottom: 0; }
+.cheat td:first-child {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--accent);
+}
+.cheat td:last-child { color: var(--muted); line-height: 1.5; }
+
+/* Floating Back to Top Button */
+.back-to-top {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  transition: all var(--transition-normal);
+  z-index: 900;
+}
+.back-to-top.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.back-to-top:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+footer {
+  color: var(--muted);
+  font-size: 0.86rem;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+  line-height: 1.6;
+}
+</style>
+<div class="progress-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<div class="shell">
+  <nav class="index" aria-label="Isi kandungan">
+    <div class="sidebar-header">
+      <div class="sign">Direktori</div>
+      <button id="themeToggle" class="theme-btn" type="button" aria-label="Tukar tema">
+        <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </div>
+
+    <div class="quick-search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Cari topik / istilah..." aria-label="Cari panduan">
+    </div>
+
+    <div class="index-group">
+      <div class="index-group-title">Pengenalan</div>
+      <a href="#apa"><span>01</span>Apa benda ni</a>
+      <a href="#bahagian"><span>02</span>3 bahagian utama</a>
+      <a href="#az"><span>03</span>Istilah A–Z</a>
+    </div>
+
+    <div class="index-group">
+      <div class="index-group-title">Aliran & Keselamatan</div>
+      <a href="#kitaran"><span>04</span>Hidup satu job</a>
+      <a href="#selamat"><span>05</span>Keselamatan</a>
+      <a href="#guna"><span>06</span>Cara guna</a>
+    </div>
+
+    <div class="index-group">
+      <div class="index-group-title">Pejabat & Ciri-Ciri</div>
+      <a href="#pejabat"><span>07</span>Pejabat pixel</a>
+      <a href="#marketing"><span>08</span>Marketing & chat</a>
+      <a href="#agent"><span>09</span>Agent-agent</a>
+    </div>
+
+    <div class="index-group">
+      <div class="index-group-title">Status & Rujukan</div>
+      <a href="#fasa"><span>10</span>Status & fasa</a>
+      <a href="#masalah"><span>11</span>Kalau ada masalah</a>
+      <a href="#arahan"><span>12</span>Senarai arahan</a>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero" id="apa">
+      <div class="hero-badge">
+        <span class="ping-wrap"><span class="ping-pulse"></span><span class="ping-core"></span></span>
+        <span>Agent Office · MyOfis Guide</span>
+      </div>
+      <h1>Pejabat AI peribadi you, <span class="gradient-text">you jadi bos</span>.</h1>
+      <p class="big">Agent Office ialah sistem untuk you cipta "pekerja" AI (agent), bagi mereka kerja (job), dan tengok mereka buat kerja tu secara live. Apa-apa yang berisiko, mereka kena minta izin you dulu.</p>
+      <div class="status">
+        <span class="chip"><span class="dot ok"></span>Phase 1 siap</span>
+        <span class="chip"><span class="dot ok"></span>Phase 2 siap</span>
+        <span class="chip"><span class="dot ok"></span>Phase 3 siap</span>
+        <span class="chip"><span class="dot ok"></span>Phase 4 + 5 siap · tunggu sign-off</span>
+        <span class="chip"><span class="dot wip"></span>Seterusnya: Researcher + Skills (4.5, pilihan)</span>
+      </div>
+      <div class="trio">
+        <div class="trio-card">
+          <div class="trio-icon ok">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+          </div>
+          <h3>Agent buat kerja</h3>
+          <p>Setiap agent ada peranan, model AI, dan tools sendiri. Contoh: Tester buka website you tiap malam, Coder baiki bug dan buka PR.</p>
+        </div>
+        <div class="trio-card">
+          <div class="trio-icon signal">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <h3>You approve benda risky</h3>
+          <p>Command yang tak ada dalam senarai selamat, push ke main, dan seumpamanya akan berhenti dan tunggu you tekan Approve atau Reject.</p>
+        </div>
+        <div class="trio-card">
+          <div class="trio-icon dark">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <h3>Semua nampak & direkod</h3>
+          <p>Setiap langkah agent jadi satu <b>event</b>. Board, log dan nanti office view semua dibina dari event yang sama. Refresh browser pun tak hilang apa-apa.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="bahagian">
+      <div class="sign">02 · Struktur</div>
+      <h2>3 bahagian utama</h2>
+      <p class="lede">Bayangkan ia macam sebuah pejabat: ada pejabat pengurusan (Hub), ada pekerja yang datang dari rumah masing-masing (Runner), dan ada skrin untuk you pantau (Web).</p>
+      <div class="arch">
+        <div class="lanes">
+          <div class="node">
+            <span class="node-badge">Skrin you</span>
+            <b>Web UI</b>
+            <small>Board kanban, log live, approvals, agents, schedules, settings. Boleh buka dari phone.</small>
+            <span class="where">127.0.0.1:5180 (dev)</span>
+          </div>
+          <div class="arrow"><strong>⇄</strong>HTTP +<br>WebSocket</div>
+          <div class="node hub">
+            <span class="node-badge hub-badge">Pusat Kawalan</span>
+            <b>Hub</b>
+            <small>Otak sistem. Simpan semua data (SQLite), log event, agih job ke runner, simpan API key secara encrypted, jalankan schedule, uruskan approval.</small>
+            <span class="where">127.0.0.1:8788 · data/agent-office.db</span>
+          </div>
+          <div class="arrow"><strong>⇠</strong>Runner yang<br>dial keluar</div>
+          <div class="node">
+            <span class="node-badge">Pekerja</span>
+            <b>Runner</b>
+            <small>Process asing yang betul-betul jalankan agent: panggil LLM, guna tools, kerja dalam folder workspace sendiri.</small>
+            <span class="where">workspaces/&lt;agent&gt;/&lt;run&gt;/</span>
+          </div>
+        </div>
+        <p class="note">Runner yang <b>sambung keluar</b> ke Hub, bukan sebaliknya. Sebab tu nanti Mac Mini atau mesin lain boleh join melalui Cloudflare Tunnel tanpa buka port. Hari ni, hub dan runner dua-dua jalan atas PC you.</p>
+      </div>
+    </section>
+
+    <section id="az">
+      <div class="sign">03 · Kamus</div>
+      <h2>Istilah A–Z</h2>
+      <p class="lede">Ini semua perkataan yang you akan jumpa dalam UI dan dalam chat dengan saya.</p>
+      <div class="az">
+        <div class="term"><span class="letter">A</span><h3>Agent</h3><p>"Pekerja" AI. Ada nama, peranan, provider + model, system prompt, senarai tools, permission level, dan budget token harian.</p></div>
+        <div class="term"><span class="letter">A</span><h3>Approval</h3><p>Permintaan izin bila agent nak buat benda berisiko. Muncul dalam page Approvals dengan badge merah. Approve atau Reject.</p></div>
+        <div class="term"><span class="letter">A</span><h3>Allowlist</h3><p>Senarai command yang agent boleh jalankan tanpa tanya, contohnya <code>bun test</code>, <code>git status</code>. Yang lain semua minta approval.</p></div>
+        <div class="term"><span class="letter">E</span><h3>Event</h3><p>Rekod setiap benda yang berlaku: <code>run.started</code>, <code>agent.tool_call</code>, <code>agent.needs_approval</code>… Disimpan kekal, tak pernah diubah. Inilah "sumber kebenaran".</p></div>
+        <div class="term"><span class="letter">H</span><h3>Handoff</h3><p>Agent serah kerja kepada agent lain. Contoh: Tester jumpa page rosak, terus buat job untuk Coder dengan langkah untuk ulang bug tu.</p></div>
+        <div class="term"><span class="letter">H</span><h3>Hub</h3><p>Server pusat. Satu-satunya tempat yang pegang database dan secret.</p></div>
+        <div class="term"><span class="letter">J</span><h3>Job</h3><p>Satu tugasan untuk satu agent. Datang dari you (manual), dari jadual (schedule), atau dari agent lain (handoff).</p></div>
+        <div class="term"><span class="letter">K</span><h3>Kill switch</h3><p>Butang <b>Pause all</b> kat header: cancel semua run yang tengah jalan dan tahan job baru sampai you Resume.</p></div>
+        <div class="term"><span class="letter">M</span><h3>Mock provider</h3><p>"AI palsu" yang cuma dipakai oleh automated test. Dalam system you dah di-disable; semua agent guna AI betul.</p></div>
+        <div class="term"><span class="letter">O</span><h3>OpenCode</h3><p>Otak agent Coder. Dia edit code dan run test dalam repo, tapi ikut rules Agent Office: command luar allowlist jadi approval, dan push/commit dibuat oleh Agent Office.</p></div>
+        <div class="term"><span class="letter">P</span><h3>Pairing code</h3><p>Kod sekali guna (contoh <code>K7PD-Q2XM</code>, tamat dalam 10 minit) untuk sambung runner baru ke hub. Lepas tu runner simpan token sendiri.</p></div>
+        <div class="term"><span class="letter">P</span><h3>Project</h3><p>Produk you: ekadkahwin, Sewa Kamera, JomBelajar, CanopyTrack… Ada live URL (untuk Tester) dan repo URL (untuk Coder).</p></div>
+        <div class="term"><span class="letter">P</span><h3>Provider</h3><p>Tempat model AI: Anthropic, OpenAI, Gemini, OpenRouter, Groq, DeepSeek, Ollama, LM Studio, atau Custom. API key disimpan encrypted.</p></div>
+        <div class="term"><span class="letter">R</span><h3>Run</h3><p>Satu kali job tu dijalankan. Ada log event, output, tokens masuk/keluar, dan kos dalam USD.</p></div>
+        <div class="term"><span class="letter">R</span><h3>Runner</h3><p>Process yang jalankan agent. Boleh ada lebih dari satu, kat mesin berbeza.</p></div>
+        <div class="term"><span class="letter">S</span><h3>Schedule</h3><p>Jadual cron dalam waktu Malaysia. Contoh <code>0 8 * * 1-5</code> = setiap hari bekerja pukul 8 pagi.</p></div>
+        <div class="term"><span class="letter">T</span><h3>Tool</h3><p>Kebolehan agent: baca/tulis fail, run command, git, Gitea, browser, handoff. Setiap tool ada <b>kategori</b> (untuk office view) dan <b>risk level</b>.</p></div>
+        <div class="term"><span class="letter">W</span><h3>Workspace</h3><p>Folder peribadi untuk setiap run. Agent cuma boleh menulis di sini, tak boleh keluar.</p></div>
+      </div>
+    </section>
+
+    <section id="kitaran">
+      <div class="sign">04 · Aliran</div>
+      <h2>Hidup satu job, dari mula sampai habis</h2>
+      <p class="lede">Ini apa yang betul-betul berlaku bila you tekan <b>Create job</b>. Nama dalam huruf kecil di bawah setiap langkah ialah event yang direkod.</p>
+      <ol class="flow">
+        <li><div class="what"><h3>You buat job</h3><p>Dari page New job, dari Schedule, atau agent lain buat handoff.</p><span class="ev">job.created · job.queued</span></div></li>
+        <li><div class="what"><h3>Hub cari runner yang free</h3><p>Kalau semua runner offline atau sistem tengah paused, job tunggu dalam lajur Queued.</p><span class="ev">run.started</span></div></li>
+        <li><div class="what"><h3>Runner sedia workspace dan mula kerja</h3><p>Dia buat folder baru, panggil model AI, dan stream tulisan live ke skrin you.</p><span class="ev">agent.thinking · agent.message</span></div></li>
+        <li><div class="what"><h3>Agent guna tools</h3><p>Setiap tool call dicek dulu: input betul ke, path selamat ke, berapa tinggi risk dia.</p><span class="ev">agent.tool_call · agent.tool_result</span></div></li>
+        <li class="pause"><div class="what"><h3>Kalau berisiko, berhenti dan tanya you</h3><p>Job jadi "needs approval", badge merah naik. Takde apa-apa dijalankan sampai you buat keputusan. Kalau runner terputus masa tunggu, keputusan you tetap sampai bila dia sambung balik.</p><span class="ev">agent.needs_approval · approval.decided</span></div></li>
+        <li><div class="what"><h3>Hasil kerja disimpan</h3><p>Output, report, screenshot atau PR jadi artifact yang boleh you buka.</p><span class="ev">artifact.created</span></div></li>
+        <li><div class="what"><h3>Run tamat, tokens dan kos direkod</h3><p>Kos dikira ikut harga model. Jumlah kos hari ini nampak kat header.</p><span class="ev">run.finished · agent.idle</span></div></li>
+      </ol>
+    </section>
+
+    <section id="selamat">
+      <div class="sign">05 · Keselamatan</div>
+      <h2>Siapa boleh buat apa</h2>
+      <p class="lede">Setiap action ada satu daripada tiga risk level. Permission level agent (<code>safe</code> atau <code>review</code>) tentukan sama ada dia perlu tanya.</p>
+      <div class="risk">
+        <div class="lvl safe">
+          <span class="tag">Safe</span>
+          <p class="rule">Tak pernah tanya.</p>
+          <ul><li>Baca fail dalam workspace</li><li>Command dalam allowlist</li><li>Buka website (read-only)</li><li>Tulis report akhir</li></ul>
+        </div>
+        <div class="lvl review">
+          <span class="tag">Review</span>
+          <p class="rule">Tanya kalau agent "safe". Tak tanya kalau agent "review".</p>
+          <ul><li>Tulis atau edit fail</li><li>Git commit, buat branch</li><li>Push branch biasa</li><li>Buka PR kat Gitea</li></ul>
+        </div>
+        <div class="lvl danger">
+          <span class="tag">Dangerous</span>
+          <p class="rule">Sentiasa tanya you. Tiada pengecualian.</p>
+          <ul><li>Command yang tak ada dalam allowlist</li><li>Push ke main / master</li><li>Nanti: deploy, hantar email, publish post</li></ul>
+        </div>
+      </div>
+      <ul class="guards">
+        <li>Agent tak boleh tulis di luar folder workspace dia, termasuk melalui symlink.</li>
+        <li>Fail secret diblock: <code>.env*</code>, <code>*.pem</code>, <code>*.key</code>, <code>id_*</code>, <code>.ssh/</code>, database hub.</li>
+        <li>Command dijalankan <b>tanpa shell</b>, jadi <code>&amp;&amp;</code>, <code>|</code>, <code>;</code> tak boleh "curi masuk" lepas allowlist.</li>
+        <li>Command tak nampak secret you: env dibersihkan sebelum process dimulakan.</li>
+        <li>API key dan token Gitea encrypted dalam DB, tak pernah dihantar ke browser.</li>
+        <li>Token yang terlepas dalam log atau event automatik ditukar jadi <code>[REDACTED]</code>.</li>
+        <li>Kandungan dari web, fail atau issue dianggap <b>data</b>. Agent diajar jangan ikut arahan dalam kandungan tu.</li>
+        <li>Coder (OpenCode): <code>git push</code>, <code>git commit</code>, <code>git remote</code> dan reset diblock terus; akses web dan folder luar repo pun diblock. Key AI sebenar tak pernah sampai OpenCode (dia cuma dapat token sementara melalui proxy kat PC you).</li>
+        <li>Kalau repo ada <code>opencode.json</code> atau folder <code>.opencode/</code> sendiri, run berhenti minta approval <b>dangerous</b> dulu, sebab plugin dalam folder tu boleh jalan atas PC you.</li>
+        <li>Tiada Docker (pilihan you). Command yang you approve jalan atas PC you dengan permission user you, jadi baca dulu sebelum tekan Approve.</li>
+      </ul>
+    </section>
+
+    <section id="guna">
+      <div class="sign">06 · Langkah demi langkah</div>
+      <h2>Cara guna, dari kosong</h2>
+      <p class="lede">Semua arahan ni untuk PowerShell, dalam folder <code>MyOfis</code>. Port kat PC you dah diset macam ni:</p>
+      <div class="ports">
+        <div class="port"><span class="num">5180</span><small>Web UI. Buka yang ni dalam browser.</small></div>
+        <div class="port"><span class="num">8788</span><small>Hub (API + WebSocket)</small></div>
+        <div class="port no"><span class="num">8787</span><small>Dipakai <code>wrangler dev</code> (workerd)</small></div>
+        <div class="port no"><span class="num">5173</span><small>Dipakai app lain (canopynet)</small></div>
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 1</span><h3>Hidupkan hub dan web</h3></div>
+          <div class="cmd">
+            <div class="cmd-bar">
+              <div class="window-dots"><span class="w-dot red"></span><span class="w-dot yellow"></span><span class="w-dot green"></span></div>
+              <span class="cmd-tag">PowerShell</span>
+              <button type="button" class="copy-btn" data-copy="bun run dev" aria-label="Copy to clipboard">
+                <svg class="icon-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <svg class="icon-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="cmd-body">
+              <span class="cmd-prompt">&gt;</span>
+              <pre>bun run dev</pre>
+            </div>
+          </div>
+          <p>Kemudian buka <b>http://127.0.0.1:5180</b> dan login guna nilai <code>LOCAL_AUTH_TOKEN</code> dalam fail <code>.env</code>.</p>
+        </div>
+
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 2</span><h3>Sambung runner (sekali je)</h3></div>
+          <ol>
+            <li>Pergi page <b>Runners</b>, tekan <b>New pairing code</b>.</li>
+            <li>Buka terminal <b>kedua</b> dan jalankan (tukar kod):</li>
+          </ol>
+          <div class="cmd">
+            <div class="cmd-bar">
+              <div class="window-dots"><span class="w-dot red"></span><span class="w-dot yellow"></span><span class="w-dot green"></span></div>
+              <span class="cmd-tag">PowerShell</span>
+              <button type="button" class="copy-btn" data-copy='$env:PAIRING_CODE="XXXX-XXXX"; bun run dev:runner' aria-label="Copy to clipboard">
+                <svg class="icon-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <svg class="icon-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="cmd-body">
+              <span class="cmd-prompt">&gt;</span>
+              <pre>$env:PAIRING_CODE="XXXX-XXXX"; bun run dev:runner</pre>
+            </div>
+          </div>
+          <p>Lepas kali pertama, runner dah ingat token dia. Lain kali cukup:</p>
+          <div class="cmd">
+            <div class="cmd-bar">
+              <div class="window-dots"><span class="w-dot red"></span><span class="w-dot yellow"></span><span class="w-dot green"></span></div>
+              <span class="cmd-tag">PowerShell</span>
+              <button type="button" class="copy-btn" data-copy="bun run dev:runner" aria-label="Copy to clipboard">
+                <svg class="icon-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <svg class="icon-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="cmd-body">
+              <span class="cmd-prompt">&gt;</span>
+              <pre>bun run dev:runner</pre>
+            </div>
+          </div>
+          <p class="expect"><b>Patut nampak:</b> runner "main-pc" status <i>online</i> kat page Runners. (Kalau dah online dari test saya, terus guna.)</p>
+        </div>
+
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 3</span><h3>Job pertama: Echo</h3></div>
+          <p><b>New job</b> → agent <b>Echo</b> → paste apa-apa teks → <b>Create job</b>.</p>
+          <p class="expect"><b>Patut nampak:</b> teks keluar sedikit demi sedikit, run tamat dengan status <i>done</i>, tokens direkod. Refresh browser, semua masih ada.</p>
+        </div>
+
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 4</span><h3>Tester dan Coder betul</h3></div>
+          <ol>
+            <li><b>Projects</b> → <b>New project</b>: masukkan <b>live URL</b> (website projek) dan <b>repo URL</b> (Gitea).</li>
+            <li><b>New job</b> → agent <b>Tester</b> → pilih projek → contoh: "Smoke test projek ni".</li>
+            <li>Buka run tu: screenshot desktop dan mobile serta report keluar dalam bahagian <b>Results</b>.</li>
+            <li>Kalau Tester jumpa page rosak, dia handoff kepada <b>Coder</b>. Coder buat branch, dan OpenCode baiki code.</li>
+          </ol>
+          <p class="expect"><b>Approval:</b> bila OpenCode nak jalankan command luar allowlist Coder, badge merah naik kat Approvals. Reject = command tu tak jalan. Lepas siap, Agent Office buka PR kat Gitea (perlukan <b>Settings → Integrations</b>).</p>
+        </div>
+
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 5</span><h3>Masukkan API key sebenar</h3></div>
+          <p><b>Settings → LLM providers</b> → pilih preset (contoh Anthropic) → paste API key → Save. Kemudian kat <b>Agents</b>, tukar provider/model agent tu.</p>
+          <p class="expect"><b>Ingat:</b> key disimpan encrypted. Kalau you tukar <code>SECRETS_KEY</code> dalam .env, key kena masuk semula.</p>
+        </div>
+
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 6</span><h3>Jadual, projek, Gitea</h3></div>
+          <ul>
+            <li><b>Schedules</b>: buat jadual (ada preset "Weekdays 08:00", "Every night 02:00"), atau tekan <b>Run now</b> untuk cuba terus.</li>
+            <li><b>Projects</b>: masukkan projek you dengan live URL dan repo URL.</li>
+            <li><b>Settings → Integrations</b>: URL dan token Gitea untuk Coder, bila Gitea you dah siap.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="pejabat">
+      <div class="sign">07 · Office view</div>
+      <h2>Pejabat pixel: baca apa agent tengah buat</h2>
+      <p class="lede">Dashboard sekarang terus buka pada <b>Office</b>. Setiap agent ialah satu watak dalam pejabat. Watak cuma <i>tunjuk</i> apa yang berlaku (dari event yang sama dengan Board), jadi dia tak pernah ganggu kerja agent. Nak versi senarai biasa? Tekan <b>Board</b>. Pilihan you diingat dalam browser.</p>
+      <figure class="office-shot">
+        <img src="../maps/preview.png" width="1280" height="768" alt="Pelan pejabat pixel: bilik server kiri atas, meja bos dan 8 meja agent di tengah, bilik mesyuarat kanan atas, pantry kanan bawah, perpustakaan kiri, pintu masuk di bawah.">
+        <figcaption>Contoh rupa pejabat (gambar dari build script, bukan live). Semua art dilukis dalam code, jadi takde isu lesen.</figcaption>
+      </figure>
+      <div class="rooms">
+        <div class="room-card"><b>Meja bos (meja you)</b><small>Kerja yang siap dihantar ke sini. Kertas dalam tray = kerja siap hari ini.</small></div>
+        <div class="room-card"><b>8 meja agent</b><small>Setiap agent dapat satu meja. Skrin monitor tunjuk status: code, browser, ✓ siap, ✗ gagal, gelap = runner offline.</small></div>
+        <div class="room-card"><b>Bilik server</b><small>Satu rak = satu runner. Lampu hijau semua OK, merah ada runner offline.</small></div>
+        <div class="room-card"><b>Perpustakaan</b><small>Agent datang sini masa search atau baca dokumen.</small></div>
+        <div class="room-card"><b>Bilik mesyuarat</b><small>Dua agent yang kerja pada rantai handoff yang sama, serentak.</small></div>
+        <div class="room-card"><b>Notice board</b><small>Setiap PR baru, agent pin satu nota kat sini.</small></div>
+        <div class="room-card"><b>Pantry</b><small>Tempat lepak bila takde kerja. Kadang-kadang borak sesama sendiri.</small></div>
+        <div class="room-card"><b>Pintu masuk</b><small>Agent yang di-pause atau habis budget jalan keluar ikut sini.</small></div>
+      </div>
+      <div class="cheat-wrap">
+        <table class="legend">
+          <tr><td>Jalan ke meja, duduk</td><td>Run dah mula. Ada bubble kopi = job tengah tunggu runner.</td></tr>
+          <tr><td>Menaip, monitor berkelip</td><td>Guna tools code, shell, git atau menulis.</td></tr>
+          <tr><td>Bubble <b>…</b></td><td>Tengah berfikir.</td></tr>
+          <tr><td>Bubble globe</td><td>Tengah buka web page (browser check).</td></tr>
+          <tr><td>Angkat tangan + <span class="bang">!</span> berdenyut</td><td><b>Perlu approval you.</b> Klik "!" untuk terus approve atau reject.</td></tr>
+          <tr><td>Bawa fail ke meja bos</td><td>Run siap. Kertas masuk tray you.</td></tr>
+          <tr><td>Pening, bintang atas kepala</td><td>Run gagal. Monitor tunjuk ✗ merah.</td></tr>
+          <tr><td>Bawa dokumen ke meja agent lain</td><td>Handoff: serah kerja kepada agent tu.</td></tr>
+          <tr><td>Jalan keluar ikut pintu</td><td>Agent di-pause atau dah lebih budget token hari ini.</td></tr>
+          <tr><td>Bubble <b>zzz</b> di pantry</td><td>Semua sistem tengah paused (kill switch).</td></tr>
+        </table>
+      </div>
+      <ul class="tips">
+        <li><b>Klik watak</b>: keluar panel dengan job sekarang, live log, 5 tool call terakhir, token + kos hari ini, dan butang <b>Give a job</b>, <b>Cancel run</b>, <b>Pause agent</b>.</li>
+        <li><b>Drag</b> untuk gerakkan pandangan. Butang <b>− / +</b> untuk zoom (zoom sentiasa nombor bulat supaya pixel tajam).</li>
+        <li><b>Watak kadang-kadang lari laju?</b> Itu sengaja. Bila banyak benda berlaku serentak, watak skip animasi lama dan kejar keadaan terbaru dalam masa 2 saat.</li>
+        <li><b>Jimat bateri:</b> bila window tak focus, pejabat turun ke 30 fps. Bila tab tersembunyi, dia berhenti terus.</li>
+        <li><b>Tukar art:</b> ganti fail dalam folder <code>maps/</code> dan reload page. Tak perlu build semula. Baca <code>maps/README.md</code>.</li>
+        <li><b>Rupa watak:</b> field <i>sprite</i> agent: <code>guard</code>, <code>tester</code>, <code>coder</code>, <code>marketer</code>, <code>person-1</code>…<code>person-8</code>. Kalau <code>default</code>, sistem pilih satu ikut nama agent.</li>
+      </ul>
+    </section>
+
+    <section id="marketing">
+      <div class="sign">08 · Phase 4</div>
+      <h2>Marketing, chat dan Telegram</h2>
+      <p class="lede">Marketing tulis copy untuk produk you berdasarkan <b>brief</b> projek. Dia tak pernah post apa-apa: semua jadi draf dalam inbox <b>Drafts</b> untuk you approve, edit atau reject. Edit dan feedback you jadi "memori gaya" dia.</p>
+      <div class="steps">
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 1</span><h3>Isi brief projek</h3></div>
+          <p>Projects → <b>Brief</b> pada kad projek. Isi apa produk tu, target, harga, lokasi, CTA (contoh WhatsApp), tone, bahasa ikut platform, benda yang tak boleh cakap, dan <b>contoh posting yang you suka</b>. Ada butang "Start from the example" (Sewa Kamera).</p>
+          <p class="expect"><b>Kenapa penting:</b> Marketing cuma guna fakta dari brief. Takde harga dalam brief = dia tak sebut harga.</p>
+        </div>
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 2</span><h3>Bagi kerja (New job atau Chat)</h3></div>
+          <p>New job → pilih <b>Marketing</b> → pilih <b>Kind of work</b> → pilih projek → tulis arahan biasa. Contoh arahan:</p>
+          <ul>
+            <li>"3 caption TikTok untuk promo sewa ZV-E10 cuti sekolah. Santai, Manglish, ada CTA WhatsApp."</li>
+            <li>"Skrip video 30 saat: tunjuk unboxing kamera + flash + tripod."</li>
+            <li>"Content calendar minggu depan untuk IG dan TikTok."</li>
+            <li>"Promo Raya: 3 caption IG + 1 skrip TikTok."</li>
+          </ul>
+        </div>
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 3</span><h3>Tiru gaya penulisan (Writing-style analysis)</h3></div>
+          <p>Letak 3–10 contoh posting dalam brief (atau paste dalam arahan), lepas tu pilih <b>Writing-style analysis</b>: "Analisis gaya penulisan contoh posting dalam brief, lepas tu tulis 2 posting IG ikut gaya tu."</p>
+          <p>Marketing tulis <b>nota gaya</b> (panjang ayat, emoji, cara buka hook, CTA). Bila you approve draf nota gaya tu, ia masuk dalam brief dan dipakai untuk semua draf seterusnya.</p>
+          <p class="note">Dia belajar <i>gaya</i>, bukan copy ayat: sistem tolak draf yang copy 12+ perkataan berturut dari contoh. Guna contoh orang lain sebagai inspirasi; jangan menyamar jadi orang tu.</p>
+        </div>
+        <div class="step">
+          <div class="step-head"><span class="n">Langkah 4</span><h3>Semak di Drafts</h3></div>
+          <p>Setiap draf ada semakan sendiri (fakta, feature, overclaim, tone). Edit terus dalam kotak → <b>Approve my edit</b>, atau <b>Reject…</b> dengan sebab ("terlalu jual", "guna lebih Manglish"). <b>Copy</b> untuk paste ke TikTok/IG.</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top:8px">Chat dengan agent</h3>
+      <p class="lede">Menu <b>Chat</b>: borak dengan mana-mana agent. Setiap mesej jadi job kecil (nampak dalam pejabat, kira budget). Agent ingat mesej sebelum dalam perbualan yang sama.</p>
+      <div class="rooms">
+        <div class="room-card"><b>Marketing</b><small>"Buatkan posting IG untuk promo cuti sekolah, 3 versi." Posting masuk Drafts, dia ringkaskan dalam chat.</small></div>
+        <div class="room-card"><b>Coach (English)</b><small>Latihan bercakap tanpa skrip. Setiap balasan: jawapan + soalan follow-up, <b>More natural:</b> (cara native cakap), dan satu <b>Useful phrase</b>.</small></div>
+        <div class="room-card"><b>🎤 dan 🔊</b><small>Tekan 🎤 dan <i>cakap</i> jawapan you (Chrome/Edge tukar suara jadi teks). Tick <b>Read aloud</b> untuk dengar jawapan Coach.</small></div>
+        <div class="room-card"><b>Mod Coach</b><small>Free talk · Interview (soalan tak dijangka) · Work (meeting, pitch) · Drill 5 soalan cepat. Stuck? Tulis BM, dia ajar versi English.</small></div>
+      </div>
+
+      <h3 style="margin-top:8px">Telegram</h3>
+      <ol class="flow">
+        <li><div class="what"><h3>Buat bot</h3><p>Telegram → <b>@BotFather</b> → <code>/newbot</code> → copy token. Jangan share token dengan sesiapa.</p></div></li>
+        <li><div class="what"><h3>Masukkan dalam Agent Office</h3><p>Settings → Integrations → Telegram → paste token → Save.</p></div></li>
+        <li><div class="what"><h3>Dapatkan chat id</h3><p>Hantar <code>/id</code> kepada bot you. Paste nombor yang dia balas → Save → <b>Send test</b>.</p></div></li>
+        <li class="pause"><div class="what"><h3>Siap</h3><p>Approval datang dengan butang ✅/❌ (cuma chat you diterima, butang bertandatangan). Juga: laporan pagi, run gagal, draf baru, budget habis. <code>/status</code> untuk ringkasan.</p></div></li>
+      </ol>
+
+      <h3 style="margin-top:8px">Feature log &amp; budget</h3>
+      <ul class="tips">
+        <li><b>PR di-merge di Gitea</b> → dalam 5 minit hub nampak → Coder tulis nota ringkas untuk customer (lepas CI lulus) → Tester ambil screenshot → Marketing buat draf announcement. Semua tunggu you.</li>
+        <li><b>Nota manual:</b> Projects → Feature log → tulis sendiri; ia pun cetuskan screenshot + draf.</li>
+        <li><b>Budget token harian</b> setiap agent (Agents → Edit; 0 = tiada had). Habis budget: run berhenti, agent "balik rumah" ikut pintu, job tunggu esok (waktu Malaysia).</li>
+        <li><b>Office view:</b> Marketing jalan ke kabinet fail bila baca brief, pin draf di whiteboard; Coder pin nota feature di notice board.</li>
+      </ul>
+    </section>
+
+    <section id="agent">
+      <div class="sign">09 · Pekerja</div>
+      <h2>Agent-agent dalam pejabat</h2>
+      <div class="agents">
+        <div class="agent">
+          <div class="agent-top">
+            <span class="avatar px"><i style="background-position: 0 -386px"></i></span>
+            <div class="agent-meta">
+              <div class="agent-name-row">
+                <h3>Echo</h3>
+                <span class="chip-sm"><span class="dot ok"></span>Aktif</span>
+              </div>
+              <span class="agent-role">Testing & Verification</span>
+            </div>
+          </div>
+          <p>Agent ujian: ringkaskan teks. Guna untuk pastikan sistem jalan dengan lancar.</p>
+          <div class="agent-tags">
+            <span class="tag-pill">Smoke Test</span>
+            <span class="tag-pill">Benchmark</span>
+            <span class="tag-pill">Zero Risk</span>
+          </div>
+        </div>
+
+        <div class="agent">
+          <div class="agent-top">
+            <span class="avatar px"><i style="background-position: 0 -2px"></i></span>
+            <div class="agent-meta">
+              <div class="agent-name-row">
+                <h3>Pak Guard</h3>
+                <span class="chip-sm"><span class="dot ok"></span>Aktif</span>
+              </div>
+              <span class="agent-role">DevOps & Health Monitoring</span>
+            </div>
+          </div>
+          <p>DevOps. Check kesihatan sistem setiap hari bekerja 8 pagi, tulis morning report dalam bahasa mudah.</p>
+          <span class="room">Pakai uniform guard dengan topi</span>
+          <div class="agent-tags">
+            <span class="tag-pill">Daily 08:00</span>
+            <span class="tag-pill">System Health</span>
+            <span class="tag-pill">Morning Brief</span>
+          </div>
+        </div>
+
+        <div class="agent">
+          <div class="agent-top">
+            <span class="avatar px"><i style="background-position: 0 -50px"></i></span>
+            <div class="agent-meta">
+              <div class="agent-name-row">
+                <h3>Tester</h3>
+                <span class="chip-sm"><span class="dot ok"></span>Aktif</span>
+              </div>
+              <span class="agent-role">QA & Browser Automation</span>
+            </div>
+          </div>
+          <p>QA. Buka setiap live URL tiap malam guna browser sebenar, ambil screenshot, banding dengan semalam. Kalau rosak, handoff kepada Coder.</p>
+          <span class="room">Lab coat putih + cermin mata</span>
+          <div class="agent-tags">
+            <span class="tag-pill">Playwright</span>
+            <span class="tag-pill">Screenshots</span>
+            <span class="tag-pill">Visual Diff</span>
+          </div>
+        </div>
+
+        <div class="agent">
+          <div class="agent-top">
+            <span class="avatar px"><i style="background-position: 0 -98px"></i></span>
+            <div class="agent-meta">
+              <div class="agent-name-row">
+                <h3>Coder</h3>
+                <span class="chip-sm"><span class="dot ok"></span>Aktif</span>
+              </div>
+              <span class="agent-role">Autonomous Code Engine</span>
+            </div>
+          </div>
+          <p>Baiki bug dari handoff atau issue Gitea guna <b>OpenCode</b>. Agent Office buat branch, commit dan PR. Tak pernah push ke main.</p>
+          <span class="room">Hoodie hijau + headphone</span>
+          <div class="agent-tags">
+            <span class="tag-pill">OpenCode</span>
+            <span class="tag-pill">Git Branch</span>
+            <span class="tag-pill">Pull Request</span>
+          </div>
+        </div>
+
+        <div class="agent">
+          <div class="agent-top">
+            <span class="avatar px"><i style="background-position: 0 -146px"></i></span>
+            <div class="agent-meta">
+              <div class="agent-name-row">
+                <h3>Marketing</h3>
+                <span class="chip-sm"><span class="dot ok"></span>Aktif</span>
+              </div>
+              <span class="agent-role">Creative Copywriting</span>
+            </div>
+          </div>
+          <p>Tulis caption, skrip video, content calendar, promo dan tiru gaya penulisan ikut brief projek. Tak pernah publish sendiri; semua jadi draf untuk you.</p>
+          <span class="room">Kabinet fail → meja → whiteboard</span>
+          <div class="agent-tags">
+            <span class="tag-pill">Style Mimic</span>
+            <span class="tag-pill">Brief Driven</span>
+            <span class="tag-pill">Drafts Inbox</span>
+          </div>
+        </div>
+
+        <div class="agent">
+          <div class="agent-top">
+            <span class="avatar px"><i style="background-position: 0 -482px"></i></span>
+            <div class="agent-meta">
+              <div class="agent-name-row">
+                <h3>Coach</h3>
+                <span class="chip-sm"><span class="dot ok"></span>Aktif</span>
+              </div>
+              <span class="agent-role">English Voice & Conversation</span>
+            </div>
+          </div>
+          <p>Kawan latihan bercakap English. Tanya soalan spontan, betulkan ayat jadi lebih natural, ajar frasa berguna. Guna melalui Chat, dengan 🎤.</p>
+          <div class="agent-tags">
+            <span class="tag-pill">Voice 🎤</span>
+            <span class="tag-pill">Read Aloud 🔊</span>
+            <span class="tag-pill">Speech Coach</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="fasa">
+      <div class="sign">10 · Pelan</div>
+      <h2>Status & fasa</h2>
+      <div class="phases">
+        <div class="phase"><span class="ph">Phase 1</span><div><h3>Core loop</h3><p>Job → runner → event live → tokens/kos → refresh tak hilang state.</p></div><span class="chip"><span class="dot ok"></span>Siap</span></div>
+        <div class="phase"><span class="ph">Phase 2</span><div><h3>Agent sebenar + keselamatan</h3><p>Tools, approvals, scheduler, handoff, Gitea, Playwright, Pak Guard / Tester / Coder (OpenCode).</p>
+          <div class="sub"><span class="ok">2a tools + safety</span><span class="ok">2b approvals</span><span class="ok">2c schedule + projects</span><span class="ok">2d handoff + git + Gitea</span><span class="ok">2e browser + 3 agent</span><span class="ok">OpenCode</span><span class="ok">2f acceptance test</span></div>
+        </div><span class="chip"><span class="dot ok"></span>Siap</span></div>
+        <div class="phase"><span class="ph">Phase 3</span><div><h3>Office view + UI baru</h3><p>Pejabat pixel-art (art dilukis dalam code): agent jalan, duduk, menaip, angkat tangan untuk approval, hantar kerja ke meja you. Klik watak untuk panel. Plus rupa baru seluruh app (light + dark, desktop + phone).</p>
+          <div class="sub"><span class="ok">3a design system + UI baru</span><span class="ok">3b pixel art + map</span><span class="ok">3c Phaser scene</span><span class="ok">3d otak watak + catch-up 2s</span><span class="ok">3e panel klik + Office/Board</span><span class="ok">3f verify + docs</span></div>
+        </div><span class="chip"><span class="dot ok"></span>Siap</span></div>
+        <div class="phase"><span class="ph">Phase 4</span><div><h3>Marketing + projek + Telegram</h3><p>Brief projek, feature log, draf content dengan feedback, chat dengan agent (+ English Coach), approve dari Telegram, budget token.</p>
+          <div class="sub"><span class="ok">brief + drafts</span><span class="ok">Marketing + gaya penulisan</span><span class="ok">feature log</span><span class="ok">chat + Coach</span><span class="ok">Telegram</span><span class="ok">budget</span><span class="ok">acceptance test</span></div>
+        </div><span class="chip"><span class="dot ok"></span>Siap · tunggu sign-off</span></div>
+        <div class="phase"><span class="ph">Phase 4.5</span><div><h3>Researcher + Skills (cadangan)</h3><p>Agent research web, simpan "skill" (SKILL.md, format sama dengan Hermes Agent) selepas you approve, agent tanya agent lain, contoh design 3D (OpenSCAD/Blender).</p></div><span class="chip"><span class="dot wip"></span>Tunggu keputusan you</span></div>
+        <div class="phase"><span class="ph">Phase 5</span><div><h3>Buka ke luar</h3><p>Login dari phone melalui Cloudflare Access (cuma email you), Cloudflare Tunnel, runner kedua di PC lain, <b>Replay</b> (menu Replay atau butang "Replay in the office" pada run lama; 1x/4x/16x), dan <b>memori agent</b> (Coach ingat silap English you; Marketing ingat citarasa you; padam di panel watak). Panduan: <code>docs/cloudflare-tunnel.md</code>.</p></div><span class="chip"><span class="dot ok"></span>Siap · tunggu sign-off</span></div>
+      </div>
+    </section>
+
+    <section id="masalah">
+      <div class="sign">11 · Bantuan</div>
+      <h2>Kalau ada masalah</h2>
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary>
+            <span>Office view kosong: "The office art did not load"</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Fail art dalam folder <code>maps/</code> hilang atau rosak. Build semula: <code>bun run --cwd apps/web office:assets</code>. Kalau you set <code>MAPS_DIR</code> dalam .env, pastikan dia tunjuk ke folder yang betul. Board view tetap boleh guna.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Watak takde dalam pejabat</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Agent yang disabled (Pause agent) atau dah lebih budget hari ini akan keluar ikut pintu. Enable semula di page Agents, nanti dia masuk balik.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Buka 5173, keluar app lain</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Betul, 5173 dipakai app lain. Agent Office kat <b>5180</b>.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>"Port 5180 is in use" masa <code>bun run dev</code></span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Ada benda lain dah pakai 5180. Tukar <code>WEB_DEV_PORT</code> dalam .env ke port lain (contoh 5181), dan buka port tu.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Hub tak start: EADDRINUSE</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Port hub dah dipakai, biasanya <code>wrangler dev</code> kat 8787. .env you dah guna 8788. Kalau 8788 pun sibuk, tukar <code>HUB_PORT</code>, <code>PUBLIC_BASE_URL</code> dan <code>HUB_URL</code> serentak.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Job stuck kat Queued</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Tiga sebab biasa: (1) takde runner online, check page Runners; (2) sistem tengah <b>paused</b>, ada jalur kuning kat atas; (3) agent tu disabled.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Run fail: "provider is missing" atau API key error</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Agent tu guna provider yang belum ada key. Pergi Settings → LLM providers, masukkan key, atau tukar agent ke provider <code>mock</code> untuk test.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Badge Approvals tak hilang</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Approval kekal sampai you Approve, Reject, atau run tu dicancel. Kalau run dicancel, approval jadi <i>expired</i> secara automatik.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Kenapa perlu Node juga, bukan Bun je?</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Playwright (browser untuk Tester) tergantung atas Bun kat Windows. Jadi browser je jalan dalam process Node kecil; selebihnya kekal Bun. PC you dah ada Node 24.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Coder fail: "OpenCode is not installed"</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Install OpenCode kat mesin runner: <code>npm install -g opencode-ai</code>, kemudian restart runner. Page Runners akan tunjuk <code>opencode</code> dalam runtimes.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Coder fail: "No repository for this job"</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Coder kerja dalam repo projek. Masa buat job, pilih <b>Project</b> yang ada repo URL (Projects page). Coder tak akan teka URL repo.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>
+            <span>Boleh guna npm?</span>
+            <svg class="faq-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="faq-content">
+            <p>Untuk jalankan project, tak. Project ni bergantung pada Bun (database, server, test). Command dia sama macam npm: <code>bun install</code>, <code>bun run dev</code>.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section id="arahan">
+      <div class="sign">12 · Rujukan</div>
+      <h2>Senarai arahan</h2>
+      <div class="cheat-wrap">
+        <table class="cheat">
+          <tr><td>bun install</td><td>Pasang semua library (sekali, atau lepas tarik code baru)</td></tr>
+          <tr><td>bun run dev</td><td>Hub + Web UI dengan auto-reload. Buka 127.0.0.1:5180</td></tr>
+          <tr><td>bun run dev:runner</td><td>Hidupkan runner (terminal kedua)</td></tr>
+          <tr><td>bun test</td><td>Jalankan semua test (sekarang 175+ test)</td></tr>
+          <tr><td>bun run --cwd apps/web office:assets</td><td>Lukis semula art pejabat dari code ke folder maps/</td></tr>
+          <tr><td>bun run typecheck</td><td>Check TypeScript seluruh project</td></tr>
+          <tr><td>bun run build</td><td>Build Web UI untuk production</td></tr>
+          <tr><td>bun run start:hub</td><td>Hub mode production (serve UI dari build)</td></tr>
+          <tr><td>bun run db:generate</td><td>Buat migration baru lepas ubah schema database</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      Fail penting dalam repo: <code>SPEC.md</code> (spec penuh), <code>README.md</code> (setup), <code>CLAUDE.md</code> (keputusan design), <code>LEARNINGS.md</code> (silap yang pernah jadi), <code>maps/</code> (art pejabat). Data you: <code>data/</code>. Folder kerja agent: <code>workspaces/</code>.
+    </footer>
+  </main>
+</div>
+
+<button id="backToTop" class="back-to-top" type="button" aria-label="Kembali ke atas">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+</button>
+
+<script>
+// --- 1. Theme Toggle ---
+const themeToggle = document.getElementById("themeToggle");
+const root = document.documentElement;
+const savedTheme = localStorage.getItem("panduan_theme");
+
+if (savedTheme) {
+  root.setAttribute("data-theme", savedTheme);
+}
+
+function updateThemeButton() {
+  const currentTheme = root.getAttribute("data-theme");
+  const isDark = currentTheme === "dark" || (!currentTheme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  if (themeToggle) {
+    themeToggle.setAttribute("aria-label", isDark ? "Tukar ke tema cerah" : "Tukar ke tema gelap");
+    themeToggle.innerHTML = isDark
+      ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  }
+}
+updateThemeButton();
+
+if (themeToggle) {
+  themeToggle.addEventListener("click", () => {
+    const currentTheme = root.getAttribute("data-theme");
+    const isDark = currentTheme === "dark" || (!currentTheme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const newTheme = isDark ? "light" : "dark";
+    root.setAttribute("data-theme", newTheme);
+    localStorage.setItem("panduan_theme", newTheme);
+    updateThemeButton();
+  });
+}
+
+// --- 2. Reading Progress Bar & Back to Top Button ---
+const progressBar = document.getElementById("progressBar");
+const backToTop = document.getElementById("backToTop");
+
+window.addEventListener("scroll", () => {
+  const scrollTop = window.scrollY || document.documentElement.scrollTop;
+  const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+  const percent = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+  if (progressBar) progressBar.style.width = percent + "%";
+
+  if (backToTop) {
+    if (scrollTop > 380) {
+      backToTop.classList.add("visible");
+    } else {
+      backToTop.classList.remove("visible");
+    }
+  }
+}, { passive: true });
+
+if (backToTop) {
+  backToTop.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+
+// --- 3. Scrollspy for Active Section in Sidebar ---
+const sections = document.querySelectorAll("main section[id]");
+const navLinks = document.querySelectorAll(".index a[href^='#']");
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (entry.isIntersecting) {
+      const id = entry.target.getAttribute("id");
+      navLinks.forEach((link) => {
+        if (link.getAttribute("href") === `#${id}`) {
+          link.classList.add("active");
+        } else {
+          link.classList.remove("active");
+        }
+      });
+    }
+  });
+}, {
+  rootMargin: "-20% 0px -65% 0px",
+  threshold: 0
+});
+
+sections.forEach((sec) => observer.observe(sec));
+
+// --- 4. Enhanced Copy-to-Clipboard ---
+document.querySelectorAll(".copy-btn, [data-copy]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const text = btn.getAttribute("data-copy");
+    const label = btn.querySelector("span");
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.classList.add("done");
+      if (label) label.textContent = "Copied!";
+      setTimeout(() => {
+        btn.classList.remove("done");
+        if (label) label.textContent = "Copy";
+      }, 1800);
+    } catch {
+      const parent = btn.closest(".cmd");
+      const pre = parent ? parent.querySelector("pre") : btn.previousElementSibling;
+      if (pre) {
+        const range = document.createRange();
+        range.selectNodeContents(pre);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        if (label) label.textContent = "Ctrl+C";
+      }
+    }
+  });
+});
+
+// --- 5. Quick Search Filter ---
+const searchInput = document.getElementById("searchInput");
+if (searchInput) {
+  searchInput.addEventListener("input", (e) => {
+    const q = e.target.value.toLowerCase().trim();
+    const targets = document.querySelectorAll(".term, .step, .agent, .room-card, .faq-item, .cheat tr");
+    if (!q) {
+      targets.forEach((el) => { el.style.display = ""; });
+      return;
+    }
+    targets.forEach((el) => {
+      const text = el.textContent.toLowerCase();
+      el.style.display = text.includes(q) ? "" : "none";
+    });
+  });
+}
+</script>
+
+</html>

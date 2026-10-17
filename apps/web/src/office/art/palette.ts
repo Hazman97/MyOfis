@@ -8,9 +8,9 @@ export const P = {
   shadow: "#00000033",
 
   // floors
-  wood: "#c8a274",
-  woodDark: "#b48c5c",
-  woodLight: "#d6b488",
+  wood: "#dcd3c4",
+  woodDark: "#c3b8a6",
+  woodLight: "#ece5d8",
   tile: "#a9b4af",
   tileDark: "#96a29d",
   tileLight: "#b9c3be",

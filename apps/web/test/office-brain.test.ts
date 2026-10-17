@@ -367,6 +367,7 @@ describe("reactions table", () => {
       "artifact.created": [working, (o) => o.emit({ type: "artifact.created", payload: { kind: "pr", title: "#1" } }, meta)],
       "feature.released": [working, (o) => o.emit({ type: "feature.released", payload: { project_id: "p1", feature_log_id: "f1" } }, meta)],
       "draft.created": [working, (o) => o.emit({ type: "draft.created", payload: { draft_id: "d1", project_id: "p1", platform: "instagram", kind: "caption" } }, meta)],
+      "skill.proposed": [working, (o) => o.emit({ type: "skill.proposed", payload: { proposal_id: "sp1", name: "x", action: "create" } }, meta)],
       "budget.exceeded": [() => {}, (o) => o.emit({ type: "budget.exceeded", payload: { agent_id: qa.id, used: 2, budget: 1 } })],
       "agent.idle": [working, (o) => o.emit({ type: "agent.idle", payload: { agent_id: qa.id } })],
     };

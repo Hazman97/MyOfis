@@ -78,6 +78,9 @@ export const EVENT_BODIES = [
   body("draft.decided", { draft_id: z.string(), status: z.enum(["approved", "rejected", "edited"]) }),
   body("budget.exceeded", { agent_id: z.string(), used: z.number().int(), budget: z.number().int() }),
   body("agent.idle", { agent_id: z.string() }),
+  /** An agent proposed a new or changed skill (SKILL.md); it waits for the owner. */
+  body("skill.proposed", { proposal_id: z.string(), name: z.string(), action: z.enum(["create", "patch", "delete"]) }),
+  body("skill.decided", { proposal_id: z.string(), name: z.string(), status: z.enum(["approved", "rejected"]) }),
 ] as const;
 
 export const EventBody = z.discriminatedUnion("type", EVENT_BODIES);

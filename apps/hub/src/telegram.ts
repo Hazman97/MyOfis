@@ -148,6 +148,8 @@ export class TelegramBot {
       }
       case "run.failed": {
         this.#draftsByRun.delete(e.payload.run_id);
+        // a failed chat message already shows in the chat itself
+        if (getJob(this.hub.db, e.payload.job_id)?.type === "chat") return;
         await this.notify(`❌ ${agentName()} failed: ${jobTitle()}\n\n${e.payload.error}`);
         return;
       }
@@ -166,6 +168,9 @@ export class TelegramBot {
         }
         return;
       }
+      case "skill.proposed":
+        await this.notify(`🧠 ${agentName()} wants to ${e.payload.action} the skill "${e.payload.name}". Review it in Agent Office → Skills.`);
+        return;
       case "budget.exceeded":
         await this.notify(`💤 ${agentName()} used today's token budget (${e.payload.used.toLocaleString("en")} / ${e.payload.budget.toLocaleString("en")}) and went home. Jobs wait until tomorrow or a higher budget.`);
         return;

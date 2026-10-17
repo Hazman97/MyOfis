@@ -99,7 +99,13 @@ export const setUnauthorizedHandler = (fn: () => void) => (onUnauthorized = fn);
 
 export const api = {
   login: (token: string) => request<{ ok: true }>("/auth/login", { body: { token } }),
-  logout: () => request<{ ok: true }>("/auth/logout", { method: "POST" }),
+  logout: async () => {
+    const r = await request<{ ok: true; logout_url?: string | null }>("/auth/logout", { method: "POST" });
+    // Cloudflare Access keeps its own session: end it there too
+    if (r.logout_url) window.location.assign(r.logout_url);
+    return r;
+  },
+  authMode: () => request<{ mode: "local" | "cf-access" }>("/auth/mode"),
   me: () => request<{ ok: true; mode: string }>("/auth/me"),
 
   state: () => request<{ state: OfficeState }>("/state"),
@@ -109,6 +115,8 @@ export const api = {
 
   agents: () => request<{ agents: Agent[] }>("/agents"),
   createAgent: (body: Partial<Agent>) => request<{ agent: Agent }>("/agents", { body }),
+  agentMemory: (id: string) => request<{ memories: { id: string; content: string; created_at: string }[] }>(`/agents/${id}/memory`),
+  forgetMemory: (id: string, memoryId: string) => request<{ ok: true }>(`/agents/${id}/memory/${memoryId}`, { method: "DELETE" }),
   updateAgent: (id: string, body: Partial<Agent>) => request<{ agent: Agent }>(`/agents/${id}`, { method: "PATCH", body }),
 
   jobs: () => request<{ jobs: Job[] }>("/jobs"),
@@ -116,6 +124,7 @@ export const api = {
     request<{ job: Job }>("/jobs", { body }),
   cancelJob: (id: string) => request<{ ok: true }>(`/jobs/${id}/cancel`, { method: "POST" }),
 
+  events: (since: number, limit = 5000) => request<{ events: AgentEvent[] }>(`/events?since=${since}&limit=${limit}`),
   run: (id: string) => request<{ run: Run; events: AgentEvent[] }>(`/runs/${id}`),
   cancelRun: (id: string) => request<{ ok: true }>(`/runs/${id}/cancel`, { method: "POST" }),
 

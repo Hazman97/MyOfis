@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: "/approvals", name: "approvals", component: () => import("./views/ApprovalsView.vue") },
     { path: "/drafts", name: "drafts", component: () => import("./views/DraftsView.vue") },
     { path: "/chat", name: "chat", component: () => import("./views/ChatView.vue") },
+    { path: "/replay", name: "replay", component: () => import("./views/ReplayView.vue") },
     { path: "/agents", name: "agents", component: () => import("./views/AgentsView.vue") },
     { path: "/schedules", name: "schedules", component: () => import("./views/SchedulesView.vue") },
     { path: "/projects", name: "projects", component: () => import("./views/ProjectsView.vue") },

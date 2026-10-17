@@ -2,7 +2,12 @@
 
 A personal AI agent orchestration system for a single owner. You create agents, give them jobs, approve risky actions, and watch them work in a pixel-art office. The full spec is in [SPEC.md](SPEC.md).
 
-**Status: Phase 4 done (awaiting owner sign-off).**
+**Status: Phase 5 done: every phase of the spec is built (Phases 4 and 5 await the owner's sign-off).**
+- **Exposure (Phase 5):**
+  - `AUTH_MODE=cf-access` (Cloudflare Access JWT verified against your team and email);
+  - a Cloudflare Tunnel guide, and runners on other machines through the tunnel ([docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md));
+  - **Replay** of past runs in the office at 1x/4x/16x;
+  - **agent memory** (agents keep short notes across runs; you can delete them).
 - **Marketing + chat (Phase 4):**
   - project briefs, a Marketing agent that writes drafts (it never posts), and a drafts inbox where your edits and feedback become its style memory;
   - the feature log (merged PR → Coder's note → Tester screenshot + Marketing announcements);
@@ -54,7 +59,7 @@ bun run build         # builds apps/web/dist
 bun run start:hub     # hub serves the UI on http://127.0.0.1:8787
 ```
 
-The hub binds to `127.0.0.1` only. Never expose it directly. Remote access comes in Phase 5, through Cloudflare Tunnel + Access.
+The hub binds to `127.0.0.1` only. Never expose it directly. For access from your phone or other machines, put it behind Cloudflare Tunnel + Access: [docs/cloudflare-tunnel.md](docs/cloudflare-tunnel.md).
 
 ## Pair a runner
 
@@ -169,7 +174,7 @@ You can also add a note yourself in **Projects → Feature log**.
 
 ## Chat
 
-**Chat** talks to any agent. Each message is a small job, so it shows in the office, counts toward the budget and still asks for approvals. Earlier messages in the thread go along with each new one.
+**Chat** talks to any agent. Each message is a small job, so it shows in the office, counts toward the budget and still asks for approvals. Chat messages stay off the Board and its stats (the dashboard shows "+ N chat messages" instead), and a failed chat message is not sent to Telegram. Earlier messages in the thread go along with each new one.
 - **Marketing:** ask for posts in plain words; whatever it writes lands in Drafts.
 - **Coach (English speaking partner):**
   - Practises unscripted conversation: free talk, interviews with unexpected follow-ups, work situations, pitches and quick drills.
@@ -199,6 +204,14 @@ Each agent has a daily token budget (Agents → Edit; `0` = no limit). When the 
 - the agent "goes home" in the office;
 - its jobs wait until midnight (Malaysia time) or until you raise the budget.
 
+## Replay and agent memory
+
+**Replay** (`/replay`, or **Replay in the office** on any finished run) rebuilds the office as it was and lets the characters re-enact a run or a time range at 1x/4x/16x. Long waits are shortened. It uses its own copy of the state, so the live office is untouched.
+
+**Agent memory**: agents with the `remember` tool (Coach, Marketing) save short notes that come back in every later run, for example your recurring English mistakes or "no emoji on Facebook". To see or delete them, click the agent in the office: the panel has a **Remembers** section.
+
+Not built, on purpose: the Docker sandbox (you chose no Docker) and Langfuse tracing (optional in the spec).
+
 ## Kill switch
 
 **Pause all** in the header cancels running jobs, and new jobs stay queued until you click **Resume all**. To pause one agent, click **Pause agent** on the Agents page.
@@ -219,6 +232,7 @@ The office tests check that every event type has a reaction, and that a characte
 apps/hub      Hono API + WebSockets + SQLite (Drizzle) + dispatch
 apps/runner   Runner daemon: pairing, outbound WS, workspaces, runtimes (Vercel AI SDK, mock)
 apps/web      Vue 3 + Pinia + Tailwind UI; src/office = pixel art, map, character brain, Phaser scene
+docs/         Owner's guide (Manglish), open docs/panduan-agent-office.html in a browser
 maps/         Office map (Tiled .tmj), tileset and sprite atlases (built from code, served by the hub)
 packages/shared  Zod schemas: entities, events, protocol, reducer, pricing, presets, redaction
 packages/agents  Agent definitions (data + system prompts): Echo, Pak Guard, Tester, Coder, Marketing, English Coach

@@ -22,6 +22,20 @@
       "when": 1792200830876,
       "tag": "0002_phase4_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792206396706,
+      "tag": "0003_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792206397557,
+      "tag": "0004_session_search",
+      "breakpoints": true
     }
   ]
 }

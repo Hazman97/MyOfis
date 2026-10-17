@@ -47,6 +47,8 @@ export interface RunnerClientOptions {
   /** Runner-private data folder (screenshot baselines). Never inside a workspace. */
   dataDir?: string;
   maxConcurrentRuns?: number;
+  /** Sent with every request to the hub (e.g. Cloudflare Access service token headers). */
+  extraHeaders?: Record<string, string>;
   /** Override runtime selection (tests). */
   pickRuntime?: (a: RunAssignment) => AgentRuntime;
   log?: (msg: string) => void;
@@ -107,7 +109,7 @@ export class RunnerClient {
     const url = new URL("/ws/runner", this.#opts.hubUrl);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     // Bun's WebSocket accepts headers; the token never goes in the URL.
-    const ws = new WebSocket(url.toString(), { headers: { Authorization: `Bearer ${this.#opts.token}` } } as never);
+    const ws = new WebSocket(url.toString(), { headers: { ...this.#opts.extraHeaders, Authorization: `Bearer ${this.#opts.token}` } } as never);
     this.#ws = ws;
 
     ws.onopen = () => {
@@ -217,11 +219,22 @@ export class RunnerClient {
     const res = await freshFetch(url, {
       method: "POST",
       timeoutMs: 60_000,
-      headers: { authorization: `Bearer ${this.#opts.token}`, "content-type": contentType },
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": contentType },
       body: data,
     });
     if (!res.ok) throw new Error(`artifact upload failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
     return ((await res.json()) as { path: string }).path;
+  }
+
+  async #search(runId: string, query: string, allAgents: boolean) {
+    const res = await freshFetch(new URL("/api/runner/search", this.#opts.hubUrl), {
+      method: "POST",
+      timeoutMs: 20_000,
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ run_id: runId, query, all_agents: allAgents }),
+    });
+    if (!res.ok) throw new Error(`search failed (${res.status})`);
+    return ((await res.json()) as { results: Awaited<ReturnType<import("@agent-office/tools").ToolContext["searchSessions"]>> }).results;
   }
 
   #requestApproval(runId: string, req: ApprovalRequest, signal: AbortSignal): Promise<boolean> {
@@ -266,6 +279,9 @@ export class RunnerClient {
         uploadArtifact: (name, data, type) => this.#upload(a.run_id, name, data, type),
         saveDraft: (d) => this.#sendRun(a.run_id, { type: "run.draft", ...d }),
         addFeatureNote: (f) => this.#sendRun(a.run_id, { type: "run.feature_note", ...f }),
+        saveMemory: (target, ops) => this.#sendRun(a.run_id, { type: "run.memory", target, ops }),
+        proposeSkill: (p) => this.#sendRun(a.run_id, { type: "run.skill", ...p }),
+        searchSessions: (query, allAgents) => this.#search(a.run_id, query, allAgents),
         baselineDir: this.#opts.dataDir ? join(this.#opts.dataDir, "baselines", a.agent.slug) : null,
       });
       if (run.abort.signal.aborted) throw run.abort.signal.reason;

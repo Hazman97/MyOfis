@@ -114,6 +114,8 @@ export function momentSteps(m: AgentMoment, targetDesk: (slug: string) => string
       return [{ ...base, target: { zone: "notice_board" }, bubble: "pr", hold: 1500, onArrive: "pin_note" }];
     case "feature_pinned":
       return [{ ...base, target: { zone: "notice_board" }, carrying: true, bubble: "check", hold: 1500, onArrive: "pin_note" }];
+    case "skill_shelved":
+      return [{ ...base, target: { zone: "library" }, carrying: true, bubble: "book", hold: 1200 }];
     case "draft_pinned":
       return [{ ...base, target: { zone: "whiteboard" }, carrying: true, bubble: "check", hold: 1000 }];
     case "handoff": {

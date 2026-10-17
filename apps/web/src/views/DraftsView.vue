@@ -48,35 +48,70 @@ const pendingCount = computed(() => Object.keys(office.state.pending_drafts ?? {
       title="Drafts"
       description="Posts and copy Marketing wrote for you. Nothing is ever posted for you: approve or edit what you like, then copy it out. Your edits and feedback teach Marketing your style."
     >
-      <RouterLink v-if="marketing" :to="{ path: '/jobs/new', query: { agent: marketing.slug } }" class="btn btn-primary">New brief for Marketing</RouterLink>
+      <RouterLink v-if="marketing" :to="{ path: '/jobs/new', query: { agent: marketing.slug } }" class="btn btn-primary shadow-sm">New brief for Marketing</RouterLink>
     </PageHeader>
 
-    <div class="mb-4 flex flex-wrap items-center gap-2">
-      <div class="flex rounded-lg border border-line bg-surface p-0.5" role="tablist">
-        <button role="tab" class="rounded-md px-3 py-1.5 text-sm font-medium" :class="tab === 'pending' ? 'bg-surface-2 text-fg' : 'text-muted'" :aria-selected="tab === 'pending'" @click="tab = 'pending'">
-          Waiting <span class="font-mono text-faint">{{ pendingCount }}</span>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="inline-flex rounded-xl border border-line bg-surface-2/60 p-1" role="tablist" aria-label="Draft status">
+        <button
+          role="tab"
+          class="inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150"
+          :class="tab === 'pending' ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
+          :aria-selected="tab === 'pending'"
+          @click="tab = 'pending'"
+        >
+          Waiting
+          <span
+            v-if="pendingCount"
+            class="rounded-full px-1.5 font-mono text-[10px] leading-4 font-bold"
+            :class="tab === 'pending' ? 'bg-black/20 text-accent-ink' : 'bg-signal text-white'"
+          >
+            {{ pendingCount }}
+          </span>
         </button>
-        <button role="tab" class="rounded-md px-3 py-1.5 text-sm font-medium" :class="tab === 'decided' ? 'bg-surface-2 text-fg' : 'text-muted'" :aria-selected="tab === 'decided'" @click="tab = 'decided'">
+        <button
+          role="tab"
+          class="inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150"
+          :class="tab === 'decided' ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
+          :aria-selected="tab === 'decided'"
+          @click="tab = 'decided'"
+        >
           Decided
         </button>
       </div>
-      <select v-model="projectId" class="input ml-auto w-auto" aria-label="Project">
+
+      <select v-model="projectId" class="input w-auto text-xs py-1.5" aria-label="Project">
         <option value="">All projects</option>
         <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
     </div>
 
-    <p v-if="error" class="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
+    <p v-if="error" class="mb-3 rounded-xl border border-danger/30 bg-danger-soft px-3 py-2 text-xs font-medium text-danger">{{ error }}</p>
 
     <div class="space-y-3">
       <DraftCard v-for="d in drafts" :key="d.id" :draft="d" :project-name="projectName(d.project_id)" @decided="onDecided" />
-      <div v-if="!drafts.length" class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line px-6 py-10 text-center">
-        <FilePenLine :size="28" class="text-faint" :stroke-width="1.5" />
-        <p class="font-medium">{{ tab === "pending" ? "No drafts waiting" : "Nothing decided yet" }}</p>
-        <p class="max-w-sm text-sm text-muted">
+      <div v-if="!drafts.length" class="card flex flex-col items-center justify-center p-12 text-center border-dashed">
+        <div class="mb-3 flex size-12 items-center justify-center rounded-2xl border border-line bg-surface-2 text-muted shadow-sm">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="size-6 text-faint"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+        </div>
+        <h3 class="font-semibold text-sm tracking-tight text-fg">{{ tab === "pending" ? "No drafts waiting" : "Nothing decided yet" }}</h3>
+        <p class="mt-1 max-w-sm text-xs text-muted leading-relaxed">
           Give Marketing a job (captions, a video script, a content calendar…) or chat with it. Fill in the project's brief first so it knows your prices and tone.
         </p>
-        <RouterLink to="/projects" class="mt-1 text-sm font-medium text-accent hover:underline">Edit project briefs</RouterLink>
+        <RouterLink to="/projects" class="mt-3 text-xs font-semibold text-accent hover:underline">Edit project briefs →</RouterLink>
       </div>
     </div>
   </div>

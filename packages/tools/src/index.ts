@@ -3,6 +3,7 @@ import { editFileTool, listDirTool, readFileTool, writeFileTool } from "./fs.ts"
 import { GIT_TOOLS } from "./git.ts";
 import { GITEA_TOOLS } from "./gitea.ts";
 import { handoffTool } from "./handoff.ts";
+import { LEARNING_TOOLS, rememberTool } from "./memory.ts";
 import { runCommandTool } from "./shell.ts";
 import { WEB_TOOLS } from "./web.ts";
 import type { ToolDef } from "./types.ts";
@@ -29,6 +30,8 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     ...WEB_TOOLS,
     ...CONTENT_TOOLS,
     addFeatureNoteTool,
+    rememberTool,
+    ...LEARNING_TOOLS,
   ].map((t) => [t.name, t as unknown as ToolDef]),
 );
 

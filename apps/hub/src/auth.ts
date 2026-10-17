@@ -1,4 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
+import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
+import { freshFetch } from "@agent-office/shared";
 import type { HubConfig } from "./env.ts";
 import { safeEqual, type Secrets } from "./crypto.ts";
 
@@ -19,11 +21,7 @@ export interface Authenticator {
 }
 
 export function createAuthenticator(config: HubConfig, secrets: Secrets): Authenticator {
-  if (config.authMode === "cf-access") {
-    throw new Error(
-      "AUTH_MODE=cf-access is planned for Phase 5 and not implemented yet. Use AUTH_MODE=local and keep HUB_HOST=127.0.0.1.",
-    );
-  }
+  if (config.authMode === "cf-access") return cfAccessAuthenticator(config);
   const verifyCookie = (value: string | undefined): boolean => {
     if (!value) return false;
     const [exp, sig] = value.split(".");
@@ -42,6 +40,35 @@ export function createAuthenticator(config: HubConfig, secrets: Secrets): Authen
       const exp = String(Date.now() + SESSION_TTL_MS);
       return `${exp}.${secrets.sign(`session:${exp}`)}`;
     },
+  };
+}
+
+/**
+ * Cloudflare Access: the tunnel puts the signed `Cf-Access-Jwt-Assertion` header (and the
+ * `CF_Authorization` cookie) on every request that passed the Access login. We verify it
+ * against the team's public keys, the application audience and the owner's email.
+ * Requests that did not come through Access (no or bad JWT) are never the owner.
+ */
+function cfAccessAuthenticator(config: HubConfig): Authenticator {
+  const { teamDomain, aud, ownerEmail, certsUrl } = config.cfAccess;
+  const issuer = `https://${teamDomain.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
+  const jwks = createRemoteJWKSet(new URL(certsUrl || `${issuer}/cdn-cgi/access/certs`), {
+    [customFetch]: (url: string, init: RequestInit) => freshFetch(url, { ...init, timeoutMs: 10_000 }),
+  });
+  const owner = ownerEmail.trim().toLowerCase();
+  return {
+    mode: "cf-access",
+    async isOwner(req) {
+      const token = req.headers.get("cf-access-jwt-assertion") ?? readCookie(req.headers.get("cookie"), "CF_Authorization");
+      if (!token) return false;
+      try {
+        const { payload } = await jwtVerify(token, jwks, { issuer, audience: aud, algorithms: ["RS256"] });
+        return typeof payload.email === "string" && payload.email.toLowerCase() === owner;
+      } catch {
+        return false;
+      }
+    },
+    login: () => null,
   };
 }
 

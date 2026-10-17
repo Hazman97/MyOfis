@@ -156,46 +156,80 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
 
 <template>
   <SidePanel :title="project.name" sign="Project" wide @close="emit('close')">
-    <div class="mb-4 flex rounded-lg border border-line bg-surface p-0.5" role="tablist">
-      <button role="tab" class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium" :class="tab === 'brief' ? 'bg-surface-2 text-fg' : 'text-muted'" :aria-selected="tab === 'brief'" @click="tab = 'brief'">Brief</button>
-      <button role="tab" class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium" :class="tab === 'features' ? 'bg-surface-2 text-fg' : 'text-muted'" :aria-selected="tab === 'features'" @click="tab = 'features'">
-        Feature log <span class="font-mono text-faint">{{ features.length }}</span>
+    <div class="mb-5 flex rounded-xl border border-line bg-surface-2/60 p-1" role="tablist">
+      <button
+        role="tab"
+        class="flex-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 text-center"
+        :class="tab === 'brief' ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
+        :aria-selected="tab === 'brief'"
+        @click="tab = 'brief'"
+      >
+        Brief
+      </button>
+      <button
+        role="tab"
+        class="flex-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 text-center"
+        :class="tab === 'features' ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
+        :aria-selected="tab === 'features'"
+        @click="tab = 'features'"
+      >
+        Feature log
+        <span class="ml-1 font-mono text-[10px]" :class="tab === 'features' ? 'text-accent-ink/80' : 'text-faint'">({{ features.length }})</span>
       </button>
     </div>
 
     <!-- BRIEF -->
     <form v-if="tab === 'brief' && loaded" id="brief-form" class="space-y-5" @submit.prevent="save">
-      <p class="text-sm text-muted">
-        Everything Marketing knows about {{ project.name }}. It only states facts written here or in the feature log. Saved to <code>{{ path }}</code>.
+      <p class="text-xs text-muted leading-relaxed">
+        Everything Marketing knows about <span class="font-medium text-fg">{{ project.name }}</span>. It only states facts written here or in the feature log. Saved to <code class="text-[11px]">{{ path }}</code>.
       </p>
-      <div v-if="!exists && briefIsEmpty && example" class="flex flex-wrap items-center gap-2 rounded-md bg-info-soft px-3 py-2 text-sm text-info">
-        <Sparkles :size="15" /> New brief.
-        <button type="button" class="font-medium underline" @click="fill({ ...example, project: project.name })">Start from the example (Sewa Kamera)</button>
+
+      <div v-if="!exists && briefIsEmpty && example" class="flex flex-wrap items-center gap-2 rounded-xl border border-info/30 bg-info-soft p-3 text-xs text-info">
+        <Sparkles :size="15" class="shrink-0" />
+        <span>New brief.</span>
+        <button type="button" class="font-semibold underline hover:opacity-85" @click="fill({ ...example, project: project.name })">
+          Start from the example (Sewa Kamera)
+        </button>
       </div>
 
-      <fieldset class="space-y-3">
-        <legend class="sign mb-1">The product</legend>
+      <!-- Section: The product -->
+      <fieldset class="card p-4 space-y-3.5 bg-surface/70 border-line">
+        <legend class="sign text-[10px] tracking-wider text-accent px-1">The product</legend>
         <div><label class="label" for="b-name">Name</label><input id="b-name" v-model="form.project" class="input" /></div>
-        <div><label class="label" for="b-one">One line · what it is</label><input id="b-one" v-model="form.one_liner" class="input" maxlength="300" placeholder="Sewa kamera vlog + flash + tripod untuk content creator dan event" /></div>
+        <div>
+          <label class="label" for="b-one">One line · what it is</label>
+          <input id="b-one" v-model="form.one_liner" class="input" maxlength="300" placeholder="Sewa kamera vlog + flash + tripod untuk content creator dan event" />
+        </div>
         <div class="grid gap-3 sm:grid-cols-2">
-          <div><label class="label" for="b-target">Who it is for</label><textarea id="b-target" v-model="form.target" class="input min-h-16" maxlength="500" /></div>
-          <div><label class="label" for="b-pain">Their problem</label><textarea id="b-pain" v-model="form.pain_point" class="input min-h-16" maxlength="500" /></div>
+          <div><label class="label" for="b-target">Who it is for</label><textarea id="b-target" v-model="form.target" class="input min-h-16 text-xs" maxlength="500" /></div>
+          <div><label class="label" for="b-pain">Their problem</label><textarea id="b-pain" v-model="form.pain_point" class="input min-h-16 text-xs" maxlength="500" /></div>
         </div>
       </fieldset>
 
-      <fieldset class="space-y-3">
-        <legend class="sign mb-1">Facts Marketing may use</legend>
-        <div><label class="label" for="b-price">Prices</label><textarea id="b-price" v-model="form.pricing" class="input min-h-16" maxlength="1000" placeholder="RM80 sehari, RM200 3 hari, deposit RM300" /></div>
+      <!-- Section: Facts -->
+      <fieldset class="card p-4 space-y-3.5 bg-surface/70 border-line">
+        <legend class="sign text-[10px] tracking-wider text-accent px-1">Facts Marketing may use</legend>
+        <div>
+          <label class="label" for="b-price">Prices</label>
+          <textarea id="b-price" v-model="form.pricing" class="input min-h-16 text-xs" maxlength="1000" placeholder="RM80 sehari, RM200 3 hari, deposit RM300" />
+        </div>
         <div class="grid gap-3 sm:grid-cols-2">
           <div><label class="label" for="b-loc">Location</label><input id="b-loc" v-model="form.location" class="input" maxlength="300" placeholder="Shah Alam, pickup / COD Klang Valley" /></div>
           <div><label class="label" for="b-cta">Call to action</label><input id="b-cta" v-model="form.call_to_action" class="input" maxlength="300" placeholder="WhatsApp 012-345 6789" /></div>
         </div>
-        <div><label class="label" for="b-facts">Other facts · one per line</label><textarea id="b-facts" v-model="form.facts" class="input min-h-20" placeholder="Set lengkap: Sony ZV-E10 + flash + tripod&#10;Free memory card 64GB" /></div>
+        <div>
+          <label class="label" for="b-facts">Other facts · one per line</label>
+          <textarea id="b-facts" v-model="form.facts" class="input min-h-20 text-xs font-mono" placeholder="Set lengkap: Sony ZV-E10 + flash + tripod&#10;Free memory card 64GB" />
+        </div>
       </fieldset>
 
-      <fieldset class="space-y-3">
-        <legend class="sign mb-1">Voice</legend>
-        <div><label class="label" for="b-tone">Tone</label><input id="b-tone" v-model="form.tone" class="input" maxlength="300" placeholder="santai, Manglish, mesra, tak overclaim" /></div>
+      <!-- Section: Voice -->
+      <fieldset class="card p-4 space-y-3.5 bg-surface/70 border-line">
+        <legend class="sign text-[10px] tracking-wider text-accent px-1">Voice</legend>
+        <div>
+          <label class="label" for="b-tone">Tone</label>
+          <input id="b-tone" v-model="form.tone" class="input" maxlength="300" placeholder="santai, Manglish, mesra, tak overclaim" />
+        </div>
         <div>
           <span class="label">Platforms and language</span>
           <div class="flex flex-wrap gap-1.5">
@@ -203,41 +237,55 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
               v-for="p in PLATFORMS"
               :key="p"
               type="button"
-              class="chip cursor-pointer px-2.5 py-1"
-              :class="form.platforms.includes(p) ? 'border-accent bg-accent-soft text-accent' : 'hover:bg-surface-2'"
+              class="chip cursor-pointer px-3 py-1 text-xs font-medium transition-all active:scale-95"
+              :class="form.platforms.includes(p) ? 'border-emerald-500/50 bg-accent text-accent-ink font-semibold shadow-sm' : 'border-line bg-surface text-muted hover:bg-surface-2 hover:text-fg'"
               :aria-pressed="form.platforms.includes(p)"
               @click="togglePlatform(p)"
             >
               {{ PLATFORM_LABEL[p] }}
             </button>
           </div>
-          <div v-if="form.platforms.length" class="mt-2 grid gap-2 sm:grid-cols-2">
-            <label v-for="p in form.platforms" :key="p" class="flex items-center gap-2 text-sm">
-              <span class="w-24 shrink-0 text-muted">{{ PLATFORM_LABEL[p] }}</span>
-              <select v-model="form.languages[p]" class="input">
+          <div v-if="form.platforms.length" class="mt-3 grid gap-2.5 sm:grid-cols-2">
+            <label v-for="p in form.platforms" :key="p" class="flex items-center gap-2 rounded-lg border border-line/60 bg-surface-2/40 px-3 py-1.5 text-xs">
+              <span class="w-24 shrink-0 font-medium text-fg">{{ PLATFORM_LABEL[p] }}</span>
+              <select v-model="form.languages[p]" class="input py-1 text-xs">
                 <option v-for="l in LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
               </select>
             </label>
           </div>
         </div>
-        <div><label class="label" for="b-dont">Never say · one per line</label><textarea id="b-dont" v-model="form.do_not" class="input min-h-16" placeholder='guna "terbaik di Malaysia"&#10;janji benda yang tak boleh tunai' /></div>
-        <p class="-mt-1 text-xs text-faint">Words in "quotes" are blocked word for word: Marketing cannot save a draft that contains them.</p>
+        <div>
+          <label class="label" for="b-dont">Never say · one per line</label>
+          <textarea id="b-dont" v-model="form.do_not" class="input min-h-16 text-xs font-mono" placeholder='guna "terbaik di Malaysia"&#10;janji benda yang tak boleh tunai' />
+          <p class="mt-1 text-[11px] text-faint">Words in "quotes" are blocked word for word: Marketing cannot save a draft that contains them.</p>
+        </div>
       </fieldset>
 
-      <fieldset class="space-y-3">
-        <legend class="sign mb-1">Posts you like (style examples)</legend>
-        <p class="text-xs text-muted">Paste 3–10 posts whose style you want: your own best posts or ones you admire. Marketing learns the style (hooks, rhythm, emoji, CTA); it is blocked from copying their sentences.</p>
+      <!-- Section: Style examples -->
+      <fieldset class="card p-4 space-y-3.5 bg-surface/70 border-line">
+        <legend class="sign text-[10px] tracking-wider text-accent px-1">Posts you like (style examples)</legend>
+        <p class="text-xs text-muted leading-relaxed">
+          Paste 3–10 posts whose style you want: your own best posts or ones you admire. Marketing learns the style (hooks, rhythm, emoji, CTA); it is blocked from copying their sentences.
+        </p>
         <div v-for="(_, i) in form.good_examples" :key="i" class="flex items-start gap-2">
-          <textarea v-model="form.good_examples[i]" class="input min-h-20 text-[13px]" :aria-label="`Example post ${i + 1}`" />
-          <button type="button" class="btn btn-ghost btn-sm" aria-label="Remove example" @click="form.good_examples.splice(i, 1)"><Trash2 :size="14" /></button>
+          <textarea
+            v-model="form.good_examples[i]"
+            class="input min-h-24 font-mono text-xs leading-relaxed bg-surface/50 focus:bg-surface transition-colors shadow-inner"
+            :aria-label="`Example post ${i + 1}`"
+          />
+          <button type="button" class="btn btn-ghost btn-sm size-8 p-0 text-muted hover:text-danger transition-colors" aria-label="Remove example" @click="form.good_examples.splice(i, 1)">
+            <Trash2 :size="14" />
+          </button>
         </div>
-        <button type="button" class="btn btn-sm" :disabled="form.good_examples.length >= 20" @click="form.good_examples.push('')"><Plus :size="13" /> Add example post</button>
-        <div>
+        <button type="button" class="btn btn-sm" :disabled="form.good_examples.length >= 20" @click="form.good_examples.push('')">
+          <Plus :size="13" /> Add example post
+        </button>
+        <div class="pt-2 border-t border-line/60">
           <label class="label" for="b-style">Style notes</label>
-          <textarea id="b-style" v-model="form.style_notes" class="input min-h-28 text-[13px]" maxlength="6000" placeholder="Written by Marketing from the examples, or by you." />
-          <p class="mt-1 text-xs text-faint">
+          <textarea id="b-style" v-model="form.style_notes" class="input min-h-28 text-xs leading-relaxed font-mono" maxlength="6000" placeholder="Written by Marketing from the examples, or by you." />
+          <p class="mt-1 text-[11px] text-faint">
             Let Marketing write these: give it a <b>Writing-style analysis</b> job (or ask in
-            <RouterLink :to="{ path: '/chat', query: { agent: 'marketing' } }" class="text-accent hover:underline">Chat</RouterLink>). Approving that draft fills this box.
+            <RouterLink :to="{ path: '/chat', query: { agent: 'marketing' } }" class="text-accent hover:underline font-medium">Chat</RouterLink>). Approving that draft fills this box.
           </p>
         </div>
       </fieldset>
@@ -245,40 +293,50 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
 
     <!-- FEATURE LOG -->
     <div v-else-if="tab === 'features'" class="space-y-5">
-      <p class="text-sm text-muted">
+      <p class="text-xs text-muted leading-relaxed">
         What changed for customers, newest first. Coder adds a note after one of its pull requests is merged and CI passes. Each note asks Tester for a screenshot and Marketing for announcement drafts.
       </p>
-      <form class="card space-y-3 p-3" @submit.prevent="addNote">
-        <div class="sign">Add a note yourself</div>
+
+      <form class="card space-y-3 p-4 bg-surface/70 border-line" @submit.prevent="addNote">
+        <div class="sign text-[10px] tracking-wider text-accent">Add a note yourself</div>
         <input v-model="note.title" class="input" required minlength="3" maxlength="160" placeholder="Booking boleh pilih masa sendiri" aria-label="Title" />
-        <textarea v-model="note.user_facing_note" class="input min-h-16" required minlength="10" maxlength="2000" placeholder="Plain words for customers: what they can do now." aria-label="Note" />
+        <textarea v-model="note.user_facing_note" class="input min-h-16 text-xs" required minlength="10" maxlength="2000" placeholder="Plain words for customers: what they can do now." aria-label="Note" />
         <div class="flex items-center gap-2">
-          <p v-if="noteError" class="min-w-0 flex-1 truncate text-sm text-danger">{{ noteError }}</p>
-          <button class="btn btn-primary btn-sm ml-auto" :disabled="noteBusy">Release note</button>
+          <p v-if="noteError" class="min-w-0 flex-1 truncate text-xs text-danger">{{ noteError }}</p>
+          <button class="btn btn-primary btn-sm ml-auto shadow-sm" :disabled="noteBusy">Release note</button>
         </div>
       </form>
-      <ol class="space-y-3">
-        <li v-for="f in features" :key="f.id" class="border-l-2 border-accent pl-3">
-          <div class="flex flex-wrap items-baseline gap-2">
-            <span class="font-medium">{{ f.title }}</span>
-            <span class="text-xs text-faint">{{ fmtDateTime(f.released_at) }}</span>
-            <span v-if="f.announced" class="chip text-[11px]">announced</span>
-          </div>
-          <p class="mt-0.5 text-sm text-muted">{{ f.user_facing_note }}</p>
-          <div class="mt-1 flex gap-3 text-xs">
-            <a v-if="f.source_pr_url" :href="f.source_pr_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-accent hover:underline"><ExternalLink :size="12" /> Pull request</a>
-            <a v-if="f.screenshot_path" :href="artifactUrl(f.screenshot_path)" target="_blank" class="inline-flex items-center gap-1 text-accent hover:underline"><Image :size="12" /> Screenshot</a>
+
+      <!-- Vertical Timeline -->
+      <ol class="relative ml-3 space-y-5 border-l border-line pl-5">
+        <li v-for="f in features" :key="f.id" class="relative group">
+          <span class="absolute -left-[27px] top-1.5 size-3 rounded-full border-2 border-surface bg-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+          <div class="card p-3.5 space-y-2">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <span class="font-semibold text-sm text-fg">{{ f.title }}</span>
+              <span class="font-mono text-[11px] text-faint">{{ fmtDateTime(f.released_at) }}</span>
+            </div>
+            <p class="text-xs text-muted leading-relaxed">{{ f.user_facing_note }}</p>
+            <div class="flex flex-wrap items-center gap-3 pt-1 border-t border-line/50 text-xs">
+              <span v-if="f.announced" class="chip text-[10px] border-accent/40 bg-accent/10 text-accent font-medium">announced</span>
+              <a v-if="f.source_pr_url" :href="f.source_pr_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-accent hover:underline font-medium">
+                <ExternalLink :size="12" /> Pull request
+              </a>
+              <a v-if="f.screenshot_path" :href="artifactUrl(f.screenshot_path)" target="_blank" class="inline-flex items-center gap-1 text-accent hover:underline font-medium">
+                <Image :size="12" /> Screenshot
+              </a>
+            </div>
           </div>
         </li>
-        <li v-if="!features.length" class="text-sm text-faint">No releases yet.</li>
+        <li v-if="!features.length" class="text-xs text-faint">No releases yet.</li>
       </ol>
     </div>
 
     <template v-if="tab === 'brief'" #footer>
-      <p v-if="error" class="min-w-0 flex-1 truncate text-sm text-danger" :title="error">{{ error }}</p>
-      <p v-else-if="saved" class="min-w-0 flex-1 text-sm text-accent">Saved.</p>
+      <p v-if="error" class="min-w-0 flex-1 truncate text-xs text-danger" :title="error">{{ error }}</p>
+      <p v-else-if="saved" class="min-w-0 flex-1 text-xs font-semibold text-accent">Saved.</p>
       <button type="button" class="btn ml-auto" @click="emit('close')">Close</button>
-      <button form="brief-form" class="btn btn-primary" :disabled="busy">Save brief</button>
+      <button form="brief-form" class="btn btn-primary shadow-sm" :disabled="busy">Save brief</button>
     </template>
   </SidePanel>
 </template>

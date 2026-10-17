@@ -10,6 +10,8 @@ import { z, ZodError } from "zod";
 import {
   AgentInput,
   AgentPatch,
+  MAX_SKILL_CHARS,
+  MEMORY_LIMITS,
   DraftDecision,
   EXAMPLE_BRIEF,
   FeatureNoteInput,
@@ -100,12 +102,14 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   // ------------------------------------------------------------ public
 
   app.get("/api/health", (c) => c.json({ ok: true }));
+  /** The login page asks which way to sign in. */
+  app.get("/api/auth/mode", (c) => c.json({ mode: auth.mode }));
 
   app.post("/api/auth/login", async (c) => {
     if (!loginLimit()) throw new HttpError(429, "too many attempts, wait a minute");
     const { token } = z.object({ token: z.string().min(1).max(500) }).parse(await c.req.json());
     const value = auth.login(token);
-    if (!value) throw new HttpError(401, "wrong token");
+    if (!value) throw new HttpError(401, auth.mode === "cf-access" ? "this hub signs in through Cloudflare Access" : "wrong token");
     setCookie(c, SESSION_COOKIE, value, {
       httpOnly: true,
       sameSite: "Strict",
@@ -118,7 +122,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
 
   app.post("/api/auth/logout", (c) => {
     deleteCookie(c, SESSION_COOKIE, { path: "/" });
-    return c.json({ ok: true });
+    // behind Cloudflare Access the session lives at Cloudflare: send the browser to its logout page
+    return c.json({ ok: true, logout_url: auth.mode === "cf-access" ? "/cdn-cgi/access/logout" : null });
   });
 
   /** Runner exchanges a one-time pairing code for a long-lived token. */
@@ -159,6 +164,19 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const key = `artifacts/${runId}/${name}`;
     await hub.storage.put(key, data);
     return c.json({ path: key }, 201);
+  });
+
+  /** session_search for runners: authenticated with the runner token, scoped to the run's agent unless asked otherwise. */
+  app.post("/api/runner/search", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const body = z.object({ run_id: z.string(), query: z.string().min(2).max(300), all_agents: z.boolean().default(false) }).parse(await c.req.json());
+    const run = getRun(db, body.run_id);
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+    const hits = hub.learning.search(body.query, body.all_agents ? null : run.agent_id).filter((h) => h.run_id !== run.id);
+    return c.json({ results: hits });
   });
 
   // ------------------------------------------------------------ owner only
@@ -270,6 +288,41 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const changes = Object.fromEntries(Object.entries(patch).filter(([k]) => k in raw));
     const row = db.update(projects).set(changes).where(eq(projects.id, id)).returning().get();
     return c.json({ project: row });
+  });
+
+  // memory (Hermes-style): each agent's notes + the owner profile shared by all agents
+  const learning = hub.learning;
+  const memTarget = z.enum(["memory", "user"]);
+  api.get("/agents/:id/memory", (c) => {
+    const id = c.req.param("id");
+    if (!getAgent(db, id)) throw new HttpError(404, "agent not found");
+    return c.json({ memory: learning.entries("memory", id), user: learning.entries("user", id), limits: MEMORY_LIMITS, write_approval: learning.writeApproval });
+  });
+  api.put("/agents/:id/memory/:target", async (c) => {
+    const id = c.req.param("id");
+    if (!getAgent(db, id)) throw new HttpError(404, "agent not found");
+    const { entries } = z.object({ entries: z.array(z.string().max(1000)).max(100) }).parse(await c.req.json());
+    return c.json({ entries: learning.replaceEntries(id, memTarget.parse(c.req.param("target")), entries) });
+  });
+  api.put("/memory/settings", async (c) => {
+    learning.writeApproval = z.object({ write_approval: z.boolean() }).parse(await c.req.json()).write_approval;
+    return c.json({ write_approval: learning.writeApproval });
+  });
+
+  // skills (agentskills.io SKILL.md, the format Hermes uses) and proposals waiting for the owner
+  api.get("/skills", (c) => c.json({ skills: learning.skills() }));
+  api.post("/skills", async (c) => {
+    const { content } = z.object({ content: z.string().min(10).max(MAX_SKILL_CHARS) }).parse(await c.req.json());
+    return c.json({ skill: learning.writeSkill(content) }, 201);
+  });
+  api.delete("/skills/:name", (c) => {
+    learning.deleteSkill(c.req.param("name"));
+    return c.json({ ok: true });
+  });
+  api.get("/proposals", (c) => c.json({ proposals: learning.proposals(c.req.query("status") === "pending" ? "pending" : undefined) }));
+  api.post("/proposals/:id/decide", async (c) => {
+    const { decision } = z.object({ decision: z.enum(["approve", "reject"]) }).parse(await c.req.json());
+    return c.json({ proposal: learning.decide(c.req.param("id"), decision) });
   });
 
   // project briefs (projects/<slug>/brief.yaml) and the feature log

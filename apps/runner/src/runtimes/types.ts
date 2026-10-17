@@ -1,5 +1,5 @@
 import type { RunAssignment, RunnerEventBody } from "@agent-office/shared";
-import type { FeatureNoteData } from "@agent-office/shared";
+import type { FeatureNoteData, MemoryOp } from "@agent-office/shared";
 import type { ApprovalRequest, DraftRequest, HandoffRequest } from "@agent-office/tools";
 
 export interface RunContext {
@@ -18,6 +18,9 @@ export interface RunContext {
   saveDraft(req: DraftRequest): void;
   /** Send a released-feature note to the hub (Coder). */
   addFeatureNote(req: { project_id: string; note: FeatureNoteData }): void;
+  saveMemory(target: "memory" | "user", ops: MemoryOp[]): void;
+  proposeSkill(p: { name: string; action: "create" | "patch" | "delete"; content: string; reason: string }): void;
+  searchSessions(query: string, allAgents: boolean): Promise<{ run_id: string; agent_id: string; job_type: string; ts: string; title: string; snippet: string }[]>;
   /** Runner-owned folder (outside the workspace) for this agent's screenshot baselines. */
   baselineDir: string | null;
 }

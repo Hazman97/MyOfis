@@ -66,6 +66,11 @@ describe("Telegram", () => {
     const { body } = await env.api("/api/agents");
     const echo = body.agents.find((a: { slug: string }) => a.slug === "echo");
     await env.api(`/api/agents/${echo.id}`, { method: "PATCH", body: { model: "mock-fail" } });
+    // a failing chat message is not reported: the owner sees it in the chat
+    const chat = await env.api("/api/chat", { body: { agent_id: echo.id, text: "one two three four" } });
+    await waitFor(() => env.hub.hub.store.state.jobs[chat.body.job.id]?.status === "failed", 8000, "chat failed");
+    await Bun.sleep(200);
+    expect(tg.sent.some((s) => s.method === "sendMessage" && String(s.body.text).startsWith("❌"))).toBe(false);
     await env.api("/api/jobs", { body: { agent_id: echo.id, title: "will fail", input: { text: "one two three four" } } });
     const fail = await waitFor(() => tg!.sent.find((s) => s.method === "sendMessage" && String(s.body.text).startsWith("❌")), 8000, "failure message");
     expect(fail.body.chat_id).toBe(String(OWNER));

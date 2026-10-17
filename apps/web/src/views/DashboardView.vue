@@ -9,6 +9,7 @@ import StatusBadge from "../components/StatusBadge.vue";
 import AgentPanel from "../components/office/AgentPanel.vue";
 import { api } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
+import { boardJobs, isChatJob } from "../jobs.ts";
 import { fmtDateTime, fmtTokens, fmtUsd } from "../format.ts";
 
 const office = useOffice();
@@ -52,19 +53,20 @@ const mobileColumn = ref("running");
 
 const byColumn = computed(() => {
   const out: Record<string, JobView[]> = {};
-  for (const c of columns) out[c.key] = office.jobsNewestFirst.filter((j) => c.statuses.includes(j.status));
+  for (const c of columns) out[c.key] = boardJobs(office.jobsNewestFirst).filter((j) => c.statuses.includes(j.status));
   return out;
 });
 
 const today = () => dayKey(new Date().toISOString());
 const stats = computed(() => {
   const d = today();
-  const jobs = office.jobsNewestFirst;
+  const jobs = boardJobs(office.jobsNewestFirst);
   return {
     active: jobs.filter((j) => j.status === "running" || j.status === "waiting_approval").length,
     waiting: Object.keys(office.state.pending_approvals).length,
     doneToday: jobs.filter((j) => j.status === "done" && dayKey(j.created_at) === d).length,
     queued: jobs.filter((j) => j.status === "queued").length,
+    chatToday: office.jobsNewestFirst.filter((j) => isChatJob(j) && dayKey(j.created_at) === d).length,
   };
 });
 const anyRunnerOnline = computed(() => Object.values(office.state.runners).some((r) => r.online));
@@ -95,76 +97,103 @@ async function cancel(j: JobView) {
 
 <template>
   <div class="space-y-6">
-    <PageHeader sign="Office" title="Today in the office">
+    <PageHeader sign="HQ Workspace" title="Today in the office">
       <RouterLink to="/jobs/new" class="btn btn-primary"><Plus :size="16" /> New job</RouterLink>
     </PageHeader>
 
-    <div v-if="office.ready && !anyRunnerOnline" class="rounded-lg border border-signal/40 bg-signal-soft px-4 py-3 text-sm text-signal">
-      No runner is online, so jobs wait in the queue.
-      <RouterLink to="/runners" class="font-semibold underline">Connect a runner</RouterLink>
+    <div v-if="office.ready && !anyRunnerOnline" class="rounded-xl border border-signal/40 bg-signal-soft px-4 py-3 text-sm text-signal flex items-center justify-between gap-3 shadow-sm">
+      <span>No runner is online, so jobs wait in the queue.</span>
+      <RouterLink to="/runners" class="btn btn-sm btn-signal font-semibold">Connect a runner</RouterLink>
     </div>
 
     <!-- At a glance -->
-    <section class="grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="At a glance">
-      <div class="card px-4 py-3">
-        <div class="sign">In progress</div>
-        <div class="mt-1 font-mono text-2xl font-medium tabular-nums">{{ stats.active }}</div>
+    <section class="grid grid-cols-2 gap-3.5 md:grid-cols-4" aria-label="At a glance">
+      <div class="card p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card">
+        <div class="flex items-center justify-between">
+          <div class="sign">In progress</div>
+          <span class="flex size-2 rounded-full" :class="stats.active ? 'bg-emerald-500 animate-pulse' : 'bg-muted/40'" />
+        </div>
+        <div class="mt-2 font-mono text-2xl font-semibold tabular-nums tracking-tight">{{ stats.active }}</div>
+        <div class="mt-1 text-xs text-muted">Active agent runs</div>
       </div>
-      <RouterLink to="/approvals" class="card px-4 py-3 transition-colors" :class="stats.waiting ? 'border-signal/50 bg-signal-soft' : 'hover:bg-surface-2'">
-        <div class="sign" :class="stats.waiting ? 'text-signal!' : ''">Waiting for you</div>
-        <div class="mt-1 font-mono text-2xl font-medium tabular-nums" :class="stats.waiting ? 'text-signal' : ''">{{ stats.waiting }}</div>
+
+      <RouterLink
+        to="/approvals"
+        class="card p-4 transition-all duration-200 hover:-translate-y-0.5"
+        :class="stats.waiting ? 'border-signal/50 bg-signal-soft/40 shadow-[0_0_20px_-5px_rgba(245,158,11,0.2)]' : 'hover:bg-surface-2'"
+      >
+        <div class="flex items-center justify-between">
+          <div class="sign" :class="stats.waiting ? 'text-signal font-bold' : ''">Waiting for you</div>
+          <span v-if="stats.waiting" class="rounded-full bg-signal px-1.5 py-0.5 font-mono text-[10px] font-bold text-white leading-none">ACTION</span>
+        </div>
+        <div class="mt-2 font-mono text-2xl font-semibold tabular-nums tracking-tight" :class="stats.waiting ? 'text-signal' : ''">{{ stats.waiting }}</div>
+        <div class="mt-1 text-xs" :class="stats.waiting ? 'text-signal/90 font-medium' : 'text-muted'">Pending permissions</div>
       </RouterLink>
-      <div class="card px-4 py-3">
-        <div class="sign">Done today</div>
-        <div class="mt-1 font-mono text-2xl font-medium tabular-nums">{{ stats.doneToday }}</div>
+
+      <div class="card p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card">
+        <div class="flex items-center justify-between">
+          <div class="sign">Done today</div>
+          <span class="flex size-2 rounded-full bg-accent/60" />
+        </div>
+        <div class="mt-2 font-mono text-2xl font-semibold tabular-nums tracking-tight">{{ stats.doneToday }}</div>
+        <div class="mt-1 text-xs text-muted">
+          Completed jobs<RouterLink v-if="stats.chatToday" to="/chat" class="hover:text-fg"> · + {{ stats.chatToday }} chat message{{ stats.chatToday === 1 ? "" : "s" }}</RouterLink>
+        </div>
       </div>
-      <div class="card px-4 py-3">
-        <div class="sign">Spent today</div>
-        <div class="mt-1 font-mono text-2xl font-medium tabular-nums">{{ fmtUsd(office.costToday) }}</div>
+
+      <div class="card p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card">
+        <div class="flex items-center justify-between">
+          <div class="sign">Spent today</div>
+          <span class="text-xs font-mono text-muted">USD</span>
+        </div>
+        <div class="mt-2 font-mono text-2xl font-semibold tabular-nums tracking-tight">{{ fmtUsd(office.costToday) }}</div>
+        <div class="mt-1 text-xs text-muted">Token compute cost</div>
       </div>
     </section>
 
-    <div class="flex items-center gap-3">
-      <div class="flex rounded-lg border border-line bg-surface p-0.5" role="tablist" aria-label="Dashboard view">
+    <!-- View Switcher -->
+    <div class="flex items-center justify-between gap-3">
+      <div class="inline-flex rounded-xl border border-line bg-surface p-1 shadow-sm" role="tablist" aria-label="Dashboard view">
         <button
           v-for="v in VIEWS"
           :key="v.key"
           role="tab"
-          class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium"
-          :class="view === v.key ? 'bg-surface-2 text-fg' : 'text-muted hover:text-fg'"
+          class="inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150"
+          :class="view === v.key ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
           :aria-selected="view === v.key"
           @click="view = v.key"
         >
-          <component :is="v.icon" :size="15" /> {{ v.label }}
+          <component :is="v.icon" :size="14" /> {{ v.label }}
         </button>
       </div>
-      <p v-if="view === 'office'" class="text-xs text-faint max-sm:hidden">
-        Click someone to see what they are doing. A <span class="font-pixel text-signal">!</span> means they need you.
+      <p v-if="view === 'office'" class="text-xs text-muted flex items-center gap-1.5 max-sm:hidden">
+        <span class="size-1.5 rounded-full bg-accent animate-pulse" /> Click an agent to view logs · <span class="font-pixel text-signal">!</span> requires your decision
       </p>
     </div>
 
+    <!-- Office View -->
     <section v-if="view === 'office'" aria-label="Office">
       <OfficeCanvas :selected="inspected" @select="inspected = $event" @approval="inspected = $event" />
     </section>
 
-    <!-- Team -->
+    <!-- Team (Board View) -->
     <section v-if="view === 'board'" aria-labelledby="team-h">
-      <div class="mb-2 flex items-baseline gap-2">
-        <h2 id="team-h" class="text-sm font-semibold">Team</h2>
-        <RouterLink to="/agents" class="text-xs text-muted hover:text-fg">Manage</RouterLink>
+      <div class="mb-3 flex items-baseline justify-between">
+        <h2 id="team-h" class="text-sm font-semibold tracking-tight">Active Team</h2>
+        <RouterLink to="/agents" class="text-xs font-medium text-accent hover:underline">Manage agents →</RouterLink>
       </div>
-      <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        <RouterLink v-for="a in enabledAgents" :key="a.id" :to="`/agents#${a.slug}`" class="card flex min-w-0 items-center gap-3 p-3 transition-colors hover:bg-surface-2">
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <RouterLink v-for="a in enabledAgents" :key="a.id" :to="`/agents#${a.slug}`" class="card flex min-w-0 items-center gap-3 p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-card">
           <AgentAvatar :name="a.name" :slug="a.slug" />
           <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
-              <span class="truncate font-medium">{{ a.name }}</span>
+              <span class="truncate font-semibold text-sm">{{ a.name }}</span>
               <StatusBadge :status="activityOf(a.id)" />
             </div>
-            <p class="truncate text-xs text-muted">{{ office.state.agents[a.id]?.last_message || a.role || a.model }}</p>
-            <div class="mt-1.5 flex items-center gap-2" :title="`${tokensToday(a.id)} of ${a.daily_token_budget} tokens today`">
-              <div class="h-1 flex-1 overflow-hidden rounded-full bg-surface-2">
-                <div class="h-full rounded-full" :class="budgetPct(a.id) > 85 ? 'bg-signal' : 'bg-accent'" :style="{ width: `${budgetPct(a.id)}%` }" />
+            <p class="truncate text-xs text-muted mt-0.5">{{ office.state.agents[a.id]?.last_message || a.role || a.model }}</p>
+            <div class="mt-2 flex items-center gap-2" :title="`${tokensToday(a.id)} of ${a.daily_token_budget} tokens today`">
+              <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+                <div class="h-full rounded-full transition-all" :class="budgetPct(a.id) > 85 ? 'bg-signal' : 'bg-accent'" :style="{ width: `${budgetPct(a.id)}%` }" />
               </div>
               <span class="font-mono text-[10px] text-faint tabular-nums">{{ fmtTokens(tokensToday(a.id)) }}</span>
             </div>
@@ -173,61 +202,62 @@ async function cancel(j: JobView) {
       </div>
     </section>
 
-    <!-- Board -->
+    <!-- Board (Kanban) -->
     <section v-if="view === 'board'" aria-labelledby="board-h">
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <h2 id="board-h" class="text-sm font-semibold">Jobs</h2>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 id="board-h" class="text-sm font-semibold tracking-tight">Job Pipelines</h2>
         <div class="ml-auto flex rounded-lg border border-line bg-surface p-0.5 md:hidden" role="tablist">
           <button
             v-for="c in columns"
             :key="c.key"
             role="tab"
-            class="rounded-md px-2 py-1 text-xs font-medium"
-            :class="mobileColumn === c.key ? 'bg-surface-2 text-fg' : 'text-muted'"
+            class="rounded-md px-2.5 py-1 text-xs font-medium"
+            :class="mobileColumn === c.key ? 'bg-surface-2 text-fg font-semibold' : 'text-muted'"
             :aria-selected="mobileColumn === c.key"
             @click="mobileColumn = c.key"
           >
-            {{ c.title.split(" ")[0] }} <span class="font-mono text-faint">{{ byColumn[c.key]?.length }}</span>
+            {{ c.title.split(" ")[0] }} <span class="font-mono text-faint">({{ byColumn[c.key]?.length ?? 0 }})</span>
           </button>
         </div>
       </div>
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div v-for="c in columns" :key="c.key" class="min-w-0" :class="mobileColumn !== c.key && 'max-md:hidden'">
-          <h3 class="mb-2 hidden items-center gap-2 text-xs font-medium text-muted md:flex">
-            {{ c.title }} <span class="font-mono text-faint">{{ byColumn[c.key]?.length }}</span>
-          </h3>
-          <div class="space-y-2">
+          <div class="mb-2.5 hidden items-center justify-between text-xs font-semibold text-muted md:flex">
+            <span>{{ c.title }}</span>
+            <span class="rounded-full bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-faint">{{ byColumn[c.key]?.length ?? 0 }}</span>
+          </div>
+          <div class="space-y-2.5">
             <article
               v-for="j in byColumn[c.key]?.slice(0, COLUMN_LIMIT)"
               :key="j.id"
-              class="card cursor-pointer p-3 transition-colors hover:border-line-strong"
-              :class="j.status === 'waiting_approval' && 'border-signal/50'"
+              class="card cursor-pointer p-3.5 transition-all duration-150 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card"
+              :class="j.status === 'waiting_approval' && 'border-signal/50 bg-signal-soft/10'"
               tabindex="0"
               @click="openJob(j)"
               @keydown.enter="openJob(j)"
             >
               <div class="flex min-w-0 items-start gap-2">
-                <h4 class="min-w-0 flex-1 text-sm leading-snug font-medium">{{ j.title }}</h4>
+                <h4 class="min-w-0 flex-1 text-sm leading-snug font-semibold text-fg">{{ j.title }}</h4>
                 <StatusBadge :status="j.status" />
               </div>
-              <div class="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-muted">
-                <AgentAvatar :name="agentName(j.agent_id)" :slug="agentSlug(j.agent_id)" :size="18" />
-                <span class="truncate">{{ agentName(j.agent_id) }}</span>
+              <div class="mt-2 flex min-w-0 items-center gap-1.5 text-xs text-muted">
+                <AgentAvatar :name="agentName(j.agent_id)" :slug="agentSlug(j.agent_id)" :size="20" />
+                <span class="truncate font-medium text-fg/90">{{ agentName(j.agent_id) }}</span>
                 <span class="text-faint">·</span>
-                <span class="shrink-0">{{ j.trigger }}</span>
+                <span class="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-mono text-muted">{{ j.trigger }}</span>
                 <span class="text-faint">·</span>
-                <span class="shrink-0">{{ fmtDateTime(j.created_at) }}</span>
+                <span class="shrink-0 text-faint">{{ fmtDateTime(j.created_at) }}</span>
               </div>
-              <p v-if="lastRun(j)?.error" class="mt-2 line-clamp-2 text-xs wrap-break-word text-danger">{{ lastRun(j)!.error }}</p>
-              <p v-else-if="lastRun(j)?.output" class="mt-2 line-clamp-2 text-xs wrap-break-word text-muted">{{ lastRun(j)!.output }}</p>
-              <div class="mt-2 flex items-center gap-2 text-[11px]">
+              <p v-if="lastRun(j)?.error" class="mt-2.5 rounded-lg border border-danger/20 bg-danger-soft/40 p-2 line-clamp-2 text-xs font-mono text-danger">{{ lastRun(j)!.error }}</p>
+              <p v-else-if="lastRun(j)?.output" class="mt-2 line-clamp-2 text-xs text-muted leading-relaxed">{{ lastRun(j)!.output }}</p>
+              <div class="mt-2.5 flex items-center gap-2 border-t border-line/60 pt-2 text-[11px]">
                 <span v-if="lastRun(j) && lastRun(j)!.status !== 'running'" class="font-mono text-faint tabular-nums">
                   {{ fmtTokens(lastRun(j)!.tokens_in + lastRun(j)!.tokens_out) }} tok · {{ fmtUsd(lastRun(j)!.cost_usd) }}{{ lastRun(j)!.cost_unknown ? "?" : "" }}
                 </span>
                 <button v-if="['queued', 'running', 'waiting_approval'].includes(j.status)" class="btn btn-danger btn-sm ml-auto" @click.stop="cancel(j)">Cancel</button>
               </div>
             </article>
-            <p v-if="!byColumn[c.key]?.length" class="rounded-lg border border-dashed border-line px-3 py-6 text-center text-xs text-faint">{{ c.empty }}</p>
+            <p v-if="!byColumn[c.key]?.length" class="rounded-xl border border-dashed border-line px-3 py-8 text-center text-xs text-faint">{{ c.empty }}</p>
             <p v-else-if="(byColumn[c.key]?.length ?? 0) > COLUMN_LIMIT" class="text-center text-xs text-faint">
               + {{ byColumn[c.key]!.length - COLUMN_LIMIT }} older
             </p>

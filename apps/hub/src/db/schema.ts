@@ -227,3 +227,29 @@ export const agentMemory = sqliteTable(
   },
   (t) => [index("agent_memory_agent_idx").on(t.agent_id, t.project_id)],
 );
+
+/**
+ * Things agents want to save that wait for the owner (Phase 4.5, Hermes-style learning):
+ * kind "skill" = a SKILL.md create/patch/delete; kind "memory" = memory ops when write approval is on.
+ */
+export const proposals = sqliteTable(
+  "proposals",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind", { enum: ["skill", "memory"] }).notNull(),
+    agent_id: text("agent_id").notNull(),
+    run_id: text("run_id"),
+    /** Skill name, or the memory target ("memory" | "user"). */
+    name: text("name").notNull(),
+    action: text("action").notNull(),
+    /** Full new SKILL.md, or the JSON memory ops. */
+    content: text("content").notNull(),
+    previous: text("previous"),
+    reason: text("reason").notNull().default(""),
+    status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
+    error: text("error"),
+    created_at: text("created_at").notNull().default(now),
+    decided_at: text("decided_at"),
+  },
+  (t) => [index("proposals_status_idx").on(t.status, t.created_at)],
+);

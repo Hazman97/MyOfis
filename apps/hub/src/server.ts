@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { HubToWeb, PROTOCOL_VERSION, RunnerToHub, WebToHub, parseMessage, type HubToRunner } from "@agent-office/shared";
 import { createAuthenticator } from "./auth.ts";
 import { Content } from "./content.ts";
+import { Learning } from "./learning.ts";
 import { Hub, TIMINGS, type RunnerConn } from "./core.ts";
 import { Secrets, hashToken } from "./crypto.ts";
 import { openDb } from "./db/client.ts";
@@ -52,7 +53,10 @@ export function startHub(
   hub.integrations = integrations;
   hub.storage = storage;
   hub.content = new Content(db, store, config.projectsDir);
+  hub.learning = new Learning(db, store, config.skillsDir);
   hub.boot();
+  hub.learning.migrateOldNotes();
+  hub.backfillIndex();
   const scheduler = new Scheduler(hub);
   scheduler.start();
   const releases = new ReleaseWatcher(hub, integrations, opts.releasePollMs);

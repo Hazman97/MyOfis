@@ -19,6 +19,8 @@ export interface OfficeState {
   pending_approvals: Record<string, PendingApproval>;
   /** Content drafts waiting for the owner, by draft id. */
   pending_drafts: Record<string, PendingDraft>;
+  /** Skill proposals waiting for the owner, by proposal id. */
+  pending_skills: Record<string, { id: string; name: string; action: string; agent_id: string | null; created_at: string }>;
 }
 
 export interface PendingDraft {
@@ -54,7 +56,7 @@ export type AgentActivity = "idle" | "working" | "waiting_approval" | "away";
  * can tell a new moment from one it has already shown.
  */
 export interface AgentMoment {
-  kind: "handoff" | "delivered" | "failed" | "pr_opened" | "draft_pinned" | "feature_pinned";
+  kind: "handoff" | "delivered" | "failed" | "pr_opened" | "draft_pinned" | "feature_pinned" | "skill_shelved";
   event_id: number;
   at: string;
   /** handoff: slug of the agent receiving the work. */
@@ -117,6 +119,7 @@ export const initialState = (): OfficeState => ({
   cost_by_day: {},
   pending_approvals: {},
   pending_drafts: {},
+  pending_skills: {},
 });
 
 const dayFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -348,6 +351,15 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
     }
     case "draft.decided":
       delete s.pending_drafts[event.payload.draft_id];
+      break;
+    case "skill.proposed": {
+      const p = event.payload;
+      (s.pending_skills ??= {})[p.proposal_id] = { id: p.proposal_id, name: p.name, action: p.action, agent_id: event.agent_id, created_at: event.ts };
+      if (event.agent_id) agentView(s, event.agent_id).moment = momentOf(event, "skill_shelved");
+      break;
+    }
+    case "skill.decided":
+      if (s.pending_skills) delete s.pending_skills[event.payload.proposal_id];
       break;
     case "feature.released":
       if (event.agent_id) agentView(s, event.agent_id).moment = momentOf(event, "feature_pinned");

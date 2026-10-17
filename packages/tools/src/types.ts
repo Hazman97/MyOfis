@@ -3,6 +3,7 @@ import type {
   AgentConfig,
   DraftKind,
   FeatureNoteData,
+  MemoryOp,
   PermissionLevel,
   Platform,
   ProjectContext,
@@ -66,6 +67,17 @@ export interface ToolContext {
   saveDraft(req: DraftRequest): void;
   /** Record a released feature (hub writes the feature log and emits feature.released). */
   addFeatureNote(req: { project_id: string; note: FeatureNoteData }): void;
+  /** Live copy of this agent's memory stores (memory tool updates it as it goes). */
+  memoryStores: { memory: string[]; user: string[] };
+  memoryWriteApproval: boolean;
+  /** Send memory ops to the hub (applied there, or staged when write approval is on). */
+  saveMemory(target: "memory" | "user", ops: MemoryOp[]): void;
+  /** Approved skills (name, description, full SKILL.md). */
+  skills: { name: string; description: string; content: string }[];
+  /** Propose a skill change; the owner approves it. */
+  proposeSkill(p: { name: string; action: "create" | "patch" | "delete"; content: string; reason: string }): void;
+  /** Full-text search over past runs (the hub answers). */
+  searchSessions(query: string, allAgents: boolean): Promise<{ run_id: string; agent_id: string; job_type: string; ts: string; title: string; snippet: string }[]>;
 }
 
 export interface DraftRequest {

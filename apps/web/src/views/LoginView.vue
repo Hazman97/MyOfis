@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import BrandMark from "../components/shell/BrandMark.vue";
 import { api } from "../api/http.ts";
@@ -10,6 +10,14 @@ const error = ref("");
 const busy = ref(false);
 const router = useRouter();
 const route = useRoute();
+const mode = ref<"local" | "cf-access">("local");
+onMounted(async () => {
+  try {
+    mode.value = (await api.authMode()).mode;
+  } catch {
+    /* keep the token form */
+  }
+});
 
 async function submit() {
   busy.value = true;
@@ -35,7 +43,11 @@ async function submit() {
         <h1 class="mt-3 text-xl font-semibold tracking-tight">Agent Office</h1>
         <p class="sign mt-1">Owner entrance</p>
       </div>
-      <div class="card-raised space-y-4 p-6">
+      <div v-if="mode === 'cf-access'" class="card-raised space-y-4 p-6 text-center">
+        <p class="text-sm text-muted">This office signs in through Cloudflare Access with your email.</p>
+        <a href="/" class="btn btn-primary w-full">Sign in with Cloudflare Access</a>
+      </div>
+      <div v-else class="card-raised space-y-4 p-6">
         <div>
           <label class="label" for="token">Owner token</label>
           <input id="token" v-model="token" type="password" autocomplete="current-password" class="input font-mono" autofocus required />

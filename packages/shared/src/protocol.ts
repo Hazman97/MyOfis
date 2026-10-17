@@ -2,6 +2,8 @@ import { z } from "zod";
 import { AgentConfig, PermissionLevel, ProviderRuntimeConfig, RiskLevel, RunnerCapabilities } from "./entities.ts";
 import { AgentEvent, RunnerEventBody } from "./events.ts";
 import { DraftKind, DraftStatus, FeatureNoteInput, Platform, ProjectBrief, SelfCheck } from "./marketing.ts";
+import { MemoryOp } from "./memory.ts";
+import { SkillName } from "./skills.ts";
 import type { OfficeState } from "./reducer.ts";
 
 export const PROTOCOL_VERSION = 1;
@@ -66,6 +68,17 @@ export const RunnerToHub = z.discriminatedUnion("type", [
   }),
   /** A user-facing note for a released change (Coder after a merge). Hub writes the feature log and emits feature.released. */
   z.object({ type: z.literal("run.feature_note"), ...runMsg, project_id: z.string(), note: FeatureNoteInput }),
+  /** A long-term memory note from the agent (spec Phase 5 "agent memory"). */
+  z.object({ type: z.literal("run.memory"), ...runMsg, target: z.enum(["memory", "user"]), ops: z.array(MemoryOp).min(1).max(20) }),
+  /** The agent proposes a skill change; the owner approves it in the Skills inbox. `content` is the full new SKILL.md (empty for delete). */
+  z.object({
+    type: z.literal("run.skill"),
+    ...runMsg,
+    name: SkillName,
+    action: z.enum(["create", "patch", "delete"]),
+    content: z.string().max(20_000),
+    reason: z.string().max(500),
+  }),
   /** After a reconnect: "what happened to these?" The hub answers with approval.decision for decided ones. */
   z.object({ type: z.literal("approval.poll"), approval_ids: z.array(z.string()) }),
 ]);
@@ -132,6 +145,12 @@ export const RunAssignment = z.object({
   project_context: ProjectContext.nullable().default(null),
   /** Tokens the agent may still use today (null = no daily limit). The runtime stops when it runs out. */
   budget_left_tokens: z.number().int().nullable().default(null),
+  /** The agent's newest memory notes, oldest first. */
+  memory: z.object({ memory: z.array(z.string()), user: z.array(z.string()) }).default({ memory: [], user: [] }),
+  /** When on, memory writes wait for the owner (Hermes `memory.write_approval`). */
+  memory_write_approval: z.boolean().default(false),
+  /** Approved skills. Only names + descriptions go into the prompt; the content is read with skill_view. */
+  skills: z.array(z.object({ name: z.string(), description: z.string(), content: z.string() })).default([]),
 });
 export type RunAssignment = z.infer<typeof RunAssignment>;
 

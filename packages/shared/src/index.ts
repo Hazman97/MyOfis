@@ -7,3 +7,5 @@ export * from "./presets.ts";
 export * from "./redact.ts";
 export * from "./net.ts";
 export * from "./marketing.ts";
+export * from "./memory.ts";
+export * from "./skills.ts";

@@ -42,6 +42,61 @@
 - **Budgets**: `daily_token_budget` 0 = no limit. Over budget → `budget.exceeded` once per day, jobs stay queued, the runtime stops early (`budget_left_tokens`), and the sweep emits `agent.idle` after midnight KL or when the budget is raised.
 - Newly seeded agents take the provider + model most existing agents use (the owner's choice) before the old ranking.
 
+## Decisions taken beyond the spec (Phase 5)
+- `AUTH_MODE=cf-access` (apps/hub/src/auth.ts) verifies `Cf-Access-Jwt-Assertion` or the `CF_Authorization` cookie with `jose`. It checks: RS256, issuer `https://<team>`, the AUD, and `email` == `OWNER_EMAIL`. JWKS come from `https://<team>/cdn-cgi/access/certs` (`CF_ACCESS_CERTS_URL` overrides it for tests). There is no token login in this mode, and logout returns `/cdn-cgi/access/logout`.
+- Runners behind Access send `CF-Access-Client-Id/Secret` (env `CF_ACCESS_CLIENT_ID/SECRET`) on pairing, WS and uploads. Their own runner token is still required.
+- Replay (`apps/web/src/office/replay.ts`, pure and tested; `views/ReplayView.vue`) rebuilds state from every event before the window and caps gaps at 4 s. It uses its own OfficeWorld, never the live store.
+- Agent memory: `remember` tool → sequenced `run.memory` → `agent_memory` table (keep 200 per agent). The newest 25 go into `RunAssignment.memories`, rendered as "What you remember" (DATA).
+- Skipped on purpose: the Docker sandbox (owner: no Docker) and Langfuse (optional).
+
+## Status and next steps (handoff, 2026-10-17)
+Read this first when picking the project up in a new session.
+
+**Phases**
+- Phases 1–3: done and signed off by the owner.
+- Phase 4: built and waiting for the owner's sign-off. 175 tests pass (incl. `apps/hub/test/acceptance-phase4.test.ts`); typecheck and build are green.
+- Phase 5: built (cf-access, tunnel docs, remote runners, replay, agent memory) and waiting for the owner's sign-off. The real-world check in docs/cloudflare-tunnel.md §5 needs the owner's domain.
+- UI helper: the owner relays UI tasks to Gemini (Antigravity) from `tasks/gemini/NNN-*.md`; Claude reviews the diff, tests and screenshots. Task 001 passed review; task 002 (Replay in the nav + polish) was handed over.
+
+**Owner's environment**
+- Hub on :8788, web dev on :5180. Never kill workerd or the canopynet dev servers.
+- All agents use the `canopy-ai` provider (owner's own server), including Marketing and English Coach.
+- Telegram bot **@MyOfis_monmon_bot** is connected (token encrypted in `settings`; a test message was delivered).
+- Gitea is not set up yet; it is faked in tests.
+- The owner restyled `apps/web/src/style.css`, `views/DashboardView.vue` and `components/office/OfficeCanvas.vue` themselves (a "Linear/Vercel" look). Keep their edits; change only logic in those files.
+
+**Done 2026-10-17 (after the handoff note): chat stays in the job pipeline but is hidden from the Board**
+- New `apps/web/src/jobs.ts`: pure `isChatJob(j)` (`type === "chat"`) and `boardJobs(jobs)` (drops chat).
+- `DashboardView.vue`: the kanban (`byColumn`) and `stats` use `boardJobs(office.jobsNewestFirst)`. Add a small "+ N chat messages" line (chat jobs created today) under the Done today tile, linking to `/chat`.
+- `apps/hub/src/telegram.ts`, `run.failed` case: skip the ❌ notice when the job's type is `chat` (the owner sees it in the chat). Approvals, drafts, reports and budget notices stay.
+- Tests:
+  - `apps/web/test/jobs.test.ts`;
+  - in `apps/hub/test/telegram.test.ts`, a failing chat job sends no ❌ message.
+- Then add one line about this to the README "Chat" section.
+
+**Open questions for the owner**
+- Is "Hermes" (set up on another PC) Nous Research's *Hermes Agent* or just a *Hermes model*?
+  - Hermes model: add it as a provider.
+  - Hermes Agent: a runner-side runtime like OpenCode, and/or import its SKILL.md skills.
+- What next? The recommended order is Phase 4.5 first, then Phase 5:
+  - **Phase 4.5:**
+    - a Researcher agent with web search/fetch;
+    - SKILL.md skills that the owner approves;
+    - agents asking each other and waiting for the answer;
+    - 3D models via OpenSCAD/Blender scripts;
+    - the Hermes import.
+  - **Phase 5:** Cloudflare Tunnel + Access, a second runner, replay mode.
+
+**Waiting for the owner's OK**
+- Two LEARNINGS.md proposals (write them only after the owner agrees):
+  1. Inline shell edit scripts (`bun -e '…'`, heredocs) break on quotes; use the Edit/Write tools.
+  2. Zod fields with defaults differ between `z.input` and `z.output`; use the output type for validated data passed around (e.g. `FeatureNoteData`).
+- The owner should rotate the canopy-ai API key (it was pasted in chat once).
+
+**Owner's guide**
+- `docs/panduan-agent-office.html` (Manglish, open in a browser). A copy was also published as a claude.ai artifact on the old account.
+- Update it when features change.
+
 ## Commands
 - `bun install` — install
 - `bun run dev` — hub + web (Vite on :5180 proxies to hub on :8787)
