@@ -78,6 +78,9 @@ const removeThreads = () => run("th", async () => void (th.value = (await api.sa
         <span v-if="th?.has_token" class="chip text-[11px] text-accent">@{{ th.username }} · {{ th.token_hint }}</span>
         <span v-else class="chip text-[11px] text-muted">not connected</span>
       </div>
+      <p v-if="th?.has_token" class="text-xs text-muted">
+        The hub renews this token every week by itself<template v-if="th.expires_at">; it now works until {{ new Date(th.expires_at).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) }}</template>. If renewing fails, Telegram tells you.
+      </p>
       <label class="label" for="th-token">Threads access token</label>
       <input id="th-token" v-model="threadsToken" type="password" autocomplete="off" class="input font-mono" :placeholder="th?.has_token ? 'Paste a new token to replace it' : 'THQ…'" />
       <div class="flex flex-wrap gap-2">

@@ -43,6 +43,8 @@ export interface ThreadsPublic {
   token_hint: string | null;
   user_id: string | null;
   username: string | null;
+  /** When the token stops working (known after the first refresh). */
+  expires_at: string | null;
 }
 
 interface StoredFb {
@@ -61,7 +63,12 @@ interface StoredThreads {
   token_hint: string | null;
   user_id: string | null;
   username: string | null;
+  refreshed_at?: string | null;
+  expires_at?: string | null;
 }
+
+/** Threads long-lived tokens last 60 days and can be refreshed once they are a day old: refresh weekly. */
+const THREADS_REFRESH_MS = 7 * 86_400_000;
 
 const key = (platform: SocialPlatform, projectId: string) => `social.${platform}.${projectId}`;
 const READY_TRIES = 15;
@@ -169,7 +176,7 @@ export class Social {
   threads(projectId: string): ThreadsPublic {
     this.#project(projectId);
     const s = this.#read<StoredThreads>("threads", projectId);
-    return { has_token: !!s?.token_enc, token_hint: s?.token_hint ?? null, user_id: s?.user_id ?? null, username: s?.username ?? null };
+    return { has_token: !!s?.token_enc, token_hint: s?.token_hint ?? null, user_id: s?.user_id ?? null, username: s?.username ?? null, expires_at: s?.expires_at ?? null };
   }
 
   /** Save a Threads token ("" removes it) and check it straight away. */
@@ -184,13 +191,65 @@ export class Social {
       throw new HttpError(400, `Threads: ${e.message}`);
     });
     if (!me.id) throw new HttpError(400, "Threads did not return the account id");
-    this.#write("threads", projectId, { token_enc: this.secrets.encrypt(token), token_hint: keyHint(token), user_id: me.id, username: me.username ?? null } satisfies StoredThreads);
+    this.#write("threads", projectId, { token_enc: this.secrets.encrypt(token), token_hint: keyHint(token), user_id: me.id, username: me.username ?? null, refreshed_at: new Date().toISOString(), expires_at: null } satisfies StoredThreads);
     return this.threads(projectId);
   }
 
   #threads(projectId: string): { userId: string; token: string } | null {
     const s = this.#read<StoredThreads>("threads", projectId);
     return s?.token_enc && s.user_id ? { userId: s.user_id, token: this.secrets.decrypt(s.token_enc) } : null;
+  }
+
+  // ---------------------------------------------------------------- token health
+
+  /**
+   * Run every few hours by the server: refresh Threads tokens that are a week old (each refresh
+   * gives another 60 days) and check that Facebook Page tokens still work. Returns one line per
+   * problem for the owner (Telegram); an empty list means all is well.
+   */
+  async checkTokens(now = new Date()): Promise<string[]> {
+    const problems: string[] = [];
+    const rows = this.db.select().from(settings).all().filter((r) => r.key.startsWith("social."));
+    const names = new Map(this.db.select({ id: projects.id, name: projects.name }).from(projects).all().map((p) => [p.id, p.name]));
+    for (const row of rows) {
+      const [, platform, projectId] = row.key.split(".") as [string, SocialPlatform, string];
+      const name = names.get(projectId);
+      if (!name) continue;
+      if (platform === "threads") {
+        const s = row.value as StoredThreads;
+        if (!s.token_enc) continue;
+        const last = s.refreshed_at ? Date.parse(s.refreshed_at) : 0;
+        if (now.getTime() - last < THREADS_REFRESH_MS) continue;
+        try {
+          const base = this.threadsBase.replace(/\/v\d+(\.\d+)?$/, "");
+          const r = await this.#call<{ access_token?: string; expires_in?: number }>(
+            `${base}/refresh_access_token?grant_type=th_refresh_token&access_token=${encodeURIComponent(this.secrets.decrypt(s.token_enc))}`,
+          );
+          if (!r.access_token) throw new Error("no token in the answer");
+          this.#write("threads", projectId, {
+            ...s,
+            token_enc: this.secrets.encrypt(r.access_token),
+            token_hint: keyHint(r.access_token),
+            refreshed_at: now.toISOString(),
+            expires_at: r.expires_in ? new Date(now.getTime() + r.expires_in * 1000).toISOString() : (s.expires_at ?? null),
+          } satisfies StoredThreads);
+        } catch (err) {
+          const left = s.expires_at ? Math.floor((Date.parse(s.expires_at) - now.getTime()) / 86_400_000) : null;
+          problems.push(
+            `${name}: the Threads token could not be renewed (${(err as Error).message})${left !== null ? `; it stops working in ${Math.max(0, left)} day(s)` : ""}. Paste a new long-lived token in Projects → ${name} → Website → Instagram & Threads.`,
+          );
+        }
+      } else if (platform === "facebook") {
+        const cfg = this.#fb(projectId);
+        if (!cfg) continue;
+        try {
+          await this.#call(`${this.graphBase}/${cfg.pageId}?fields=name&access_token=${encodeURIComponent(cfg.token)}`);
+        } catch (err) {
+          problems.push(`${name}: the Facebook Page token no longer works (${(err as Error).message}), so Facebook and Instagram posts will fail. Make a new Page token (docs/facebook-page.md) and save it in Projects → ${name} → Website.`);
+        }
+      }
+    }
+    return problems;
   }
 
   // ---------------------------------------------------------------- what is connected

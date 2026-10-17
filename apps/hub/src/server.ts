@@ -1,6 +1,6 @@
 import type { Server, ServerWebSocket } from "bun";
 import { eq } from "drizzle-orm";
-import { HubToWeb, PROTOCOL_VERSION, RunnerToHub, WebToHub, parseMessage, type HubToRunner } from "@agent-office/shared";
+import { HubToWeb, PROTOCOL_VERSION, RunnerToHub, WebToHub, dayKey, parseMessage, type HubToRunner } from "@agent-office/shared";
 import { createAuthenticator } from "./auth.ts";
 import { Content } from "./content.ts";
 import { Learning } from "./learning.ts";
@@ -41,7 +41,7 @@ export interface HubServer {
 
 export function startHub(
   config: HubConfig,
-  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number } = {},
+  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number; tokenCheckMs?: number } = {},
 ): HubServer {
   const { db, sqlite } = openDb(config.databasePath);
   const secrets = new Secrets(config.secretsKey);
@@ -61,7 +61,7 @@ export function startHub(
   hub.publisher = new Publisher(db, store, secrets, config.filesDir);
   hub.uploadParts = new UploadParts(hub.publisher, config.filesDir);
   hub.social = new Social(db, store, secrets, hub.publisher, config.facebookGraphBase, config.threadsGraphBase);
-  hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir });
+  hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir, filesDir: config.filesDir });
   hub.boot();
   hub.backfillIndex();
   const scheduler = new Scheduler(hub);
@@ -174,12 +174,30 @@ export function startHub(
     if (!hub.backups.due()) return;
     try {
       const b = hub.backups.run();
-      console.log(`[hub] backup ${b.date} written (${Math.round(b.size_bytes / 1024)} KB)`);
+      console.log(`[hub] backup ${b.date} written (${Math.round(b.size_bytes / 1024)} KB, ${b.files_copied ?? 0} new files mirrored)`);
     } catch (err) {
       console.error(`[hub] backup failed: ${(err as Error).message}`);
       telegram.notify(`⚠️ Nightly backup failed: ${(err as Error).message}`).catch(() => {});
     }
   }, opts.backupCheckMs ?? 10 * 60_000);
+
+  // social tokens: renew Threads tokens, check Facebook Page tokens; tell the owner once a day per problem
+  const tokenWarned = new Map<string, string>();
+  const checkTokens = async () => {
+    try {
+      const day = dayKey(new Date().toISOString());
+      for (const p of await hub.social.checkTokens()) {
+        if (tokenWarned.get(p) === day) continue;
+        tokenWarned.set(p, day);
+        console.error(`[hub] ${p}`);
+        await telegram.notify(`⚠️ ${p}`).catch(() => {});
+      }
+    } catch (err) {
+      console.error(`[hub] token check failed: ${(err as Error).message}`);
+    }
+  };
+  const tokenTimer = setInterval(() => void checkTokens(), opts.tokenCheckMs ?? 6 * 3600_000);
+  const tokenFirst = setTimeout(() => void checkTokens(), opts.tokenCheckMs ? 0 : 60_000);
 
   return {
     url: `http://${config.host}:${server.port}`,
@@ -191,6 +209,8 @@ export function startHub(
     async stop() {
       clearInterval(sweep);
       clearInterval(backupTimer);
+      clearInterval(tokenTimer);
+      clearTimeout(tokenFirst);
       scheduler.stop();
       releases.stop();
       telegram.stop();

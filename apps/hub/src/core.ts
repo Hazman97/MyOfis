@@ -950,7 +950,7 @@ Error: ${r.error}` : ""}` });
     // A release note is a fixed, small job: its own prompt and two safe tools, whatever the agent normally has.
     const featureNote = job.type === "feature_note";
     // a consult answer is one level deep: no asking or handing off from there
-    const tools = featureNote ? FEATURE_NOTE_TOOLS : job.type === "consult" ? agent.tools.filter((t) => t !== "consult_agent" && t !== "handoff") : agent.tools;
+    const tools = featureNote ? FEATURE_NOTE_TOOLS : job.type === "consult" ? agent.tools.filter((t) => t !== "consult_agent" && t !== "consult_team" && t !== "handoff") : agent.tools;
     const config = toAgent(agent).config;
     let projectContext: RunAssignment["project_context"] = null;
     try {

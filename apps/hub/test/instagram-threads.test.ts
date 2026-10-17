@@ -10,6 +10,7 @@ const SECRET = "site-secret-xyz";
 let env: TestEnv;
 let fake: ReturnType<typeof Bun.serve>;
 const posted: { path: string; params: Record<string, string> }[] = [];
+let refreshWorks = true;
 
 beforeAll(() => {
   // one fake server: /fb = Graph API (Page + Instagram), /th = Threads API, /site = the website endpoint
@@ -38,7 +39,11 @@ beforeAll(() => {
       if (p === "/fb/c1") return Response.json({ status_code: "FINISHED" });
       if (p === "/fb/1784/media_publish") return Response.json({ id: "m1" });
       if (p === "/fb/m1") return Response.json({ permalink: "https://www.instagram.com/p/abc/" });
-      // Threads API
+      // Threads API (refresh lives at the root, without the version)
+      if (p === "/th/refresh_access_token") {
+        if (!refreshWorks) return Response.json({ error: { message: "Session has expired" } }, { status: 400 });
+        return url.searchParams.get("grant_type") === "th_refresh_token" ? Response.json({ access_token: "THQ-renewed", expires_in: 60 * 86400 }) : Response.json({ error: { message: "bad grant" } }, { status: 400 });
+      }
       if (p === "/th/me") return url.searchParams.get("access_token") === THREADS_TOKEN ? Response.json({ id: "t1", username: "smashpoint.my" }) : Response.json({ error: { message: "Invalid token" } }, { status: 400 });
       if (p === "/th/t1/threads") return Response.json({ id: "tc1" });
       if (p === "/th/tc1") return Response.json({ status: "FINISHED" });
@@ -103,5 +108,36 @@ describe("Instagram and Threads posting", () => {
 
     expect(await approve("TH")).toMatchObject({ status: "published", published_url: "https://www.threads.net/@smashpoint.my/post/xyz" });
     expect(posted.find((x) => x.path === "/th/t1/threads")!.params).toMatchObject({ media_type: "TEXT", text: "TH: tournament this Saturday!" });
+  }, 30_000);
+
+  test("token health: Threads renews weekly, a broken Facebook token or failed renewal is reported", async () => {
+    env = await createTestEnv({}, { facebookGraphBase: `http://127.0.0.1:${fake.port}/fb`, threadsGraphBase: `http://127.0.0.1:${fake.port}/th` });
+    const project = (await env.api("/api/projects", { body: { slug: "sp", name: "SmashPoint" } })).body.project;
+    await env.api(`/api/projects/${project.id}/threads`, { method: "PUT", body: { token: THREADS_TOKEN } });
+    // Page "999" is unknown to the fake Graph API: its token check fails
+    await env.api(`/api/projects/${project.id}/facebook`, { method: "PUT", body: { page_id: "99999", token: PAGE_TOKEN } });
+    const social = env.hub.hub.social;
+    const day = 86_400_000;
+
+    // just saved: nothing to renew yet, only Facebook is reported
+    let problems = await social.checkTokens(new Date());
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("SmashPoint: the Facebook Page token no longer works");
+
+    // a week later the Threads token is renewed for 60 more days
+    const before = (await env.api(`/api/projects/${project.id}/threads`)).body.threads;
+    const later = new Date(Date.now() + 8 * day);
+    problems = await social.checkTokens(later);
+    expect(problems.some((p) => p.includes("Threads"))).toBe(false);
+    const th = (await env.api(`/api/projects/${project.id}/threads`)).body.threads;
+    expect(th.token_hint).not.toBe(before.token_hint);
+    expect(Date.parse(th.expires_at) - later.getTime()).toBeGreaterThan(59 * day);
+    expect(JSON.stringify(th)).not.toContain("THQ-renewed");
+
+    // when renewing fails, the owner is told how many days are left
+    refreshWorks = false;
+    problems = await social.checkTokens(new Date(later.getTime() + 50 * day));
+    expect(problems.find((p) => p.includes("Threads"))).toMatch(/could not be renewed \(Session has expired\); it stops working in \d+ day/);
+    refreshWorks = true;
   }, 30_000);
 });

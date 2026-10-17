@@ -289,7 +289,7 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
           </div>
         </div>
         <p class="text-sm text-muted leading-relaxed">
-          Every night after 3 am the hub copies the database, project briefs and skills into <code class="break-all font-mono text-xs">{{ backupDir }}</code> and keeps the last 14 days.
+          Every night after 3 am the hub copies the database, project briefs and skills into <code class="break-all font-mono text-xs">{{ backupDir }}</code> and keeps the last 14 days. Photos and videos are mirrored once into its <code class="font-mono text-xs">files/</code> folder.
           To restore: stop the hub, copy <code>agent-office.db</code> over <code>data/agent-office.db</code> (and the folders back), start it again.
         </p>
         <div v-if="backups.length" class="overflow-hidden rounded-xl border border-line bg-surface-2/30">

@@ -61,3 +61,36 @@ describe("consult_agent", () => {
     expect(sent).toEqual([[]]);
   });
 });
+
+describe("consult_team (Ketua)", () => {
+  test("asks several colleagues at once and gets every answer, even on a one-slot runner", async () => {
+    env = await createTestEnv();
+    await env.pairRunner(); // max_concurrent_runs = 1: the consults take turns, the waiting asker does not block them
+    const ketua = await agent(env, "boss", "mock-script", ["consult_team"]);
+    await agent(env, "research", "mock-echo");
+    await agent(env, "build", "mock-echo");
+    const { job, results } = await runJob(env, ketua, [
+      {
+        tool: "consult_team",
+        input: {
+          questions: [
+            { to_agent: "research", question: "Is there demand for camera rental bookings online?" },
+            { to_agent: "build", question: "How long to build a booking page for cameras?" },
+          ],
+        },
+      },
+      { tool: "consult_team", input: { questions: [{ to_agent: "nobody", question: "Anyone out there to answer this?" }] } },
+      { text: "summary" },
+    ]);
+    expect(job.status).toBe("done");
+    expect(results[0]).toMatchObject({ ok: true, summary: "2/2 colleagues answered" });
+    expect(results[1]!.ok).toBe(false);
+    // both questions ran as consult jobs under Ketua's job (the office shows them in the meeting room)
+    const s = env.hub.hub.store.state;
+    const consults = Object.values(s.jobs).filter((j) => j.type === "consult");
+    expect(consults.map((c) => c.parent_job_id)).toEqual([job.id, job.id]);
+    const outputs = consults.map((c) => s.runs[c.run_ids[0]!]!.output ?? "").join(" | ");
+    expect(outputs).toContain("demand for camera rental");
+    expect(outputs).toContain("booking page for cameras");
+  }, 30_000);
+});

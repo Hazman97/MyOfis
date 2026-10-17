@@ -50,4 +50,4 @@ The quality is high so that TikTok's own re-encode starts from a clean picture.
 ## Where files live
 - Uploads and renders: `FILES_DIR/uploads/` on the hub. Renders are tied to their run (`uploads.run_id`).
 - While a run works: `<workspace>/media/` on the runner (`in-1.mp4`, `<name>-<preset>.mp4`, `<name>.ass`).
-- Nightly backups do not include `data/files`, so download the videos you want to keep.
+- Nightly backups mirror `data/files` (uploads and renders) once into `data/backups/files/` (new files only, never pruned). Keep the backups folder on a disk with room for your videos.

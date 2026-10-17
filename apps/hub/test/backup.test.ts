@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createTestEnv, type TestEnv } from "./helpers.ts";
 
@@ -29,8 +29,24 @@ describe("nightly backup", () => {
     const b = env.hub.hub.backups;
     expect(b.due(new Date())).toBe(false);
     for (const d of ["2026-01-01", "2026-01-02", "2026-01-03"]) b.run(new Date(`${d}T12:00:00+08:00`));
-    expect(readdirSync(join(env.dir, "backups")).sort()).toEqual(["2026-01-02", "2026-01-03", body.backup.date].sort());
+    expect(readdirSync(join(env.dir, "backups")).filter((d) => d !== "files").sort()).toEqual(["2026-01-02", "2026-01-03", body.backup.date].sort());
     expect((await env.api("/api/backups")).body.backups.map((x: { date: string }) => x.date)[0]).toBe(body.backup.date);
+  });
+
+  test("photos and videos are mirrored once into backups/files (new or changed files only)", async () => {
+    env = await createTestEnv();
+    const files = env.hub.hub.config.filesDir;
+    mkdirSync(join(files, "uploads"), { recursive: true });
+    writeFileSync(join(files, "uploads", "upl_a.mp4"), "video-a");
+    writeFileSync(join(files, "uploads", "half.part"), "partial");
+    expect(env.hub.hub.backups.run(new Date("2026-02-01T12:00:00+08:00")).files_copied).toBe(1);
+    const mirrored = join(env.dir, "backups", "files", "uploads");
+    expect(readFileSync(join(mirrored, "upl_a.mp4"), "utf8")).toBe("video-a");
+    expect(existsSync(join(mirrored, "half.part"))).toBe(false);
+    // the next night copies only what is new; the mirror is not a dated folder, so it is never pruned
+    writeFileSync(join(files, "uploads", "upl_b.jpg"), "photo-b");
+    expect(env.hub.hub.backups.run(new Date("2026-02-02T12:00:00+08:00")).files_copied).toBe(1);
+    expect(env.hub.hub.backups.list().map((b) => b.date)).toEqual(["2026-02-02", "2026-02-01"]);
   });
 
   test("due only after the backup hour (Malaysia time)", async () => {

@@ -67,7 +67,7 @@ Owner asked to follow Nous Research's **Hermes Agent** closely. Logic in `packag
 - Web: `views/SkillsView.vue` (`/skills`), `components/office/MemoryStores.vue` in the agent panel, pure `diff.ts`.
 
 ## Decisions taken beyond the spec (after Phase 5: owner's improvement list, 2026-10-17)
-- **Nightly backup** (`apps/hub/src/backup.ts`): `VACUUM INTO` + copies of `projects/` and `skills/` into `data/backups/<YYYY-MM-DD>/`, checked every 10 min, runs once a day after `BACKUP_HOUR` (3, KL), keeps `BACKUP_KEEP` (14). Failure → Telegram. `GET/POST /api/backups`; card in Settings → Integrations. Workspaces and `data/files` are not backed up.
+- **Nightly backup** (`apps/hub/src/backup.ts`): `VACUUM INTO` + copies of `projects/` and `skills/` into `data/backups/<YYYY-MM-DD>/`, checked every 10 min, runs once a day after `BACKUP_HOUR` (3, KL), keeps `BACKUP_KEEP` (14). Failure → Telegram. `GET/POST /api/backups`; card in Settings → Integrations. Workspaces are not backed up. `data/files` (uploads, renders, artifacts) is mirrored into `data/backups/files/` (new or changed files only, `*.part` skipped, never pruned; `mirror()`).
 - **Skill usage** is computed, not stored: `Learning.skillsWithUsage()` reads `agent.tool_call` events for `skill_view` plus run status / rejected drafts of those runs. `stale` after 60 days unused, or ≥3 runs with ≥50% bad.
 - **Researcher** (`packages/agents/src/researcher.ts`) with `web_search` + `web_fetch` (`packages/tools/src/research.ts`).
   - `web_fetch` follows redirects by hand and refuses private/loopback addresses (DNS-resolved) unless the exact host is on the agent's `http_allowlist`. It converts HTML to text itself (no library), wraps the output as UNTRUSTED and flags injection with `memoryContentProblem`.
@@ -136,9 +136,21 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - Telegram: `video`/`document` up to 20 MB (bot download limit). Video drafts are sent with `sendVideo` (≤ 50 MB) before the card.
   - Editor cannot see frames (tool results with images would become huge text on OpenAI-compatible providers). Future: vision frames once the owner has a strong local model; music/voice-over; TikTok Content Posting API (needs a TikTok developer app + OAuth; unaudited apps post private-only) and YouTube Data API.
 
+## Decisions taken beyond the spec (Ketua, token health, files backup, 2026-10-18)
+- **Ketua** (`packages/agents/src/ketua.ts`, owner chose "Agent Ketua" over a group chat): the owner asks one agent; it picks 2–4 colleagues and asks them in parallel with **`consult_team`** (`packages/tools/src/handoff.ts`: up to 6 questions, `Promise.all` over `ctx.consult`), then answers with one combined reply (Ringkasan / Pandangan pasukan / Risiko / Langkah seterusnya). It hands work over only after the owner agrees.
+  - Consult jobs never get `consult_team` (one level).
+  - The consults are children of Ketua's job, so the office already sends them to the meeting room (`busyFamilies`).
+- **Token health** (`Social.checkTokens`, server timer every 6 h, first run 1 min after boot, `tokenCheckMs` for tests):
+  - Threads tokens are renewed weekly via `GET <threads root>/refresh_access_token?grant_type=th_refresh_token`; `expires_at` is stored and shown in SocialSettings.
+  - Facebook Page tokens are checked with `GET /{page}?fields=name`.
+  - Each problem goes to Telegram once a day.
+- **Backups mirror `data/files`** into `BACKUP_DIR/files/` (see the Nightly backup note above).
+- The runner sends photos to the model as `file` parts (the AI SDK deprecated `image` parts).
+
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.
 **PENDING (read first, updated 2026-10-17 end of session)**
+- 2026-10-18: Ketua + consult_team, token health (Threads auto-renew, Facebook check → Telegram), files mirrored in backups, Manual page in the app. 240 tests green, web built. Owner: restart hub + runner (seeds Editor and Ketua, adds /api/manual), then try Chat → Ketua.
 - Latest: Editor (local video edit + TikTok FHD export) built, 236 tests green, web built. Owner: restart hub + runner (migration 0007 adds `uploads.run_id`; Editor is seeded on boot), then test in Chat → Editor. Next: TikTok Content Posting API + YouTube Data API (owner must create the developer apps; ask first). Gemini 008 reviewed, committed and pushed. KIV: add Editor + Instagram/Threads sections to docs/manual.html.
 - Code: everything built and green: 214 tests, typecheck and web build OK. The domain serves the latest build.
 - Owner to do:

@@ -2,7 +2,7 @@ import { CONTENT_TOOLS, addFeatureNoteTool } from "./content.ts";
 import { editFileTool, listDirTool, readFileTool, writeFileTool } from "./fs.ts";
 import { GIT_TOOLS } from "./git.ts";
 import { GITEA_TOOLS } from "./gitea.ts";
-import { consultTool, handoffTool } from "./handoff.ts";
+import { consultTeamTool, consultTool, handoffTool } from "./handoff.ts";
 import { LEARNING_TOOLS } from "./memory.ts";
 import { runCommandTool } from "./shell.ts";
 import { WEB_TOOLS } from "./web.ts";
@@ -32,6 +32,7 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     ...GITEA_TOOLS,
     handoffTool,
     consultTool,
+    consultTeamTool,
     ...WEB_TOOLS,
     ...CONTENT_TOOLS,
     addFeatureNoteTool,

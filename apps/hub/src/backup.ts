@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { TIMEZONE, dayKey } from "@agent-office/shared";
 
@@ -9,11 +9,17 @@ import { TIMEZONE, dayKey } from "@agent-office/shared";
  *  - projects/        (briefs, FEATURES.md)
  *  - skills/          (approved SKILL.md files)
  * The newest `keep` days are kept. Restore = stop the hub, copy the files back.
+ *
+ * Uploads (the owner's photos and videos, Editor's renders) and run artifacts in FILES_DIR are
+ * big and never change once written, so they are mirrored once into BACKUP_DIR/files/ instead of
+ * copied every day: only new or changed files are copied, and nothing is deleted from the mirror.
  */
 export interface BackupInfo {
   date: string;
   size_bytes: number;
   created_at: string;
+  /** New or changed files copied into the files/ mirror by this run. */
+  files_copied?: number;
 }
 
 const hourFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, hour: "2-digit", hourCycle: "h23" });
@@ -24,7 +30,7 @@ export class Backups {
 
   constructor(
     private readonly sqlite: Database,
-    private readonly opts: { dir: string; projectsDir: string; skillsDir: string; keep: number; hour: number },
+    private readonly opts: { dir: string; projectsDir: string; skillsDir: string; filesDir?: string; keep: number; hour: number },
   ) {}
 
   get dir(): string {
@@ -56,7 +62,8 @@ export class Backups {
       rmSync(final, { recursive: true, force: true });
       renameSync(tmp, final);
       this.#prune();
-      return this.#info(date);
+      const files = this.opts.filesDir ? mirror(this.opts.filesDir, join(this.opts.dir, "files")) : 0;
+      return { ...this.#info(date), files_copied: files };
     } finally {
       rmSync(tmp, { recursive: true, force: true });
       this.#running = false;
@@ -87,6 +94,26 @@ function dirSize(dir: string): number {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
     n += e.isDirectory() ? dirSize(p) : statSync(p).size;
+  }
+  return n;
+}
+
+/** Copy files from `src` into `dst` when missing or a different size. Half-sent uploads (*.part) are skipped. Returns the count. */
+export function mirror(src: string, dst: string): number {
+  if (!existsSync(src)) return 0;
+  let n = 0;
+  for (const e of readdirSync(src, { withFileTypes: true })) {
+    const from = join(src, e.name);
+    const to = join(dst, e.name);
+    if (e.isDirectory()) {
+      n += mirror(from, to);
+      continue;
+    }
+    if (!e.isFile() || e.name.endsWith(".part")) continue;
+    if (existsSync(to) && statSync(to).size === statSync(from).size) continue;
+    mkdirSync(dst, { recursive: true });
+    copyFileSync(from, to);
+    n++;
   }
   return n;
 }

@@ -132,9 +132,9 @@ export function wantsReview(ctx: RunContext, toolCalls: number): boolean {
 
 function handoffNote(ctx: RunContext): string {
   const tools = ctx.assignment.agent.tools;
-  if (!(tools.includes("handoff") || tools.includes("consult_agent")) || !ctx.assignment.handoff_targets.length) return "";
+  if (!(tools.includes("handoff") || tools.includes("consult_agent") || tools.includes("consult_team")) || !ctx.assignment.handoff_targets.length) return "";
   const list = ctx.assignment.handoff_targets.map((t) => `- ${t.slug}: ${t.name}${t.role ? ` (${t.role})` : ""}`).join("\n");
-  return `\n\n## Your colleagues (for handoff / consult_agent)\n${list}`;
+  return `\n\n## Your colleagues (for handoff / consult_agent / consult_team)\n${list}`;
 }
 
 /** Text agent with optional tools; loops model <-> tools up to `config.max_steps`. */
@@ -157,7 +157,7 @@ export const aiSdkRuntime: AgentRuntime = {
       streamError = null;
       const input =
         withImages && images.length
-          ? { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: promptText }, ...images.map((im) => ({ type: "image" as const, image: im.bytes, mediaType: im.type }))] }] }
+          ? { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: promptText }, ...images.map((im) => ({ type: "file" as const, data: im.bytes, mediaType: im.type }))] }] }
           : { prompt: images.length ? `${promptText}\n(This model cannot see the photos: ask the owner what they show if it matters.)` : promptText };
       return streamText({
         model: languageModel(provider, agent.model, job.input),

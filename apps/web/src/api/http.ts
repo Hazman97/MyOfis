@@ -133,6 +133,7 @@ export interface ThreadsSettings {
   token_hint: string | null;
   user_id: string | null;
   username: string | null;
+  expires_at: string | null;
 }
 export interface FacebookSettings {
   page_id: string;

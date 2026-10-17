@@ -56,7 +56,7 @@ Threads has its own token:
 
 Threads posts are text (up to 500 characters) or text + photo. Photos also go through the website's storage.
 
-> ⚠️ Long-lived Threads tokens last about **60 days**. When posting starts failing with a token error, generate a new one and paste it again.
+> Long-lived Threads tokens last about **60 days**. The hub renews yours every week by itself (the expiry date shows under Threads). If renewing fails, for example because you pasted a short-lived 1-hour token, Telegram tells you: generate a long-lived token and paste it again. The hub also checks the Facebook Page token every 6 hours and warns you on Telegram if it stops working.
 
 ## TikTok and YouTube
 - **Videos are ready today**: Editor cuts and exports TikTok FHD / Reels / Shorts on your PC (docs/video-editor.md). Download the video from the draft and post it yourself.
