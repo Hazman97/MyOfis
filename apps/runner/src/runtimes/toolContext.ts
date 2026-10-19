@@ -34,16 +34,17 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     downloadAttachment: (id, dest) => ctx.downloadUpload(id, dest),
     uploadVideo: (path, name, render) => ctx.uploadVideo(path, name, render),
     renders: [],
+    projectData: (action, params) => ctx.projectData(action, params),
     siteData: (p, r, params) => ctx.siteData(p, r, params),
     webPost: (a, id, edits) => ctx.webPost(a, id, edits),
   };
 }
 
 /** Photos and videos the owner sent with a chat message (`input.attachments`, set by the hub). */
-export function attachmentsOf(input: Record<string, unknown>): { id: string; name: string; content_type: string }[] {
+export function attachmentsOf(input: Record<string, unknown>): { id: string; name: string; content_type: string; doc_id?: string; pages?: number }[] {
   if (!Array.isArray(input.attachments)) return [];
   return input.attachments.filter(
-    (a): a is { id: string; name: string; content_type: string } =>
+    (a): a is { id: string; name: string; content_type: string; doc_id?: string; pages?: number } =>
       !!a && typeof a === "object" && typeof (a as { id?: unknown }).id === "string" && typeof (a as { content_type?: unknown }).content_type === "string",
   );
 }

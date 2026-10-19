@@ -297,6 +297,24 @@ Each website exposes one signed endpoint. Set it per project in **Projects → B
 - what is connected;
 - the safety rules.
 
+## Project Assistant: your project's memory
+
+Use it when you lead a project for a client (e.g. "MARDI Automatic Goat Shed Gate").
+1. Make the project in **Projects** (optionally inside its own Room).
+2. In **Chat**, pick **Project Assistant**, choose the project, and attach the files: minutes, brochures, specs (PDF, DOCX, TXT, MD, up to 25 MB). Or forward them to the Telegram bot (up to 20 MB).
+3. The files are read **on your PC** and indexed page by page. The assistant then:
+   - summarises each file;
+   - logs the decisions, action items (who / due date), meetings, risks and dates;
+   - answers your questions with the file and page.
+
+Tell it updates in plain words ("site visit siap", "client nak solar") and it keeps the log current. **Projects → (project) → Docs / Log** shows every file, a search box, the summaries and the log, where you can add or tick items.
+
+Two things happen on their own:
+- **Every morning at 08:00** Telegram lists the actions and dates due within 2 days or overdue.
+- **Every Monday at 08:30** (turn it on in **Schedules**) the assistant sends a weekly status.
+
+Scanned PDFs without a text layer cannot be read: send the original file.
+
 ## Ketua: ask the whole office
 
 Chat with **Ketua** (or `/agent ketua` in Telegram) when you want the team's view, for example "nak buat sistem booking kamera, okay ke?". Ketua picks the colleagues who matter (Researcher, Coder, Marketing, Kerani…) and asks them **at the same time** (`consult_team`). In the office they walk to the meeting room. Then you get one answer: a short verdict, each colleague's point, the risks and a numbered plan. Say "ok proceed" and Ketua hands the work to the right agents.

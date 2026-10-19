@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import {
+  DOC_TYPES,
   JobInput,
   computeCost,
   dayKey,
@@ -21,6 +22,7 @@ import type { Backups } from "./backup.ts";
 import type { Publisher } from "./publisher.ts";
 import type { UploadParts } from "./uploads.ts";
 import type { Studio } from "./studio.ts";
+import type { Docs } from "./docs.ts";
 import { briefingFacts } from "./briefing.ts";
 import { MEMBER_TOOLS, OWNER_WORKSPACE, aiWorkspace, restrictedWorkspace, roomBudgetLeft, shareOf, visibleAgents } from "./scope.ts";
 import type { OpencutWatch } from "./opencutWatch.ts";
@@ -96,6 +98,8 @@ export class Hub {
   uploadParts!: UploadParts;
   /** Video Studio: show how a video was made, render it again without the AI. */
   studio!: Studio;
+  /** Project documents (read on this PC, searchable) and the project log (Project Assistant). */
+  docs!: Docs;
   /** Daily look at OpenCut's releases / API plans (Video Studio's "edit fully" partner). */
   opencut!: OpencutWatch;
   social!: Social;
@@ -294,6 +298,14 @@ Error: ${r.error}` : ""}` });
     return draft;
   }
 
+  /** Read and index the documents among a message's files (PDF, DOCX, TXT, MD), before the chat job is made. */
+  async ingestAttachments(uploadIds: string[], workspaceId: string, projectId: string | null): Promise<void> {
+    for (const id of uploadIds) {
+      const u = this.publisher.upload(id);
+      if (u && u.workspace_id === workspaceId && DOC_TYPES[u.content_type]) await this.docs.ingest(id, workspaceId, projectId);
+    }
+  }
+
   chat(
     input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[]; source?: "telegram" },
     workspaceId: string = OWNER_WORKSPACE,
@@ -313,7 +325,9 @@ Error: ${r.error}` : ""}` });
     let attachments = (input.attachments ?? []).slice(0, MAX_CHAT_ATTACHMENTS).map((id) => {
       const u = this.publisher.upload(id);
       if (!u || u.workspace_id !== workspaceId) throw new HttpError(400, `unknown upload ${id}`);
-      return { id: u.id, name: u.name, content_type: u.content_type };
+      // documents were read and indexed before the message (ingestAttachments): tell the agent their id
+      const doc = DOC_TYPES[u.content_type] ? this.docs?.list(workspaceId).find((d) => d.upload_id === u.id) : undefined;
+      return { id: u.id, name: u.name, content_type: u.content_type, ...(doc ? { doc_id: doc.id, pages: doc.pages } : {}) };
     });
     // A reply without files keeps the thread's last files: the agent asked a question about them
     // ("what time is the tournament?", "cut it shorter") and still needs them.
@@ -1041,7 +1055,12 @@ Error: ${r.error}` : ""}` });
     const assignment: RunAssignment = {
       run_id: runId,
       // the morning briefing gets today's facts from the hub, fresh at run time
-      job: { id: job.id, type: job.type, title: job.title, input: job.type === "daily_briefing" ? { ...job.input, facts: briefingFacts(this, ws) } : job.input, project_id: job.project_id },
+      job: { id: job.id, type: job.type, title: job.title, input:
+          job.type === "daily_briefing"
+            ? { ...job.input, facts: briefingFacts(this, ws) }
+            : job.type === "project_status"
+              ? { ...job.input, facts: this.docs.statusFacts(ws, job.project_id) }
+              : job.input, project_id: job.project_id },
       agent: {
         id: agent.id,
         slug: agent.slug,

@@ -15,11 +15,11 @@ const myt = (iso: string) =>
   );
 
 describe("schedules", () => {
-  test("built-in schedules (Pak Guard 08:00 weekdays, Tester 02:00 nightly, Marketing Monday 09:00, Kerani 08:00 daily, Ketua 07:30 briefing) are seeded switched off", async () => {
+  test("built-in schedules (Pak Guard 08:00 weekdays, Tester 02:00 nightly, Marketing Monday 09:00, Kerani 08:00 daily, Ketua 07:30 briefing, Project Assistant Monday status) are seeded switched off", async () => {
     env = await createTestEnv();
     const { body } = await env.api("/api/schedules");
     const crons = body.schedules.map((s: { cron: string; enabled: boolean }) => `${s.cron}|${s.enabled}`).sort();
-    expect(crons).toEqual(["0 2 * * *|false", "0 8 * * *|false", "0 8 * * 1-5|false", "0 9 * * 1|false", "30 7 * * *|false"]);
+    expect(crons).toEqual(["0 2 * * *|false", "0 8 * * *|false", "0 8 * * 1-5|false", "0 9 * * 1|false", "30 7 * * *|false", "30 8 * * 1|false"]);
   });
 
   test("a cron schedule creates jobs with trigger=schedule", async () => {

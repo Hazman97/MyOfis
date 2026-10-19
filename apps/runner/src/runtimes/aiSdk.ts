@@ -252,8 +252,11 @@ export function filesNote(ctx: RunContext): string {
   const files = attachmentsOf(ctx.assignment.job.input);
   if (!files.length) return "";
   const photos = files.filter((f) => f.content_type.startsWith("image/")).length;
-  const lines = files.map((f, i) => `${i + 1}. ${f.name} (${f.content_type.startsWith("image/") ? "photo" : "video"})`);
+  const kind = (f: { content_type: string; doc_id?: string; pages?: number }) =>
+    f.content_type.startsWith("image/") ? "photo" : f.content_type.startsWith("video/") ? "video" : f.doc_id ? `document ${f.doc_id}, ${f.pages ?? "?"} pages: read it with doc_read` : "document";
+  const lines = files.map((f, i) => `${i + 1}. ${f.name} (${kind(f)})`);
   const earlier = ctx.assignment.job.input.attachments_carried ? " earlier in this chat" : "";
-  const how = [photos ? "You can see the photos (up to 4): use them for the caption or as cover_photo." : "", photos < files.length ? "Videos: use video_probe and video_edit with their numbers." : ""].filter(Boolean).join(" ");
+  const videos = files.filter((f) => f.content_type.startsWith("video/")).length;
+  const how = [photos ? "You can see the photos (up to 4): use them for the caption or as cover_photo." : "", videos ? "Videos: use video_probe and video_edit with their numbers." : ""].filter(Boolean).join(" ");
   return `\n\n[The owner sent these files${earlier}:\n${lines.join("\n")}\n${how}]`;
 }

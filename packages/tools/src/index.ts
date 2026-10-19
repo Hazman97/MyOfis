@@ -8,6 +8,7 @@ import { runCommandTool } from "./shell.ts";
 import { WEB_TOOLS } from "./web.ts";
 import { RESEARCH_TOOLS } from "./research.ts";
 import { VIDEO_TOOLS } from "./video.ts";
+import { DOC_TOOLS } from "./docs.ts";
 import type { ToolDef } from "./types.ts";
 
 export * from "./types.ts";
@@ -40,6 +41,7 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     ...LEARNING_TOOLS,
     ...RESEARCH_TOOLS,
     ...VIDEO_TOOLS,
+    ...DOC_TOOLS,
   ].map((t) => [t.name, t as unknown as ToolDef]),
 );
 

@@ -318,6 +318,43 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ draft: { id: draft.id, title: draft.title, status: draft.status, url: draft.published_url } });
   });
 
+  /** Project Assistant: documents and log, scoped to the run's room; each action needs its tool. */
+  const PROJECT_TOOL: Record<string, string> = { search: "docs_search", read: "doc_read", summary: "doc_summary", log_add: "project_log_add", log_list: "project_log_list", log_update: "project_log_update" };
+  app.post("/api/runner/project-data", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const body = z.object({ run_id: z.string(), action: z.enum(["search", "read", "summary", "log_add", "log_list", "log_update"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
+    const run = getRun(db, body.run_id);
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+    if (!getAgent(db, run.agent_id)?.tools.includes(PROJECT_TOOL[body.action]!)) throw new HttpError(403, `this agent may not use ${PROJECT_TOOL[body.action]}`);
+    const ws = getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
+    const p = body.params;
+    const project = typeof p.project_id === "string" && p.project_id ? ownProject(db, p.project_id, ws).id : null;
+    const docs = hub.docs;
+    switch (body.action) {
+      case "search":
+        return c.json({ data: { hits: docs.search(z.string().parse(p.query), ws, project, Number(p.limit) || 8) } });
+      case "read": {
+        const r = docs.read(z.string().parse(p.doc_id), ws, Number(p.from) || 1, Number(p.to) || undefined);
+        return c.json({ data: { doc: { id: r.doc.id, title: r.doc.title, pages: r.doc.pages }, text: r.text, truncated: r.truncated } });
+      }
+      case "summary":
+        docs.setSummary(z.string().parse(p.doc_id), ws, z.string().parse(p.summary));
+        return c.json({ data: { saved: true } });
+      case "log_add": {
+        const entries = z.array(z.unknown()).max(30).parse(p.entries);
+        const added = entries.map((e) => docs.addLog(ws, project, e as never, run.agent_id));
+        return c.json({ data: { added: added.length, ids: added.map((e) => e.id) } });
+      }
+      case "log_list":
+        return c.json({ data: { entries: docs.log(ws, { project_id: project, status: p.status === "open" || p.status === "done" ? p.status : undefined, kind: typeof p.kind === "string" ? p.kind : undefined }) } });
+      case "log_update":
+        return c.json({ data: { entry: docs.updateLog(z.string().parse(p.id), ws, z.record(z.string(), z.unknown()).parse(p.patch) as never) } });
+    }
+  });
+
   /** Runner reads data a project's website shares (Kerani: bookings). The site's secret stays in the hub. */
   app.post("/api/runner/site-data", async (c) => {
     const header = c.req.header("authorization") ?? "";
@@ -662,6 +699,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         attachments: z.array(z.string().max(64)).max(10).optional(),
       })
       .parse(await c.req.json());
+    // documents in the message are read and indexed first (into the chat's project, if any)
+    await hub.ingestAttachments(body.attachments ?? [], W(c), body.project_id ?? null);
     const { job, thread_id } = hub.chat(body, W(c));
     return c.json({ job, thread_id }, 201);
   });
@@ -711,6 +750,33 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       })),
     });
   });
+
+  // project documents (read on this PC) and the project log: the Project Assistant's memory of a project
+  api.get("/docs", (c) => {
+    const project = c.req.query("project_id") || null;
+    if (project) ownProject(db, project, W(c));
+    return c.json({ docs: hub.docs.list(W(c), project) });
+  });
+  api.post("/docs", async (c) => {
+    const body = z.object({ upload_id: z.string(), project_id: z.string().nullable().default(null) }).parse(await c.req.json());
+    return c.json({ doc: await hub.docs.ingest(body.upload_id, W(c), body.project_id) }, 201);
+  });
+  api.get("/docs/search", (c) => c.json({ hits: hub.docs.search(c.req.query("q") ?? "", W(c), c.req.query("project_id") || null, 20) }));
+  api.get("/docs/:id/text", (c) => {
+    const from = intParam(c.req.query("from"), 1, 100_000) || 1;
+    const r = hub.docs.read(c.req.param("id"), W(c), from, intParam(c.req.query("to"), from + 4, 100_000));
+    return c.json(r);
+  });
+  api.get("/log", (c) => {
+    const status = c.req.query("status");
+    return c.json({ entries: hub.docs.log(W(c), { project_id: c.req.query("project_id") || null, status: status === "open" || status === "done" ? status : undefined }) });
+  });
+  api.post("/log", async (c) => {
+    const body = z.object({ project_id: z.string().nullable().default(null) }).passthrough().parse(await c.req.json());
+    if (body.project_id) ownProject(db, body.project_id, W(c));
+    return c.json({ entry: hub.docs.addLog(W(c), body.project_id, body as never) }, 201);
+  });
+  api.patch("/log/:id", async (c) => c.json({ entry: hub.docs.updateLog(c.req.param("id"), W(c), (await c.req.json()) as never) }));
 
   // Video Studio: how a video was made, render it again without the AI, or use your own edit
   api.get("/videos/:id", (c) => c.json(hub.studio.info(c.req.param("id"), W(c))));

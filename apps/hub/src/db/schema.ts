@@ -351,3 +351,47 @@ export const uploads = sqliteTable("uploads", {
   render: json<RenderInfo>("render"),
   created_at: text("created_at").notNull().default(now),
 });
+
+/**
+ * Project documents (owner request, 2026-10-19: a project assistant that knows every file of a
+ * project: minutes, brochures, specs). The text is extracted on the owner's PC and indexed per
+ * page in the FTS table `docs_index` (migration 0011, not managed by Drizzle).
+ */
+export const projectDocs = sqliteTable(
+  "project_docs",
+  {
+    id: text("id").primaryKey(),
+    workspace_id: ws(),
+    project_id: text("project_id").references(() => projects.id),
+    upload_id: text("upload_id").notNull(),
+    title: text("title").notNull(),
+    content_type: text("content_type").notNull(),
+    pages: integer("pages").notNull().default(0),
+    chars: integer("chars").notNull().default(0),
+    /** Written by the assistant after reading it (summary, decisions, action items). */
+    summary: text("summary").notNull().default(""),
+    created_at: text("created_at").notNull().default(now),
+  },
+  (t) => [index("project_docs_ws_idx").on(t.workspace_id, t.created_at)],
+);
+
+/** What happened in a project: decisions, action items (who / when), meetings, risks, dates, notes. */
+export const projectLog = sqliteTable(
+  "project_log",
+  {
+    id: text("id").primaryKey(),
+    workspace_id: ws(),
+    project_id: text("project_id").references(() => projects.id),
+    kind: text("kind", { enum: ["decision", "action", "meeting", "risk", "date", "note"] }).notNull(),
+    text: text("text").notNull(),
+    owner: text("owner").notNull().default(""),
+    /** YYYY-MM-DD (Malaysia), for actions and dates. */
+    due_date: text("due_date"),
+    status: text("status", { enum: ["open", "done"] }).notNull().default("open"),
+    source_doc_id: text("source_doc_id"),
+    agent_id: text("agent_id"),
+    created_at: text("created_at").notNull().default(now),
+    done_at: text("done_at"),
+  },
+  (t) => [index("project_log_ws_idx").on(t.workspace_id, t.status, t.due_date)],
+);

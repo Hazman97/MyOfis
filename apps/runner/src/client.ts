@@ -331,6 +331,18 @@ export class RunnerClient {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }
 
+  async #projectData(runId: string, action: string, params: Record<string, unknown>): Promise<unknown> {
+    const res = await freshFetch(new URL("/api/runner/project-data", this.#opts.hubUrl), {
+      method: "POST",
+      timeoutMs: 30_000,
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ run_id: runId, action, params }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { data?: unknown; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `project data failed (${res.status})`);
+    return body.data;
+  }
+
   async #webSearch(runId: string, query: string, count: number) {
     const res = await freshFetch(new URL("/api/runner/web-search", this.#opts.hubUrl), {
       method: "POST",
@@ -410,6 +422,7 @@ export class RunnerClient {
         fetchUpload: (id) => this.#fetchUpload(a.run_id, id),
         downloadUpload: (id, dest) => this.#downloadUpload(a.run_id, id, dest),
         uploadVideo: (path, name, render) => this.#uploadVideo(a.run_id, path, name, render),
+        projectData: (action, params) => this.#projectData(a.run_id, action, params),
         siteData: (projectId, resource, params) => this.#siteData(a.run_id, projectId, resource, params),
         webPost: (action, draftId, edits) => this.#webPost(a.run_id, action, draftId, edits),
         consult: (toAgent, question, timeoutMs) => this.#consult(a.run_id, toAgent, question, timeoutMs, run.abort.signal),

@@ -6,6 +6,7 @@ import { researcherAgent } from "./researcher.ts";
 import { publisherAgent } from "./publisher.ts";
 import { editorAgent } from "./editor.ts";
 import { ketuaAgent, ketuaSchedule } from "./ketua.ts";
+import { projectAssistantAgent, projectAssistantSchedule } from "./projectAssistant.ts";
 import { keraniAgent, keraniSchedule } from "./kerani.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
 import { pakGuardAgent, pakGuardSchedule } from "./pakGuard.ts";
@@ -21,6 +22,7 @@ export { researcherAgent, RESEARCHER_PROMPT } from "./researcher.ts";
 export { publisherAgent, PUBLISHER_PROMPT } from "./publisher.ts";
 export { editorAgent, EDITOR_PROMPT } from "./editor.ts";
 export { ketuaAgent, ketuaSchedule, KETUA_PROMPT } from "./ketua.ts";
+export { projectAssistantAgent, projectAssistantSchedule, PROJECT_ASSISTANT_PROMPT } from "./projectAssistant.ts";
 export { keraniAgent, keraniSchedule, KERANI_PROMPT } from "./kerani.ts";
 
 export interface BuiltinAgent {
@@ -44,4 +46,5 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: keraniAgent, needsLlm: true, schedules: (id) => [keraniSchedule(id)] },
   { agent: editorAgent, needsLlm: true },
   { agent: ketuaAgent, needsLlm: true, schedules: (id) => [ketuaSchedule(id)] },
+  { agent: projectAssistantAgent, needsLlm: true, schedules: (id) => [projectAssistantSchedule(id)] },
 ];

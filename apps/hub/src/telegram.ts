@@ -2,7 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { VIDEO_TYPES, freshFetch, redactString, type AgentEvent } from "@agent-office/shared";
+import { DOC_TYPES, VIDEO_TYPES, freshFetch, redactString, type AgentEvent } from "@agent-office/shared";
 import type { Hub } from "./core.ts";
 import { agents, approvals, contentDrafts, projects, settings } from "./db/schema.ts";
 import type { Integrations } from "./integrations.ts";
@@ -12,7 +12,7 @@ import { OWNER_WORKSPACE, ownApproval, ownDraft } from "./scope.ts";
 const POLL_TIMEOUT_S = 25;
 const MESSAGE_MAX = 3500;
 /** Job types whose finished report is sent to the owner (Pak Guard's morning report, the nightly smoke test). */
-const REPORT_JOB_TYPES = new Set(["health_check", "smoke_test", "bookings_report", "daily_briefing"]);
+const REPORT_JOB_TYPES = new Set(["health_check", "smoke_test", "bookings_report", "daily_briefing", "project_status"]);
 /** Photos sent as an album arrive as separate messages: wait this long for the rest. */
 const ALBUM_WAIT_MS = 1500;
 /** At most this many draft cards per run; the rest are summarised. */
@@ -515,7 +515,8 @@ export class TelegramBot {
         if (!file.file_path) continue;
         const res = await freshFetch(`${this.apiBase}/file/bot${token}/${file.file_path}`, { timeoutMs: 5 * 60_000 });
         if (!res.ok) throw new Error(`could not download ${f.name} (${res.status})`);
-        if (f.type.startsWith("image/")) {
+        // photos and documents are small (saved whole); videos are streamed to disk
+        if (!VIDEO_TYPES[f.type]) {
           attachments.push(this.hub.publisher.saveUpload(file.file_path.split("/").pop() ?? f.name, f.type, new Uint8Array(await res.arrayBuffer())).id);
         } else {
           const tmp = join(this.hub.config.filesDir, "uploads", `tg-${randomUUID()}.part`);
@@ -525,6 +526,8 @@ export class TelegramBot {
         }
       }
       if (!attachments.length && !text) return;
+      // a forwarded PDF / DOCX is read and indexed into the chat's project first (Project Assistant)
+      await this.hub.ingestAttachments(attachments, OWNER_WORKSPACE, this.#project(state));
       const { thread_id } = this.hub.chat({
         agent_id: agent.id,
         text: text || (attachments.length ? "(sent files)" : ""),
@@ -560,8 +563,8 @@ function fileOf(msg: TgMessage): InFile | null {
   }
   const f = msg.video ?? msg.document;
   const type = f?.mime_type ?? (msg.video ? "video/mp4" : "");
-  if (!f || !(VIDEO_TYPES[type] || ["image/jpeg", "image/png", "image/webp"].includes(type))) return null;
-  return { file_id: f.file_id, file_size: f.file_size, name: f.file_name ?? (type.startsWith("video/") ? `video.${VIDEO_TYPES[type]}` : "photo.jpg"), type };
+  if (!f || !(VIDEO_TYPES[type] || DOC_TYPES[type] || ["image/jpeg", "image/png", "image/webp"].includes(type))) return null;
+  return { file_id: f.file_id, file_size: f.file_size, name: f.file_name ?? (type.startsWith("video/") ? `video.${VIDEO_TYPES[type]}` : DOC_TYPES[type] ? `document.${DOC_TYPES[type]}` : "photo.jpg"), type };
 }
 
 const clip = (s: string) => (s.length > MESSAGE_MAX ? `${s.slice(0, MESSAGE_MAX)}…` : s);

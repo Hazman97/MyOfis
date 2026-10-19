@@ -7,7 +7,7 @@ import { Learning } from "./learning.ts";
 import { Hub, TIMINGS, type RunnerConn } from "./core.ts";
 import { Secrets, hashToken } from "./crypto.ts";
 import { openDb } from "./db/client.ts";
-import { runners } from "./db/schema.ts";
+import { runners, settings } from "./db/schema.ts";
 import type { HubConfig } from "./env.ts";
 import { EventStore, visibleTo } from "./events.ts";
 import { createHttpApp } from "./http.ts";
@@ -17,6 +17,7 @@ import { TelegramBot } from "./telegram.ts";
 import { Backups } from "./backup.ts";
 import { UploadParts } from "./uploads.ts";
 import { Studio } from "./studio.ts";
+import { Docs } from "./docs.ts";
 import { OpencutWatch } from "./opencutWatch.ts";
 import { Publisher } from "./publisher.ts";
 import { Social } from "./social.ts";
@@ -43,7 +44,7 @@ export interface HubServer {
 
 export function startHub(
   config: HubConfig,
-  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number; tokenCheckMs?: number; opencutCheckMs?: number } = {},
+  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number; tokenCheckMs?: number; opencutCheckMs?: number; remindCheckMs?: number } = {},
 ): HubServer {
   const { db, sqlite } = openDb(config.databasePath);
   const secrets = new Secrets(config.secretsKey);
@@ -63,6 +64,7 @@ export function startHub(
   hub.publisher = new Publisher(db, store, secrets, config.filesDir);
   hub.uploadParts = new UploadParts(hub.publisher, config.filesDir);
   hub.studio = new Studio(hub);
+  hub.docs = new Docs(db, hub.publisher);
   hub.social = new Social(db, store, secrets, hub.publisher, config.facebookGraphBase, config.threadsGraphBase);
   hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir, filesDir: config.filesDir });
   hub.boot();
@@ -205,6 +207,21 @@ export function startHub(
     }
   };
   const tokenTimer = setInterval(() => void checkTokens(), opts.tokenCheckMs ?? 6 * 3600_000);
+  // project reminders (Project Assistant): every morning from 08:00 KL, actions and dates due within 2 days or overdue
+  const remindTimer = setInterval(() => {
+    const now = new Date();
+    if (Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", hourCycle: "h23" }).format(now)) < 8) return;
+    const day = dayKey(now.toISOString());
+    const key = "reminders.sent";
+    if (db.select().from(settings).where(eq(settings.key, key)).get()?.value === day) return;
+    db.insert(settings).values({ key, value: day }).onConflictDoUpdate({ target: settings.key, set: { value: day } }).run();
+    const due = hub.docs.dueSoon("owner", 2, now);
+    if (!due.length) return;
+    const lines = due.map((e) => `${e.due_date! < day ? "🔴" : e.due_date === day ? "🟠" : "🟡"} ${e.due_date} · ${e.text}${e.owner ? ` (${e.owner})` : ""}`);
+    const text = ["⏰ Project reminders", "", ...lines, "", "Mark them done in Agent Office → Projects → Log, or tell the Project Assistant."].join("\n");
+    telegram.notify(text).catch(() => {});
+  }, opts.remindCheckMs ?? 15 * 60_000);
+
   // OpenCut watcher: once a day, tell the owner when OpenCut releases or its API plans change
   const opencut = new OpencutWatch(db, config.opencutApiBase);
   hub.opencut = opencut;
@@ -229,6 +246,7 @@ export function startHub(
       clearInterval(backupTimer);
       clearInterval(tokenTimer);
       clearInterval(opencutTimer);
+      clearInterval(remindTimer);
       clearTimeout(tokenFirst);
       scheduler.stop();
       releases.stop();

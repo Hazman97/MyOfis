@@ -217,6 +217,15 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
     - arrow keys / WASD (not while typing).
   - **Vue:** the menu is emitted in viewport coordinates → `AgentRadialMenu.vue` (fixed; the backdrop must `@contextmenu.prevent` or the opening right-click closes it). Dashboard handles drop actions and the "Chat with X" chip.
   - Gemini 013 styles them.
+- **Project Assistant** (owner request, 2026-10-19: leading the MARDI goat-shed gate project; files come in WhatsApp; the company's ProjectFlow has no API).
+  - **Storage:** migration 0011 adds `project_docs`, `project_log` and the FTS table `docs_index` (one row per PDF page, or per ~3,500-character chunk of DOCX/TXT/MD).
+  - **Reading:** `apps/hub/src/docs.ts` extracts text with `unpdf` + `mammoth` (pinned) on the owner's PC. PDFs without a text layer or damaged PDFs give a clear 400.
+  - **Uploads:** `saveUpload` takes documents up to 25 MB (`DOC_TYPES` in `packages/shared/src/docs.ts`). Chat (`POST /api/chat`) and Telegram (document messages, ≤ 20 MB) call `hub.ingestAttachments` before the job, so attachments carry `doc_id` + `pages`, and the runner's `filesNote` tells the model to `doc_read`.
+  - **Tools** (`packages/tools/src/docs.ts`): `docs_search`, `doc_read`, `doc_summary`, `project_log_add`, `project_log_list`, `project_log_update`, via `ctx.projectData` → `POST /api/runner/project-data`. Each action needs its tool, and data is scoped to the job's room.
+  - **Owner routes:** `/api/docs` (list, add, search, `/:id/text`) and `/api/log` (list, add, `PATCH`).
+  - **Agent:** `project-assistant` (`packages/agents/src/projectAssistant.ts`). Its weekly status is job type `project_status` (Monday 08:30, seeded off) with `docs.statusFacts()` injected as `input.facts`; it is reported on Telegram.
+  - **Reminders:** a hub timer from 08:00 KL sends `docs.dueSoon("owner", 2)` to Telegram once a day (`settings.reminders.sent`).
+  - **Web:** Projects → Docs (`ProjectDocs.vue`) and Log (`ProjectLog.vue`); chat shows documents as chips. Gemini 014 polishes them.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

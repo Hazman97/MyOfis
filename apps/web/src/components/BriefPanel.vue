@@ -5,6 +5,8 @@ import { ExternalLink, Image, LoaderCircle, Plus, Sparkles, Trash2 } from "lucid
 import { Platform, type ContentLanguage, type FeatureNote, type Project, type ProjectBriefInput } from "@agent-office/shared";
 import SidePanel from "./SidePanel.vue";
 import PublishSettings from "./PublishSettings.vue";
+import ProjectDocs from "./ProjectDocs.vue";
+import ProjectLog from "./ProjectLog.vue";
 import FacebookSettings from "./FacebookSettings.vue";
 import SocialSettings from "./SocialSettings.vue";
 import { api } from "../api/http.ts";
@@ -14,7 +16,7 @@ import { fmtDateTime } from "../format.ts";
 const props = defineProps<{ project: Project; tab?: "brief" | "features" }>();
 const emit = defineEmits<{ close: [] }>();
 
-const tab = ref<"brief" | "features" | "website">(props.tab ?? "brief");
+const tab = ref<"brief" | "features" | "website" | "docs" | "log">(props.tab ?? "brief");
 const loaded = ref(false);
 const exists = ref(false);
 const path = ref("");
@@ -188,7 +190,29 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
       >
         Website
       </button>
+      <button
+        role="tab"
+        class="flex-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 text-center"
+        :class="tab === 'docs' ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
+        :aria-selected="tab === 'docs'"
+        @click="tab = 'docs'"
+      >
+        Docs
+      </button>
+      <button
+        role="tab"
+        class="flex-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 text-center"
+        :class="tab === 'log' ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
+        :aria-selected="tab === 'log'"
+        @click="tab = 'log'"
+      >
+        Log
+      </button>
     </div>
+
+    <!-- PROJECT ASSISTANT: documents and the project log -->
+    <ProjectDocs v-if="tab === 'docs'" :project="project" />
+    <ProjectLog v-if="tab === 'log'" :project="project" />
 
     <!-- WEBSITE PUBLISHING (Publisher) -->
     <template v-if="tab === 'website'">

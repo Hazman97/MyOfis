@@ -50,6 +50,12 @@ export function schemaTables(): SystemTable[] {
     foreign_keys: [],
     note: "SQLite FTS5 full-text index for session_search",
   });
+  tables.push({
+    name: "docs_index",
+    columns: ["doc_id", "workspace_id", "project_id", "page", "title", "body"].map((name) => ({ name, type: "text", not_null: false, primary: false })),
+    foreign_keys: [{ columns: ["doc_id"], table: "project_docs", foreign_columns: ["id"] }],
+    note: "SQLite FTS5 full-text index over project documents, one row per page",
+  });
   return tables;
 }
 

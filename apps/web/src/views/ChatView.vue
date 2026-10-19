@@ -133,6 +133,8 @@ const uploading = ref(false);
 const uploadPct = ref<number | null>(null);
 const photoInput = ref<HTMLInputElement>();
 const isVideo = (a: { content_type: string }) => a.content_type.startsWith("video/");
+/** PDF / DOCX / TXT / MD for the Project Assistant (shown as a file chip, not a picture). */
+const isDoc = (a: { content_type: string }) => !a.content_type.startsWith("video/") && !a.content_type.startsWith("image/");
 async function addPhotos(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = [...(input.files ?? [])].slice(0, MAX_PHOTOS - photos.value.length);
@@ -356,6 +358,9 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                 <div v-if="m.attachments?.length" class="mb-2 flex flex-wrap gap-1.5">
                   <template v-for="a in m.attachments" :key="a.id">
                     <video v-if="isVideo(a)" :src="api.uploadUrl(a.id)" controls preload="metadata" class="h-40 max-w-full rounded-xl border border-white/20 bg-black shadow-xs" :aria-label="a.name" />
+                    <a v-else-if="isDoc(a)" :href="api.uploadUrl(a.id, true)" class="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-2 py-1 text-xs" download>
+                      📄 <span class="truncate">{{ a.name }}</span>
+                    </a>
                     <a v-else :href="api.uploadUrl(a.id)" target="_blank" rel="noopener" class="group/img block overflow-hidden rounded-xl border border-white/20 transition-transform hover:scale-[1.02]">
                       <img :src="api.uploadUrl(a.id)" :alt="a.name" class="size-24 rounded-xl object-cover shadow-xs" loading="lazy" />
                     </a>
@@ -420,6 +425,9 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
           <div v-if="photos.length || uploading" class="mb-2.5 flex flex-wrap items-center gap-2" aria-label="Photos to send">
             <div v-for="p in photos" :key="p.id" class="relative group">
               <video v-if="isVideo(p)" :src="p.preview" muted preload="metadata" class="size-16 rounded-xl border border-line bg-black object-cover shadow-xs" :aria-label="p.name" />
+              <div v-else-if="isDoc(p)" class="flex h-16 w-28 flex-col items-center justify-center rounded-xl border border-line bg-surface-2 p-1 text-center text-[10px] shadow-xs" :title="p.name">
+                <span class="text-lg">📄</span><span class="w-full truncate">{{ p.name }}</span>
+              </div>
               <img v-else :src="p.preview" :alt="p.name" class="size-16 rounded-xl border border-line object-cover shadow-xs" />
               <button
                 class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-line bg-surface text-muted shadow-sm hover:bg-danger-soft hover:text-danger hover:border-danger/30 transition-colors"
@@ -436,12 +444,12 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
             </span>
           </div>
           <div class="flex items-end gap-2">
-            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v" multiple class="hidden" @change="addPhotos" />
+            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v,application/pdf,.pdf,.docx,.txt,.md" multiple class="hidden" @change="addPhotos" />
             <button
               class="btn relative shrink-0 size-9 p-0 rounded-lg text-muted hover:text-fg"
               :disabled="uploading || photos.length >= MAX_PHOTOS"
               aria-label="Add photos or videos"
-              title="Add photos or videos (up to 10). Publisher sees the photos; Editor edits the videos."
+              title="Add photos, videos or documents (up to 10). Publisher sees photos, Editor edits videos, the Project Assistant reads PDF / DOCX."
               @click="photoInput?.click()"
             >
               <ImagePlus :size="16" />

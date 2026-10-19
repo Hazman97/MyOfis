@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { PublishInfo, VIDEO_TYPES, WebPost, fixEscapedNewlines, freshFetch, type RenderInfo, type WebPostEdit } from "@agent-office/shared";
+import { DOC_TYPES, MAX_DOC_BYTES, PublishInfo, VIDEO_TYPES, WebPost, fixEscapedNewlines, freshFetch, type RenderInfo, type WebPostEdit } from "@agent-office/shared";
 import { keyHint, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { contentDrafts, projects, uploads, type ProjectPublish } from "./db/schema.ts";
@@ -54,16 +54,19 @@ export class Publisher {
 
   // ---------------------------------------------------------------- uploads (chat photos)
 
+  /** A photo (≤ 10 MB) or a document for the project assistant (PDF, DOCX, TXT, MD; ≤ 25 MB). Videos go in parts. */
   saveUpload(name: string, contentType: string, bytes: Uint8Array, workspaceId = "owner") {
-    const ext = IMAGE_TYPES[contentType];
-    if (!ext) throw new HttpError(400, "only JPEG, PNG, WebP or GIF images");
-    if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES) throw new HttpError(400, "the image must be under 10 MB");
+    const doc = DOC_TYPES[contentType];
+    const ext = IMAGE_TYPES[contentType] ?? doc;
+    if (!ext) throw new HttpError(400, "only photos (JPEG, PNG, WebP, GIF) or documents (PDF, DOCX, TXT, MD)");
+    const max = doc ? MAX_DOC_BYTES : MAX_UPLOAD_BYTES;
+    if (!bytes.length || bytes.length > max) throw new HttpError(400, `the file must be under ${Math.round(max / 1024 / 1024)} MB`);
     const id = newId("upl");
     const dir = join(this.filesDir, "uploads");
     mkdirSync(dir, { recursive: true });
     const path = join("uploads", `${id}.${ext}`);
     writeFileSync(join(this.filesDir, path), bytes);
-    const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `image.${ext}`;
+    const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `file.${ext}`;
     return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size: bytes.length, path, workspace_id: workspaceId }).returning().get();
   }
 

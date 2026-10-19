@@ -2,8 +2,11 @@ import type {
   Agent,
   AgentEvent,
   ContentDraft,
+  DocHit,
   DraftDecision,
   EditPlan,
+  LogEntry,
+  ProjectDoc,
   FeatureNote,
   FeatureNoteInput,
   Job,
@@ -308,6 +311,14 @@ export const api = {
 
   tools: () => request<{ tools: ToolInfo[] }>("/tools"),
   system: () => request<SystemInfo>("/system"),
+  docs: (projectId?: string) => request<{ docs: ProjectDoc[] }>(`/docs${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`),
+  addDoc: (uploadId: string, projectId: string | null) => request<{ doc: ProjectDoc }>("/docs", { body: { upload_id: uploadId, project_id: projectId } }),
+  searchDocs: (q: string, projectId?: string) => request<{ hits: DocHit[] }>(`/docs/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`),
+  docText: (id: string, from = 1, to = from + 4) => request<{ doc: ProjectDoc; text: string; truncated: boolean }>(`/docs/${id}/text?from=${from}&to=${to}`),
+  log: (projectId?: string, status?: "open" | "done") =>
+    request<{ entries: LogEntry[] }>(`/log?${new URLSearchParams({ ...(projectId ? { project_id: projectId } : {}), ...(status ? { status } : {}) })}`),
+  addLog: (body: Record<string, unknown>) => request<{ entry: LogEntry }>("/log", { body }),
+  updateLog: (id: string, body: Record<string, unknown>) => request<{ entry: LogEntry }>(`/log/${id}`, { method: "PATCH", body }),
   video: (id: string) => request<VideoInfo>(`/videos/${encodeURIComponent(id)}`),
   renderVideo: (id: string, plan: EditPlan, draftId: string | null) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/render`, { body: { plan, draft_id: draftId } }),
   setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),
@@ -365,7 +376,7 @@ export const api = {
     request<{ job: Job; thread_id: string }>("/chat", { body }),
   /** Upload a photo to send in chat (raw body, not JSON). */
   uploadImage: async (file: File): Promise<ChatAttachment> => {
-    const res = await fetch(`/api/uploads?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file, headers: { "content-type": file.type }, credentials: "same-origin" });
+    const res = await fetch(`/api/uploads?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file, headers: { "content-type": file.type || guessType(file.name) }, credentials: "same-origin" });
     const data = (await res.json().catch(() => ({}))) as { upload?: ChatAttachment; error?: string };
     if (res.status === 401) onUnauthorized();
     if (!res.ok || !data.upload) throw new ApiError(res.status, data.error ?? res.statusText);
@@ -410,3 +421,15 @@ export const api = {
     request<{ provider: ProviderPublic }>(`/providers/${id}`, { method: "PATCH", body }),
   deleteProvider: (id: string) => request<{ ok: true }>(`/providers/${id}`, { method: "DELETE" }),
 };
+
+/** Some browsers leave the type empty for .md / .docx: guess it from the name. */
+function guessType(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    md: "text/markdown",
+    txt: "text/plain",
+  };
+  return map[ext] ?? "application/octet-stream";
+}
