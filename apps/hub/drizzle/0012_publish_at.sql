@@ -1,0 +1,1 @@
+ALTER TABLE `content_drafts` ADD `publish_at` text;

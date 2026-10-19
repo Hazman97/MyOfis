@@ -93,7 +93,7 @@ Agent Office is a **personal "office" of AI agents** for one owner: a solo devel
 
 **Database tables**
 - Core: `events`, `jobs`, `runs`, `agents`, `providers`, `runners`, `pairing_codes`, `approvals`, `schedules`, `projects`, `settings`.
-- Content: `feature_log`, `content_drafts` (with `meta`, `published_url`, `publish_error`), `uploads` (photos and videos; `run_id` for renders).
+- Content: `feature_log`, `content_drafts` (with `meta`, `published_url`, `publish_error`, `publish_at` for scheduled posts), `uploads` (photos and videos; `run_id` for renders).
 - Learning: `proposals`, `search_index` (FTS5).
 - Per-project and integration settings live in `settings`, encrypted where secret. This covers Telegram, web search, social tokens, memory stores and the Telegram chat state.
 
@@ -241,17 +241,17 @@ Consults are one level deep: a consulted agent cannot consult or hand off. They 
 
 ## 8. Known gaps and weak spots (good places to suggest improvements)
 
-1. **Scheduled posting and post statistics.** Approve posts immediately. There is no "post Saturday 8 pm", and no reach/likes coming back for Marketing to learn from.
+1. **Post statistics.** Posts can be scheduled (approve now, post at a set time), but no reach/likes come back for Marketing to learn from.
 2. **TikTok and YouTube posting.** Editor's videos are downloaded and posted by hand until the TikTok Content Posting API / YouTube Data API apps exist.
 3. **Customer-facing channel.** No WhatsApp agent for SmashPoint customers (questions, free slots, provisional bookings).
 4. **Local models.** All agents use one remote provider. Ollama on the owner's RTX 3060 for light work (and vision frames for Editor) is planned; `docs/colab/myofis-local-llm-test.ipynb` tests candidate models.
 5. **Editor cannot see frames.** It cuts at given times or scene changes; no auto-subtitles (Whisper), music or voice-over yet.
-6. **Daily briefing.** No "CEO" morning summary across bookings, drafts, work done and cost.
+6. **Briefing depth.** Ketua's 07:30 briefing covers runs, failures, pending items and cost, but not bookings or post results.
 7. **Gitea not installed yet.** All Gitea flows (Coder PRs, release watcher) are tested only against a fake.
 8. **Isolation without Docker.** Safety rests on path guards plus the allowlist. A low-privilege OS user for the runner was discussed but not built.
 9. **Cost visibility.** Token budgets exist per agent per day; there is no cost dashboard per provider.
 10. **Memory/skills quality.** No evaluation of whether saved memories or skills improve results; FTS search is keyword-only.
-11. **Single owner, single office.** No multi-user, no roles. Selling it as a product (like KuasaOS / Sintra) would need multi-tenancy and billing.
+11. **Product, not just a tool.** Members, rooms and shared agents exist, but selling it (like KuasaOS / Sintra) would still need billing and self-service sign-up.
 12. **Mobile.** The web app is responsive and Telegram is the mobile channel, but there is no PWA / push notifications.
 13. **3D / creative work** (OpenSCAD or Blender scripts) and the camera-rental bookings source are still open.
 

@@ -150,6 +150,8 @@ export const ContentDraft = z.object({
   meta: WebPost.nullable().default(null),
   published_url: z.string().nullable().default(null),
   publish_error: z.string().nullable().default(null),
+  /** Approved and scheduled: it goes out at this time (ISO). */
+  publish_at: z.string().nullable().default(null),
 });
 export type ContentDraft = z.infer<typeof ContentDraft>;
 
@@ -161,6 +163,8 @@ export const DraftDecision = z.discriminatedUnion("decision", [
     /** The owner's edits before approving (title, and website-post fields). */
     title: z.string().trim().min(1).max(200).optional(),
     meta: WebPostEdit.optional(),
+    /** Post later instead of now (ISO time, up to 60 days ahead). */
+    publish_at: z.string().datetime({ offset: true }).optional(),
   }),
   z.object({ decision: z.literal("reject"), feedback: z.string().max(2000).optional() }),
 ]);

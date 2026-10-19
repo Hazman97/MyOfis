@@ -367,6 +367,8 @@ export const api = {
   savePublishSettings: (projectId: string, body: { url: string; secret?: string }) =>
     request<{ publish: PublishSettings }>(`/projects/${projectId}/publish`, { method: "PUT", body }),
   testPublishSettings: (projectId: string) => request<{ publish: PublishSettings }>(`/projects/${projectId}/publish/test`, { method: "POST" }),
+  /** Move or cancel (null) the time an approved draft goes out. */
+  scheduleDraft: (id: string, publish_at: string | null) => request<{ draft: ContentDraft }>(`/drafts/${id}/schedule`, { body: { publish_at } }),
   publishDraft: (id: string) => request<{ draft: ContentDraft }>(`/drafts/${id}/publish`, { method: "POST" }),
   updatePublished: (id: string, body: { title?: string; body?: string; meta?: Partial<WebPost> }) => request<{ draft: ContentDraft }>(`/drafts/${id}/update-published`, { body }),
   takeDownPost: (id: string) => request<{ draft: ContentDraft }>(`/drafts/${id}/take-down`, { method: "POST" }),

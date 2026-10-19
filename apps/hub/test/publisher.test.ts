@@ -149,6 +149,48 @@ describe("Publisher: chat photo → website post → approve → published", () 
     expect(received.at(-1)!.post).toMatchObject({ title: "New LED lights on court 3!", event_date: "2026-11-01", tags: ["court", "lights"] });
   });
 
+  test("approve with a publish time: nothing goes out until then; move, cancel and publish-now work", async () => {
+    const { project, agent } = await setup();
+    await env.api(`/api/projects/${project.id}/publish`, { method: "PUT", body: { url: `http://127.0.0.1:${site.port}/s`, secret: SECRET } });
+    await env.api(`/api/projects/${project.id}/publish/test`, { method: "POST" });
+    const post = (title: string) => ({ tool: "draft_web_post", input: { project: "smashpoint", post_type: "news", title, excerpt: "Open late on Friday night.", body: "We open until 2am on Friday.", self_check: check } });
+    const job = (await env.api("/api/jobs", { body: { agent_id: agent.id, project_id: project.id, title: "post", input: { script: [post("Late night Friday"), post("Second post"), { text: "ok" }] } } })).body.job;
+    await waitFor(() => env.hub.hub.store.state.jobs[job.id]?.status === "done", 8000, "draft run");
+    const [a, b] = (await env.api("/api/drafts?status=pending")).body.drafts;
+    const before = received.length;
+
+    // too soon / too far is refused
+    const soon = await env.api(`/api/drafts/${a.id}/decide`, { body: { decision: "approve", publish_at: new Date(Date.now() + 5_000).toISOString() } });
+    expect(soon.status).toBe(400);
+    const far = await env.api(`/api/drafts/${a.id}/decide`, { body: { decision: "approve", publish_at: new Date(Date.now() + 61 * 86_400_000).toISOString() } });
+    expect(far.status).toBe(400);
+
+    const at = new Date(Date.now() + 2 * 3600_000);
+    const scheduled = (await env.api(`/api/drafts/${a.id}/decide`, { body: { decision: "approve", publish_at: at.toISOString() } })).body.draft;
+    expect(scheduled).toMatchObject({ status: "approved", publish_at: at.toISOString(), published_url: null });
+    expect(received.length).toBe(before);
+    expect(await env.hub.hub.publishDue()).toEqual([]);
+
+    // its time comes: published once, the schedule is used up
+    const done = await env.hub.hub.publishDue(new Date(at.getTime() + 1000));
+    expect(done.map((d) => d.draft)).toMatchObject([{ id: a.id, status: "published", publish_at: null }]);
+    expect(received.length).toBe(before + 1);
+    expect(await env.hub.hub.publishDue(new Date(at.getTime() + 60_000))).toEqual([]);
+    expect((await env.api(`/api/drafts/${a.id}/schedule`, { body: { publish_at: at.toISOString() } })).status).toBe(409);
+
+    // the second: scheduled, moved, cancelled, then published now
+    await env.api(`/api/drafts/${b.id}/decide`, { body: { decision: "approve", publish_at: at.toISOString() } });
+    const later = new Date(at.getTime() + 86_400_000).toISOString();
+    expect((await env.api(`/api/drafts/${b.id}/schedule`, { body: { publish_at: later } })).body.draft.publish_at).toBe(later);
+    expect(await env.hub.hub.publishDue(new Date(at.getTime() + 1000))).toEqual([]);
+    expect((await env.api(`/api/drafts/${b.id}/schedule`, { body: { publish_at: null } })).body.draft).toMatchObject({ status: "approved", publish_at: null });
+    expect(await env.hub.hub.publishDue(new Date(Date.parse(later) + 1000))).toEqual([]);
+    expect(received.length).toBe(before + 1);
+    await env.api(`/api/drafts/${b.id}/schedule`, { body: { publish_at: later } });
+    const now = (await env.api(`/api/drafts/${b.id}/publish`, { method: "POST" })).body.draft;
+    expect(now).toMatchObject({ status: "published", publish_at: null });
+  });
+
   test("runners can only fetch photos attached to the job they are running", async () => {
     await setup();
     const photo = await upload();

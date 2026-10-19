@@ -89,7 +89,7 @@ For the other PC to reach the hub on your WiFi, set `HUB_HOST=0.0.0.0` and `PUBL
 - Browser checks need Node 22+ and Playwright: `cd ~/.agent-office-runner && npm i playwright && npx playwright install chromium`.
 - The Coder needs `npm i -g opencode-ai`.
 
-The Runners page shows which helper programs each PC has (git, node, ffmpeg, blender…).
+The Runners page shows which helper programs each PC has (git, node, ffmpeg, blender…). Jobs follow them: an agent with video tools goes to a PC with ffmpeg, git tools to one with git, browser checks to one with node, and the Coder (OpenCode) to one with opencode. If no online PC has them, the job runs anywhere and the tool says what is missing.
 
 **From a copy of the repo (this PC, development).**
 1. Open **Runners → Connect a PC → Run from a copy of this repo instead**.
@@ -281,7 +281,7 @@ Agents with the learning tools (Coach and Marketing by default; add them to any 
 
 ## Publisher: posts for your own websites
 
-Chat with **Publisher** (here or in Telegram), press 📷 to add photos (up to 4), and write a few points. Before approving you can edit every field (title, summary, date, time, place, tags, cover); after publishing, **Edit live post** and **Take down** change the website, and Publisher can do the same from chat (you approve the change first). Publisher looks at the photos, asks about anything missing, then writes the website post (title, summary, Markdown body, tags, event date/time/place, cover photo) and a matching social caption. Both wait in **Drafts**. **Approve** publishes the post to the website; if the site is down, the draft shows the error and **Publish again**.
+Chat with **Publisher** (here or in Telegram), press 📷 to add photos (up to 4), and write a few points. Before approving you can edit every field (title, summary, date, time, place, tags, cover); after publishing, **Edit live post** and **Take down** change the website, and Publisher can do the same from chat (you approve the change first). Publisher looks at the photos, asks about anything missing, then writes the website post (title, summary, Markdown body, tags, event date/time/place, cover photo) and a matching social caption. Both wait in **Drafts**. **Approve** publishes the post to the website; if the site is down, the draft shows the error and **Publish again**. **Schedule…** next to Approve picks a time (up to 60 days ahead): the draft is approved now and goes out then (website and connected Facebook / Instagram / Threads). Telegram tells you when it is out or if it failed; the card lets you cancel the schedule or publish now.
 
 Each website exposes one signed endpoint. Set it per project in **Projects → Brief → Website**, then press **Test**. SmashPoint's is in its Worker. The setup and the contract for other sites are in [docs/website-publishing.md](docs/website-publishing.md).
 

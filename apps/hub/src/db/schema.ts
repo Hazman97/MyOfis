@@ -308,6 +308,8 @@ export const contentDrafts = sqliteTable("content_drafts", {
   meta: json<WebPost>("meta"),
   published_url: text("published_url"),
   publish_error: text("publish_error"),
+  /** Approved, but goes out at this time (ISO) instead of now; cleared once tried. */
+  publish_at: text("publish_at"),
 });
 
 /**

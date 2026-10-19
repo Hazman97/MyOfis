@@ -5,6 +5,7 @@ import {
   computeCost,
   dayKey,
   fixEscapedNewlines,
+  requiredPrograms,
   type HubToRunner,
   type ContentDraft,
   type Job,
@@ -291,11 +292,34 @@ Error: ${r.error}` : ""}` });
    * What approving a draft does beyond recording it: a website post is published, and a Facebook
    * caption is posted to the project's Page when one is connected. Used by the web and Telegram.
    */
+  /** Whether approving this draft sends it somewhere (its website, or a connected social account). */
+  canPublish(draft: ContentDraft): boolean {
+    return draft.kind === "web_post" || this.social.configured(draft.platform, draft.project_id);
+  }
+
   async afterApprove(draft: ContentDraft): Promise<ContentDraft> {
     if (draft.status !== "approved" && draft.status !== "edited") return draft;
+    // scheduled for later: publishDue() sends it then
+    if (draft.publish_at) return draft;
     if (draft.kind === "web_post") return this.publisher.publish(draft.id);
     if (this.social.configured(draft.platform, draft.project_id)) return this.social.post(draft.id);
     return draft;
+  }
+
+  /** Send the scheduled drafts whose time has come. Returns what happened, for the owner's Telegram. */
+  async publishDue(now = new Date()): Promise<{ draft: ContentDraft; workspace_id: string }[]> {
+    const out: { draft: ContentDraft; workspace_id: string }[] = [];
+    for (const due of this.content.dueScheduled(now)) {
+      this.content.clearSchedule(due.id);
+      const d = this.content.draft(due.id);
+      if (!d) continue;
+      try {
+        out.push({ draft: await this.afterApprove(d), workspace_id: due.workspace_id });
+      } catch (err) {
+        out.push({ draft: { ...d, publish_error: (err as Error).message }, workspace_id: due.workspace_id });
+      }
+    }
+    return out;
   }
 
   /** Read and index the documents among a message's files (PDF, DOCX, TXT, MD), before the chat job is made. */
@@ -971,7 +995,8 @@ Error: ${r.error}` : ""}` });
         if (!render && job.workspace_id !== agent.workspace_id && (this.#shareLeft(agent.id, job.workspace_id) ?? 1) <= 0) continue;
         // a room on the owner's AI: the room's daily limit
         if (!render && (roomBudgetLeft(this.db, job.workspace_id) ?? 1) <= 0) continue;
-        const conn = this.#pickRunner(agent.runner_id, load, render ? "ffmpeg" : null);
+        const need = requiredPrograms({ tools: agent.tools, runtime: agent.config.runtime, job_type: job.type });
+        const conn = this.#pickRunner(agent.runner_id, load, need);
         if (!conn) continue;
         load.set(conn.runnerId, (load.get(conn.runnerId) ?? 0) + 1);
         this.#startRun(conn, job, agent);
@@ -981,20 +1006,25 @@ Error: ${r.error}` : ""}` });
     }
   }
 
-  #pickRunner(preferred: string | null, load: Map<string, number>, program: string | null = null): RunnerConn | undefined {
+  /**
+   * A free runner for the job. With `need` (programs from the agent's tools, e.g. ffmpeg, git):
+   * only runners that reported all of them; if none online has them, any runner (the tool then
+   * says what is missing). A pinned runner is always used as is.
+   */
+  #pickRunner(preferred: string | null, load: Map<string, number>, need: string[] = []): RunnerConn | undefined {
     const free = (c: RunnerConn) => (load.get(c.runnerId) ?? 0) < c.maxRuns;
     if (preferred) {
       const c = this.conns.get(preferred);
       return c && free(c) ? c : undefined;
     }
-    let pool = [...this.conns.values()].filter(free);
-    // prefer runners that reported the program the job needs (e.g. ffmpeg for a re-render)
-    if (program) {
-      const has = new Set(this.db.select().from(runners).all().filter((r) => (r.capabilities as { programs?: string[] } | null)?.programs?.includes(program)).map((r) => r.id));
-      const withIt = pool.filter((c) => has.has(c.runnerId));
-      if (withIt.length) pool = withIt;
+    let pool = [...this.conns.values()];
+    if (need.length) {
+      const programs = new Map(this.db.select().from(runners).all().map((r) => [r.id, (r.capabilities as { programs?: string[] } | null)?.programs ?? []]));
+      const able = pool.filter((c) => need.every((p) => programs.get(c.runnerId)?.includes(p)));
+      // an able runner that is busy now: wait for it rather than send the job where it cannot work
+      if (able.length) pool = able;
     }
-    return pool.sort((a, b) => (load.get(a.runnerId) ?? 0) - (load.get(b.runnerId) ?? 0))[0];
+    return pool.filter(free).sort((a, b) => (load.get(a.runnerId) ?? 0) - (load.get(b.runnerId) ?? 0))[0];
   }
 
   #startRun(conn: RunnerConn, job: typeof jobs.$inferSelect, agent: typeof agents.$inferSelect): void {

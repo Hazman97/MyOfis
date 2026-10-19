@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, lte, ne } from "drizzle-orm";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   ProjectBrief,
@@ -44,7 +44,18 @@ export const toDraft = (r: DraftRow): ContentDraft => ({
   meta: r.meta ?? null,
   published_url: r.published_url,
   publish_error: r.publish_error,
+  publish_at: r.publish_at,
 });
+
+const MAX_SCHEDULE_DAYS = 60;
+/** A schedule time as UTC ISO (so it compares as text): at least a minute ahead, at most 60 days. */
+function scheduleTime(value: string, now = Date.now()): string {
+  const t = Date.parse(value);
+  if (Number.isNaN(t)) throw new HttpError(400, "invalid publish time");
+  if (t < now + 60_000) throw new HttpError(400, "the publish time must be at least a minute from now");
+  if (t > now + MAX_SCHEDULE_DAYS * 86_400_000) throw new HttpError(400, `the publish time must be within ${MAX_SCHEDULE_DAYS} days`);
+  return new Date(t).toISOString();
+}
 
 export const toFeature = (r: FeatureRow): FeatureNote => ({
   id: r.id,
@@ -244,7 +255,7 @@ export class Content {
     const updated = this.store.transact((tx, emit) => {
       const r = tx
         .update(contentDrafts)
-        .set({ status, body, title, meta, owner_feedback: decision.feedback?.trim() || null, decided_at: at })
+        .set({ status, body, title, meta, owner_feedback: decision.feedback?.trim() || null, decided_at: at, publish_at: approve?.publish_at ? scheduleTime(approve.publish_at) : null })
         .where(eq(contentDrafts.id, id))
         .returning()
         .get()!;
@@ -260,6 +271,34 @@ export class Content {
       this.writeBrief(p, { ...brief, style_notes: body.slice(0, 6000) });
     }
     return toDraft(updated);
+  }
+
+  /** Set or clear the time an approved draft goes out. Only before it is published. */
+  scheduleDraft(id: string, publishAt: string | null): ContentDraft {
+    const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, id)).get();
+    if (!row) throw new HttpError(404, "draft not found");
+    if (row.status !== "approved" && row.status !== "edited") throw new HttpError(409, row.status === "draft" ? "approve the draft first" : `draft is already ${row.status}`);
+    const r = this.db
+      .update(contentDrafts)
+      .set({ publish_at: publishAt ? scheduleTime(publishAt) : null })
+      .where(eq(contentDrafts.id, id))
+      .returning()
+      .get()!;
+    return toDraft(r);
+  }
+
+  /** Scheduled drafts whose time has come (any room). */
+  dueScheduled(now = new Date()): { id: string; workspace_id: string }[] {
+    return this.db
+      .select({ id: contentDrafts.id, workspace_id: contentDrafts.workspace_id })
+      .from(contentDrafts)
+      .where(and(isNotNull(contentDrafts.publish_at), lte(contentDrafts.publish_at, now.toISOString()), inArray(contentDrafts.status, ["approved", "edited"])))
+      .all();
+  }
+
+  /** The scheduled time is used once: cleared before the attempt, so a failure is not retried every minute. */
+  clearSchedule(id: string): void {
+    this.db.update(contentDrafts).set({ publish_at: null }).where(eq(contentDrafts.id, id)).run();
   }
 
   // ---------------------------------------------------------------- agent context

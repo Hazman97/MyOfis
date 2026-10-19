@@ -44,7 +44,7 @@ export interface HubServer {
 
 export function startHub(
   config: HubConfig,
-  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number; tokenCheckMs?: number; opencutCheckMs?: number; remindCheckMs?: number } = {},
+  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number; tokenCheckMs?: number; opencutCheckMs?: number; remindCheckMs?: number; publishCheckMs?: number } = {},
 ): HubServer {
   const { db, sqlite } = openDb(config.databasePath);
   const secrets = new Secrets(config.secretsKey);
@@ -222,6 +222,32 @@ export function startHub(
     telegram.notify(text).catch(() => {});
   }, opts.remindCheckMs ?? 15 * 60_000);
 
+  // scheduled posts: approved drafts with a publish time go out when it comes (the owner hears how it went)
+  let publishing = false;
+  const publishTimer = setInterval(() => {
+    if (publishing) return;
+    publishing = true;
+    hub
+      .publishDue()
+      .then((done) =>
+        Promise.all(
+          done
+            .filter((d) => d.workspace_id === "owner")
+            .map(({ draft }) => {
+              const name = `${draft.title || draft.kind} (${draft.platform})`;
+              const text = draft.publish_error
+                ? `⚠️ Scheduled post failed: ${name}\n${draft.publish_error}\nTry again in Agent Office → Drafts.`
+                : `📅 Scheduled post is out: ${name}${draft.published_url ? `\n${draft.published_url}` : ""}`;
+              return telegram.notify(text).catch(() => {});
+            }),
+        ),
+      )
+      .catch((err) => console.error(`[hub] scheduled publish failed: ${(err as Error).message}`))
+      .finally(() => {
+        publishing = false;
+      });
+  }, opts.publishCheckMs ?? 60_000);
+
   // OpenCut watcher: once a day, tell the owner when OpenCut releases or its API plans change
   const opencut = new OpencutWatch(db, config.opencutApiBase);
   hub.opencut = opencut;
@@ -247,6 +273,7 @@ export function startHub(
       clearInterval(tokenTimer);
       clearInterval(opencutTimer);
       clearInterval(remindTimer);
+      clearInterval(publishTimer);
       clearTimeout(tokenFirst);
       scheduler.stop();
       releases.stop();

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { Check, Copy, ExternalLink, LoaderCircle, ShieldCheck, TriangleAlert, X } from "lucide-vue-next";
+import { CalendarClock, Check, Copy, ExternalLink, LoaderCircle, ShieldCheck, TriangleAlert, X } from "lucide-vue-next";
 import type { ContentDraft, WebPost } from "@agent-office/shared";
 import AgentAvatar from "./AgentAvatar.vue";
 import ConfirmButton from "./ConfirmButton.vue";
@@ -102,6 +102,28 @@ const eventLine = computed(() => {
   const m = props.draft.meta;
   return m ? [m.event_date, m.event_time, m.location].filter(Boolean).join(" · ") : "";
 });
+// "Schedule…": approve now, post later (website posts and connected social accounts)
+const canSchedule = computed(() => props.draft.kind === "web_post" || ["facebook", "instagram", "threads"].includes(props.draft.platform));
+const scheduling = ref(false);
+const pad = (n: number) => String(n).padStart(2, "0");
+/** A Date as the value of <input type="datetime-local"> (the browser's own time zone). */
+const localInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const minWhen = localInput(new Date(Date.now() + 5 * 60_000));
+const when = ref(localInput(new Date(Date.now() + 3600_000)));
+const publishAt = () => (scheduling.value && when.value ? new Date(when.value).toISOString() : undefined);
+
+async function setSchedule(at: string | null) {
+  busy.value = true;
+  error.value = "";
+  try {
+    emit("decided", (await api.scheduleDraft(props.draft.id, at)).draft);
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function publishAgain() {
   busy.value = true;
   error.value = "";
@@ -179,6 +201,7 @@ async function decide(decision: "approve" | "reject") {
             title: titleEdited.value ? title.value.trim() : undefined,
             meta: postEdits.value,
             feedback: fb,
+            publish_at: publishAt(),
           }
         : { decision, feedback: fb },
     );
@@ -338,7 +361,7 @@ async function decide(decision: "approve" | "reject") {
       />
     </div>
 
-    <div v-if="!pending && draft.status !== 'rejected' && (draft.kind === 'web_post' || draft.published_url || draft.publish_error)" class="mx-4 mt-2 text-xs">
+    <div v-if="!pending && draft.status !== 'rejected' && (draft.kind === 'web_post' || draft.published_url || draft.publish_error || draft.publish_at)" class="mx-4 mt-2 text-xs">
       <a
         v-if="draft.published_url?.startsWith('http')"
         :href="draft.published_url"
@@ -354,6 +377,15 @@ async function decide(decision: "approve" | "reject") {
         <button class="btn btn-sm" :disabled="busy" @click="publishAgain">
           <LoaderCircle v-if="busy" :size="13" class="motion-safe:animate-spin" />
           Publish again
+        </button>
+      </div>
+      <div v-else-if="draft.publish_at" class="flex flex-wrap items-center gap-2 rounded-md border border-info/30 bg-info-soft px-3 py-2 text-info">
+        <CalendarClock :size="14" class="shrink-0" />
+        <span class="min-w-0 flex-1">Scheduled for <strong>{{ fmtDateTime(draft.publish_at) }}</strong></span>
+        <button class="btn btn-sm btn-ghost" :disabled="busy" @click="setSchedule(null)">Cancel schedule</button>
+        <button class="btn btn-sm" :disabled="busy" @click="publishAgain">
+          <LoaderCircle v-if="busy" :size="13" class="motion-safe:animate-spin" />
+          Publish now
         </button>
       </div>
       <div v-else-if="draft.status !== 'published'" class="flex flex-wrap items-center gap-2 rounded-md border border-signal/30 bg-signal-soft px-3 py-2 text-signal">
@@ -373,16 +405,21 @@ async function decide(decision: "approve" | "reject") {
       </button>
 
       <template v-if="pending">
-        <div class="ml-auto flex items-center gap-2">
+        <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
           <template v-if="mode === 'reject'">
             <button class="btn btn-sm btn-ghost" :disabled="busy" @click="mode = 'idle'">Back</button>
             <button class="btn btn-sm btn-danger" :disabled="busy" @click="decide('reject')"><X :size="13" /> Reject</button>
           </template>
           <template v-else>
             <button class="btn btn-sm btn-danger" :disabled="busy" @click="mode = 'reject'"><X :size="13" /> Reject…</button>
-            <button class="btn btn-sm btn-primary shadow-sm" :disabled="busy || !body.trim()" @click="decide('approve')">
+            <label v-if="scheduling" class="sr-only" :for="`when-${draft.id}`">Post at</label>
+            <input v-if="scheduling" :id="`when-${draft.id}`" v-model="when" type="datetime-local" :min="minWhen" class="input py-1 text-xs w-auto" />
+            <button v-if="canSchedule" class="btn btn-sm" :class="scheduling && 'btn-ghost'" :disabled="busy" :aria-pressed="scheduling" @click="scheduling = !scheduling">
+              <CalendarClock :size="13" /> {{ scheduling ? "Post now instead" : "Schedule…" }}
+            </button>
+            <button class="btn btn-sm btn-primary shadow-sm" :disabled="busy || !body.trim() || (scheduling && !when)" @click="decide('approve')">
               <LoaderCircle v-if="busy" :size="13" class="motion-safe:animate-spin" />
-              <Check v-else :size="13" /> {{ edited ? "Approve my edit" : "Approve" }}
+              <Check v-else :size="13" /> {{ scheduling ? "Approve & schedule" : edited ? "Approve my edit" : "Approve" }}
             </button>
           </template>
         </div>

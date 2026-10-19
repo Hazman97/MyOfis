@@ -635,8 +635,16 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.get("/projects/:id/publish", (c) => c.json({ publish: hub.publisher.settings(c.req.param("id")) }));
   api.put("/projects/:id/publish", async (c) => c.json({ publish: hub.publisher.setSettings(c.req.param("id"), await c.req.json()) }));
   api.post("/projects/:id/publish/test", async (c) => c.json({ publish: await hub.publisher.refresh(c.req.param("id")) }));
+  // move or cancel a scheduled post (null = cancel: it stays approved and is not posted)
+  api.post("/drafts/:id/schedule", async (c) => {
+    const { publish_at } = z.object({ publish_at: z.string().datetime({ offset: true }).nullable() }).parse(await c.req.json());
+    const d = hub.content.draft(c.req.param("id"));
+    if (d && publish_at && !hub.canPublish(d)) throw new HttpError(400, "this draft has nowhere to be posted: connect its website or social account first");
+    return c.json({ draft: hub.content.scheduleDraft(c.req.param("id"), publish_at) });
+  });
   api.post("/drafts/:id/publish", async (c) => {
     // "Publish now / again": a website post goes to its site, a Facebook caption to the Page
+    if (hub.content.draft(c.req.param("id"))?.publish_at) hub.content.clearSchedule(c.req.param("id"));
     const d = hub.content.draft(c.req.param("id"));
     if (d && d.kind !== "web_post" && ["facebook", "instagram", "threads"].includes(d.platform)) return c.json({ draft: await hub.social.post(d.id) });
     return c.json({ draft: await hub.publisher.publish(c.req.param("id")) });
@@ -682,6 +690,10 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
   api.post("/drafts/:id/decide", async (c) => {
     const decision = DraftDecision.parse(await c.req.json());
+    if (decision.decision === "approve" && decision.publish_at) {
+      const d = hub.content.draft(c.req.param("id"));
+      if (d && !hub.canPublish(d)) throw new HttpError(400, "this draft has nowhere to be posted: connect its website or social account first");
+    }
     const draft = hub.content.decideDraft(c.req.param("id"), decision);
     // a website post goes live once the owner approves it (the result or error is kept on the draft)
     if (draft.status !== "rejected") return c.json({ draft: await hub.afterApprove(draft) });

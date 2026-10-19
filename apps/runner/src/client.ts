@@ -56,6 +56,8 @@ export interface RunnerClientOptions {
   extraHeaders?: Record<string, string>;
   /** Override runtime selection (tests). */
   pickRuntime?: (a: RunAssignment) => AgentRuntime;
+  /** Override the programs this runner reports (tests). */
+  programs?: string[];
   log?: (msg: string) => void;
 }
 
@@ -130,7 +132,7 @@ export class RunnerClient {
           arch: arch(),
           runtimes: [mockRuntime.id, aiSdkRuntime.id, directRuntime.id, ...(resolveOpenCode() ? [opencodeRuntime.id] : [])],
           max_concurrent_runs: this.#opts.maxConcurrentRuns ?? 1,
-          programs: detectPrograms(),
+          programs: this.#opts.programs ?? detectPrograms(),
         },
         active_runs: this.activeRunIds,
       });
@@ -445,5 +447,5 @@ export class RunnerClient {
 }
 
 /** Programs agents may want on this machine; reported once per connection. */
-const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "openscad", "blender", "pandoc", "soffice", "gh"];
+const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "opencode", "openscad", "blender", "pandoc", "soffice", "gh"];
 export const detectPrograms = (): string[] => PROGRAMS.filter((p) => Bun.which(p));
