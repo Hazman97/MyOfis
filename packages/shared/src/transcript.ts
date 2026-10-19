@@ -79,7 +79,7 @@ export function tightCuts(t: Transcript, video: number, opts: TightOptions = {})
   const { min_pause = 0.6, pad = 0.12, drop_fillers = true, from = 0, to = t.duration } = opts;
   const words = t.words.filter((x) => x.e > from && x.s < to && x.e > x.s);
   const speech = drop_fillers ? words.filter((x) => !isFiller(x.w)) : words;
-  if (!speech.length) return [{ video, start: r2(from), end: r2(to), speed: 1 }];
+  if (!speech.length) return [{ video, start: r2(from), end: r2(to), speed: 1, zoom: "none" }];
   const cuts: [number, number][] = [];
   const quiet = (s: number, e: number) => e - s >= min_pause && cuts.push([s + pad, e - pad]);
   for (const p of t.silences ?? []) quiet(Math.max(from, p.s), Math.min(to, p.e));
@@ -109,7 +109,7 @@ export function tightCuts(t: Transcript, video: number, opts: TightOptions = {})
     keep[k]![1] = keep[k + 1]![1];
     keep.splice(k + 1, 1);
   }
-  return keep.map(([s, e]) => ({ video, start: r2(s), end: r2(e), speed: 1 }));
+  return keep.map(([s, e]) => ({ video, start: r2(s), end: r2(e), speed: 1, zoom: "none" as const }));
 }
 
 export interface SubtitleCue {

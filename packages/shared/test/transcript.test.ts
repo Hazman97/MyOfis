@@ -38,8 +38,8 @@ describe("transcripts", () => {
     // whisper.cpp word times run into each other; ffmpeg silencedetect finds the real pause
     const joined: Transcript = { ...t, words: [{ w: "One", s: 0, e: 1 }, { w: "two", s: 1, e: 3 }, { w: "three", s: 3, e: 4 }], duration: 4, silences: [{ s: 1.4, e: 2.6 }] };
     expect(tightCuts(joined, 1)).toEqual([
-      { video: 1, start: 0, end: 1.52, speed: 1 },
-      { video: 1, start: 2.48, end: 4, speed: 1 },
+      { video: 1, start: 0, end: 1.52, speed: 1, zoom: "none" },
+      { video: 1, start: 2.48, end: 4, speed: 1, zoom: "none" },
     ]);
     expect(packTranscript(joined, 1)).toContain("(pause 1.2s)");
   });
@@ -47,14 +47,14 @@ describe("transcripts", () => {
   test("tight cut drops long pauses and fillers, keeps a little air", () => {
     const clips = tightCuts(t, 1);
     expect(clips).toEqual([
-      { video: 1, start: 0, end: 1.62, speed: 1 },
-      { video: 1, start: 2.4, end: 4.12, speed: 1 },
-      { video: 1, start: 6.88, end: 8.62, speed: 1 },
+      { video: 1, start: 0, end: 1.62, speed: 1, zoom: "none" },
+      { video: 1, start: 2.4, end: 4.12, speed: 1, zoom: "none" },
+      { video: 1, start: 6.88, end: 8.62, speed: 1, zoom: "none" },
     ]);
     // keeping fillers: "Um" is speech, so the first two pieces join (no gap reaches 0.6 s)
     expect(tightCuts(t, 1, { drop_fillers: false })).toHaveLength(2);
     // nothing said: the whole range
-    expect(tightCuts({ ...t, words: [] }, 2, { from: 1, to: 5 })).toEqual([{ video: 2, start: 1, end: 5, speed: 1 }]);
+    expect(tightCuts({ ...t, words: [] }, 2, { from: 1, to: 5 })).toEqual([{ video: 2, start: 1, end: 5, speed: 1, zoom: "none" }]);
     // never more than 80 clips
     const many: Transcript = { ...t, duration: 400, words: Array.from({ length: 200 }, (_, i) => ({ w: "word", s: i * 2, e: i * 2 + 0.5 })) };
     expect(tightCuts(many, 1)).toHaveLength(80);

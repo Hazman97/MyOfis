@@ -103,7 +103,7 @@ const transcriptsByNumber = computed(() => {
 const playerSource = computed(() => (info.value ? info.value.render.attachments.findIndex((a) => a.id === info.value!.upload.id) + 1 : 0));
 const allSubtitleCues = computed(() => {
   if (!plan.subtitles) return [];
-  if (playerSource.value) return subtitleCues({ clips: [{ video: playerSource.value, start: 0, speed: 1 }], subtitles: plan.subtitles }, transcriptsByNumber.value, durations);
+  if (playerSource.value) return subtitleCues({ clips: [{ video: playerSource.value, start: 0, speed: 1, zoom: "none" }], subtitles: plan.subtitles }, transcriptsByNumber.value, durations);
   return subtitleCues(plan, transcriptsByNumber.value, durations);
 });
 
@@ -199,7 +199,7 @@ function setClipEndFromPlayer(clip: EditPlan["clips"][number]) {
 }
 
 function addClip() {
-  plan.clips.push({ video: videoSources.value[0]?.n ?? 1, start: 0, speed: 1 });
+  plan.clips.push({ video: videoSources.value[0]?.n ?? 1, start: 0, speed: 1, zoom: "none" });
   selectClip(plan.clips.length - 1);
 }
 
@@ -212,7 +212,7 @@ function moveClip(i: number, d: -1 | 1) {
 
 function addCaption() {
   const start = plan.captions.at(-1)?.end ?? 0;
-  plan.captions.push({ text: "", start, end: start + 2, position: "bottom" });
+  plan.captions.push({ text: "", start, end: start + 2, position: "bottom", animation: "fade" });
   selectCaption(plan.captions.length - 1);
 }
 
@@ -292,7 +292,7 @@ function applySuggestion(option: EditSuggestion, attachments: { id: string }[]) 
     })
     .filter((c): c is NonNullable<typeof c> => c !== null);
 
-  plan.clips = mappedClips.length ? mappedClips : [{ video: 1, start: 0, speed: 1 }];
+  plan.clips = mappedClips.length ? mappedClips : [{ video: 1, start: 0, speed: 1, zoom: "none" }];
   plan.preset = option.plan.preset;
   plan.fit = option.plan.fit;
   plan.fps = option.plan.fps;

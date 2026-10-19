@@ -55,6 +55,7 @@ export const Clip = z.object({
   start: z.number().min(0).default(0).describe("Seconds into that video"),
   end: z.number().positive().optional().describe("Seconds into that video (default: its end)"),
   speed: z.number().min(0.5).max(2).default(1).describe("0.5 = slow motion, 2 = twice as fast"),
+  zoom: z.enum(["none", "in", "out"]).default("none").describe("Slow zoom over the clip (Ken Burns): brings still shots and scenery to life"),
 });
 
 export type Clip = z.infer<typeof Clip>;
@@ -64,6 +65,7 @@ export const Caption = z.object({
   start: z.number().min(0).describe("Seconds in the FINISHED video"),
   end: z.number().positive(),
   position: z.enum(["bottom", "middle", "top"]).default("bottom"),
+  animation: z.enum(["none", "fade", "pop"]).default("none").describe("fade = fades in and out; pop = grows in quickly, then fades out"),
 });
 
 export const Subtitles = z.object({
@@ -80,6 +82,13 @@ export const EditPlan = z.object({
   fps: z.union([z.literal(24), z.literal(25), z.literal(30), z.literal(50), z.literal(60)]).default(30),
   captions: z.array(Caption).max(40).default([]).describe("Text burned into the picture"),
   subtitles: Subtitles.nullable().default(null).describe("Burn in subtitles from the speech (needs video_transcribe first); null = none"),
+  transition: z
+    .object({
+      type: z.enum(["none", "fade", "dissolve", "slide", "zoom"]).default("none"),
+      seconds: z.number().min(0.2).max(1.5).default(0.5),
+    })
+    .prefault({})
+    .describe("Between clips: each transition overlaps the clips, so the video gets shorter by `seconds` per cut"),
   mute: z.boolean().default(false).describe("Drop the original sound"),
   music: z
     .object({
@@ -93,6 +102,18 @@ export const EditPlan = z.object({
   name: z.string().trim().min(1).max(60).regex(/^[\w\- ]+$/).default("edit").describe("Output file name, no extension"),
 });
 export type EditPlan = z.infer<typeof EditPlan>;
+
+/** How long transitions really last: never more than half of the shorter neighbouring clip. */
+export function transitionSeconds(plan: Pick<EditPlan, "transition">, lengths: number[]): number {
+  if (!plan.transition || plan.transition.type === "none" || lengths.length < 2) return 0;
+  return Math.max(0, Math.min(plan.transition.seconds, ...lengths.map((l) => l / 2)));
+}
+
+/** The finished video's length (seconds) from each clip's length, with transitions overlapping. */
+export function finishedSeconds(plan: Pick<EditPlan, "transition">, lengths: number[]): number {
+  const t = transitionSeconds(plan, lengths);
+  return Math.round((lengths.reduce((a, b) => a + b, 0) - t * Math.max(0, lengths.length - 1)) * 100) / 100;
+}
 
 /** What a render remembers about how it was made (uploads.render), so the studio can show and change it. */
 export const RenderInfo = z.object({
