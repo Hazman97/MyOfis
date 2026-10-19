@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { ImagePlus, LoaderCircle, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
 import type { Agent, Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
+import EditSuggestionCards from "../components/EditSuggestionCards.vue";
 import PageHeader from "../components/PageHeader.vue";
 import { api, type ChatAttachment, type ChatMessage, type ChatThread } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
@@ -193,6 +194,11 @@ function onKey(e: KeyboardEvent) {
     e.preventDefault();
     void send();
   }
+}
+
+function onPickSuggestion(key: string) {
+  text.value = `Go with option ${key}`;
+  void send();
 }
 
 function toggleMic() {
@@ -395,6 +401,11 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                       <video :src="api.uploadUrl(r.id)" controls playsinline preload="metadata" class="max-h-72 max-w-full rounded-lg border border-line bg-black" :aria-label="r.name" />
                       <RouterLink :to="{ name: 'studio', params: { id: r.id } }" class="btn btn-sm">Open in Video Studio</RouterLink>
                     </div>
+                  </div>
+
+                  <!-- Editor's edit suggestions (tool suggest_edits) -->
+                  <div v-if="m.suggestions" class="mt-3">
+                    <EditSuggestionCards :suggestions="m.suggestions" mode="chat" @pick="onPickSuggestion" />
                   </div>
                 </div>
                 <div class="mt-1.5 flex items-center gap-3 px-1 text-[11px] text-faint opacity-80 group-hover:opacity-100 transition-opacity">

@@ -5,6 +5,8 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  AudioLines,
+  Bot,
   Clapperboard,
   Clock,
   Download,
@@ -15,22 +17,34 @@ import {
   RotateCcw,
   Scissors,
   Settings2,
+  Subtitles as SubtitlesIcon,
   Trash2,
   Type,
   Upload,
   Wand2,
+  X,
 } from "lucide-vue-next";
-import { EditPlan } from "@agent-office/shared";
+import {
+  EditPlan,
+  isFiller,
+  subtitleCues,
+  tightCuts,
+  type EditSuggestion,
+  type Transcript,
+} from "@agent-office/shared";
 import PageHeader from "../components/PageHeader.vue";
+import EditSuggestionCards from "../components/EditSuggestionCards.vue";
+import TranscriptPanel from "../components/studio/TranscriptPanel.vue";
+import AskEditorPanel from "../components/studio/AskEditorPanel.vue";
 import { api, type VideoInfo } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtDateTime } from "../format.ts";
 import { openInOpenCut } from "../opencut.ts";
 
 /**
- * Video Studio (owner request): see how a video was edited (clips, captions, settings), change it
- * and render again on the runner PC without the AI. Heavy manual edits go to OpenCut; the export
- * comes back with "Use my own edit". `?draft=` = the draft this video belongs to (it gets the new video).
+ * Video Studio (Task 015):
+ * Inspect how a video was edited, polish with whisper transcripts, drop pauses (tight cut),
+ * toggle/customize subtitles with live player overlay, and ask Editor for creative edit suggestions.
  */
 const props = defineProps<{ id: string }>();
 const route = useRoute();
@@ -43,6 +57,11 @@ const msg = ref("");
 const busy = ref(false);
 const uploadPct = ref<number | null>(null);
 const jobId = ref<string | null>(null);
+const transcribeJobId = ref<string | null>(null);
+const transcribing = ref(false);
+const askEditorOpen = ref(false);
+const playerCurrentTime = ref(0);
+
 /** The plan being edited (a copy of the video's plan). */
 const plan = reactive<EditPlan>(EditPlan.parse({ clips: [{ video: 1 }] }));
 /** Source clip lengths in seconds, read from the browser's video metadata. */
@@ -52,16 +71,59 @@ const previewVideo = ref<HTMLVideoElement | null>(null);
 const selectedClipIndex = ref<number | null>(null);
 const selectedCaptionIndex = ref<number | null>(null);
 
-const draftId = computed(() => (typeof route.query.draft === "string" ? route.query.draft : (info.value?.drafts.find((d) => d.status === "draft")?.id ?? null)));
+const draftId = computed(() =>
+  typeof route.query.draft === "string"
+    ? route.query.draft
+    : (info.value?.drafts.find((d) => d.status === "draft")?.id ?? null),
+);
 const sources = computed(() => info.value?.render.attachments ?? []);
-const videoSources = computed(() => sources.value.map((s, i) => ({ ...s, n: i + 1 })).filter((s) => s.content_type.startsWith("video/")));
+const videoSources = computed(() =>
+  sources.value
+    .map((s, i) => ({ ...s, n: i + 1 }))
+    .filter((s) => s.content_type.startsWith("video/")),
+);
+
+const firstVideoTranscript = computed<Transcript | null>(() => {
+  const first = videoSources.value[0];
+  if (!first) return null;
+  return (info.value?.transcripts ?? {})[first.id] ?? null;
+});
+
+const transcriptsByNumber = computed(() => {
+  const res: Record<number, Transcript | undefined> = {};
+  const atts = info.value?.render?.attachments ?? [];
+  atts.forEach((a, i) => {
+    const t = (info.value?.transcripts ?? {})[a.id];
+    if (t) res[i + 1] = t;
+  });
+  return res;
+});
+
+// the player shows this upload: a source file (your own clip) plays in source time, a render in finished time
+const playerSource = computed(() => (info.value ? info.value.render.attachments.findIndex((a) => a.id === info.value!.upload.id) + 1 : 0));
+const allSubtitleCues = computed(() => {
+  if (!plan.subtitles) return [];
+  if (playerSource.value) return subtitleCues({ clips: [{ video: playerSource.value, start: 0, speed: 1 }], subtitles: plan.subtitles }, transcriptsByNumber.value, durations);
+  return subtitleCues(plan, transcriptsByNumber.value, durations);
+});
+
+const activeCue = computed(() => {
+  const t = playerCurrentTime.value;
+  return allSubtitleCues.value.find((c) => c.start <= t && t <= c.end) ?? null;
+});
 
 async function load() {
   error.value = "";
   try {
     info.value = await api.video(props.id);
     resetPlan();
-    if (info.value.last_render_job && ["queued", "running"].includes(info.value.last_render_job.status)) jobId.value = info.value.last_render_job.id;
+    if (info.value.last_render_job && ["queued", "running"].includes(info.value.last_render_job.status)) {
+      jobId.value = info.value.last_render_job.id;
+    }
+    if (info.value.transcribe_job && ["queued", "running"].includes(info.value.transcribe_job.status)) {
+      transcribeJobId.value = info.value.transcribe_job.id;
+      transcribing.value = true;
+    }
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -69,7 +131,9 @@ async function load() {
 
 function resetPlan() {
   if (!info.value) return;
-  Object.assign(plan, JSON.parse(JSON.stringify(info.value.render.plan)) as EditPlan);
+  const p = JSON.parse(JSON.stringify(info.value.render.plan)) as EditPlan;
+  if (!p.subtitles) p.subtitles = null;
+  Object.assign(plan, p);
   selectedClipIndex.value = null;
   selectedCaptionIndex.value = null;
 }
@@ -88,7 +152,11 @@ const clipLen = (c: EditPlan["clips"][number]) => {
   return end === undefined ? null : Math.max(0, (end - c.start) / c.speed);
 };
 const lengths = computed(() => plan.clips.map(clipLen));
-const total = computed(() => (lengths.value.every((l) => l !== null) ? Math.round(lengths.value.reduce<number>((a, b) => a + (b ?? 0), 0) * 10) / 10 : null));
+const total = computed(() =>
+  lengths.value.every((l) => l !== null)
+    ? Math.round(lengths.value.reduce<number>((a, b) => a + (b ?? 0), 0) * 10) / 10
+    : null,
+);
 const preset = computed(() => info.value?.presets[plan.preset]);
 const tooLong = computed(() => total.value !== null && !!preset.value && total.value > preset.value.max_seconds);
 const COLORS = ["bg-accent/70", "bg-info/70", "bg-review/70", "bg-signal/70", "bg-danger/60"];
@@ -150,6 +218,101 @@ function addCaption() {
 
 const num = (v: unknown) => (v === "" || v === null || v === undefined ? undefined : Number(v));
 
+// ---------------------------------------------------------------- transcription & tight cut
+const transcribeJob = computed(() =>
+  transcribeJobId.value ? office.state.jobs[transcribeJobId.value] : undefined,
+);
+
+watch(
+  () => transcribeJob.value?.status,
+  async (s) => {
+    if (s === "done") {
+      transcribing.value = false;
+      transcribeJobId.value = null;
+      msg.value = "Speech transcription finished.";
+      await load();
+    } else if (s === "failed" || s === "cancelled") {
+      transcribing.value = false;
+      error.value = `Transcription ${s}.`;
+    }
+  },
+);
+
+async function onTranscribe() {
+  error.value = msg.value = "";
+  transcribing.value = true;
+  try {
+    const res = await api.transcribeVideo(props.id);
+    transcribeJobId.value = res.job.id;
+    msg.value = "Transcribing speech on your PC runner (whisper.cpp)…";
+  } catch (e) {
+    error.value = (e as Error).message;
+    transcribing.value = false;
+  }
+}
+
+function applyTightCut() {
+  const t = firstVideoTranscript.value;
+  if (!t) return;
+  const ok = window.confirm(
+    "Replace current clips with tight cut? This will remove pauses ≥ 0.6s and hesitation sounds (um, ah).",
+  );
+  if (!ok) return;
+
+  const n = videoSources.value[0]?.n ?? 1;
+  const cuts = tightCuts(t, n);
+  plan.clips = cuts;
+  selectedClipIndex.value = null;
+
+  const fillerCount = t.words.filter((w) => isFiller(w.w)).length;
+  const newDuration = cuts.reduce((acc, c) => acc + (c.end ? (c.end - c.start) / c.speed : 0), 0);
+  const savedSec = Math.max(0, Math.round((t.duration - newDuration) * 10) / 10);
+  msg.value = `Tight cut applied: removed ${savedSec}s of pauses and ${fillerCount} fillers across ${cuts.length} clips.`;
+}
+
+function toggleSubtitles(e: Event) {
+  const checked = (e.target as HTMLInputElement).checked;
+  if (checked) {
+    plan.subtitles = { style: "pop", uppercase: true, position: "bottom" };
+  } else {
+    plan.subtitles = null;
+  }
+}
+
+/** `attachments` = the files the suggestion's clip numbers point into (that set of suggestions' job files). */
+function applySuggestion(option: EditSuggestion, attachments: { id: string }[]) {
+  if (!info.value) return;
+  const mappedClips = option.plan.clips
+    .map((c) => {
+      const attach = attachments[c.video - 1];
+      if (!attach) return null;
+      const idx = info.value?.render.attachments.findIndex((a) => a.id === attach.id);
+      if (idx === undefined || idx === -1) return null;
+      return { ...c, video: idx + 1 };
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null);
+
+  plan.clips = mappedClips.length ? mappedClips : [{ video: 1, start: 0, speed: 1 }];
+  plan.preset = option.plan.preset;
+  plan.fit = option.plan.fit;
+  plan.fps = option.plan.fps;
+  if (option.plan.name) plan.name = option.plan.name;
+  plan.mute = option.plan.mute;
+  plan.normalize_audio = option.plan.normalize_audio;
+  plan.captions = JSON.parse(JSON.stringify(option.plan.captions ?? []));
+  plan.subtitles = option.plan.subtitles ? JSON.parse(JSON.stringify(option.plan.subtitles)) : null;
+  selectedClipIndex.value = null;
+  selectedCaptionIndex.value = null;
+  msg.value = `Applied suggestion "${option.title}" to timeline.`;
+}
+
+function onSeek(seconds: number) {
+  if (previewVideo.value) {
+    previewVideo.value.currentTime = seconds;
+    previewVideo.value.play().catch(() => {});
+  }
+}
+
 // ---------------------------------------------------------------- render again
 const job = computed(() => (jobId.value ? office.state.jobs[jobId.value] : undefined));
 const jobAgent = computed(() => (job.value ? office.state.agents[job.value.agent_id] : undefined));
@@ -170,7 +333,13 @@ watch(
       const made = fresh.last_render_job?.result_upload_id;
       jobId.value = null;
       msg.value = "Rendered. Opening the new video…";
-      if (made) await router.push({ name: "studio", params: { id: made }, query: draftId.value ? { draft: draftId.value } : {} });
+      if (made) {
+        await router.push({
+          name: "studio",
+          params: { id: made },
+          query: draftId.value ? { draft: draftId.value } : {},
+        });
+      }
     } else if (s === "failed" || s === "cancelled") {
       error.value = `The render ${s}. Open the job for details.`;
     }
@@ -179,7 +348,10 @@ watch(
 
 async function renderAgain() {
   error.value = msg.value = "";
-  const parsed = EditPlan.safeParse({ ...plan, captions: plan.captions.filter((c) => c.text.trim()) });
+  const parsed = EditPlan.safeParse({
+    ...plan,
+    captions: plan.captions.filter((c) => c.text.trim()),
+  });
   if (!parsed.success) {
     error.value = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     return;
@@ -212,7 +384,11 @@ async function useOwnEdit(e: Event) {
     const up = await api.uploadVideo(file, (d) => (uploadPct.value = Math.round(d * 100)));
     if (draftId.value) await api.setDraftVideo(draftId.value, up.id);
     msg.value = draftId.value ? "Your edit is now the draft's video." : "Uploaded.";
-    await router.push({ name: "studio", params: { id: up.id }, query: draftId.value ? { draft: draftId.value } : {} });
+    await router.push({
+      name: "studio",
+      params: { id: up.id },
+      query: draftId.value ? { draft: draftId.value } : {},
+    });
   } catch (err) {
     error.value = (err as Error).message;
   } finally {
@@ -223,9 +399,20 @@ async function useOwnEdit(e: Event) {
 
 <template>
   <div class="mx-auto max-w-6xl pb-28 lg:pb-8">
-    <RouterLink to="/drafts" class="mb-3 inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg min-h-10">
-      <ArrowLeft :size="15" /> Drafts
-    </RouterLink>
+    <div class="mb-3 flex items-center justify-between">
+      <RouterLink to="/drafts" class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg min-h-10">
+        <ArrowLeft :size="15" /> Drafts
+      </RouterLink>
+
+      <button
+        v-if="info"
+        type="button"
+        class="btn btn-sm min-h-9 px-3 flex items-center gap-1.5 font-medium border-accent/40 text-accent hover:bg-accent/10 cursor-pointer shadow-xs"
+        @click="askEditorOpen = true"
+      >
+        <Bot :size="14" /> Ask Editor
+      </button>
+    </div>
 
     <PageHeader
       sign="Video Studio"
@@ -247,10 +434,10 @@ async function useOwnEdit(e: Event) {
       {{ msg }}
     </div>
 
-    <div v-if="info" class="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    <div v-if="info" class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       <!-- 1. preview + external tools -->
       <section id="preview" class="space-y-4">
-        <!-- Video Preview Card with dynamic Aspect Ratio frame -->
+        <!-- Video Preview Card with dynamic Aspect Ratio frame and Subtitles overlay -->
         <div class="card overflow-hidden p-3 bg-surface-2/30 flex flex-col items-center justify-center">
           <div class="relative w-full flex items-center justify-center" :class="aspectClass">
             <video
@@ -262,7 +449,27 @@ async function useOwnEdit(e: Event) {
               preload="metadata"
               class="h-full w-full object-contain rounded-lg bg-black shadow-md"
               aria-label="Video preview"
+              @timeupdate="playerCurrentTime = previewVideo?.currentTime ?? 0"
             />
+
+            <!-- Subtitle overlay -->
+            <div
+              v-if="plan.subtitles && activeCue"
+              class="pointer-events-none absolute inset-x-4 flex justify-center z-10 transition-all"
+              :class="plan.subtitles.position === 'middle' ? 'top-1/2 -translate-y-1/2' : 'bottom-12'"
+            >
+              <span
+                class="max-w-[90%] rounded-md px-3 py-1.5 text-center leading-snug drop-shadow-md select-none"
+                :class="[
+                  plan.subtitles.style === 'pop'
+                    ? 'bg-amber-400 text-black text-sm sm:text-base font-black tracking-wide shadow-lg uppercase scale-105'
+                    : 'bg-black/85 text-white text-xs sm:text-sm font-semibold tracking-normal backdrop-blur-xs'
+                ]"
+              >
+                {{ activeCue.text }}
+              </span>
+            </div>
+
             <!-- Target shape badge overlay -->
             <span class="chip chip-sm absolute top-3 left-3 bg-black/70 text-white backdrop-blur border border-white/20 text-[11px] font-medium shadow-md">
               <Film :size="12" class="text-accent" />
@@ -270,6 +477,16 @@ async function useOwnEdit(e: Event) {
             </span>
           </div>
         </div>
+
+        <!-- Transcript Panel -->
+        <TranscriptPanel
+          :transcript="firstVideoTranscript"
+          :file-number="videoSources[0]?.n ?? 1"
+          :current-time="playerCurrentTime"
+          :busy="transcribing"
+          @seek="onSeek"
+          @transcribe="onTranscribe"
+        />
 
         <!-- OpenCut 3-Step Panel -->
         <div class="card p-3.5 space-y-3 border-line/80 bg-surface/50">
@@ -370,6 +587,15 @@ async function useOwnEdit(e: Event) {
 
       <!-- 2. the edit (timeline, clips, captions, settings, render) -->
       <section id="edit" class="space-y-4">
+        <!-- Editor's Suggestions (above timeline) -->
+        <div v-if="info.suggestions" class="card p-4 space-y-3 bg-surface/90 border-accent/30 shadow-xs">
+          <EditSuggestionCards
+            :suggestions="info.suggestions"
+            mode="studio"
+            @use="(opt) => applySuggestion(opt, info!.suggestions!.attachments)"
+          />
+        </div>
+
         <!-- Timeline Card -->
         <div class="card p-4 space-y-2.5">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -468,14 +694,28 @@ async function useOwnEdit(e: Event) {
               </h2>
               <span class="chip chip-sm text-xs">{{ plan.clips.length }}</span>
             </div>
-            <button
-              type="button"
-              class="btn btn-sm min-h-10 px-3 font-medium flex items-center gap-1.5"
-              :disabled="plan.clips.length >= 20"
-              @click="addClip"
-            >
-              <Plus :size="14" /> Add clip
-            </button>
+
+            <div class="flex items-center gap-2">
+              <!-- Tight cut button -->
+              <button
+                v-if="firstVideoTranscript"
+                type="button"
+                class="btn btn-sm min-h-10 px-3 font-medium flex items-center gap-1.5 border-accent/40 text-accent hover:bg-accent/10 cursor-pointer"
+                title="Build tight cut by removing pauses and filler words"
+                @click="applyTightCut"
+              >
+                <Scissors :size="14" /> Tight cut
+              </button>
+
+              <button
+                type="button"
+                class="btn btn-sm min-h-10 px-3 font-medium flex items-center gap-1.5 cursor-pointer"
+                :disabled="plan.clips.length >= 80"
+                @click="addClip"
+              >
+                <Plus :size="14" /> Add clip
+              </button>
+            </div>
           </div>
 
           <div class="space-y-2.5">
@@ -500,7 +740,7 @@ async function useOwnEdit(e: Event) {
                   <div class="flex items-center gap-1">
                     <button
                       type="button"
-                      class="btn btn-sm btn-ghost min-h-10 min-w-10 p-0 flex items-center justify-center"
+                      class="btn btn-sm btn-ghost min-h-10 min-w-10 p-0 flex items-center justify-center cursor-pointer"
                       :disabled="i === 0"
                       aria-label="Move up"
                       @click="moveClip(i, -1)"
@@ -509,7 +749,7 @@ async function useOwnEdit(e: Event) {
                     </button>
                     <button
                       type="button"
-                      class="btn btn-sm btn-ghost min-h-10 min-w-10 p-0 flex items-center justify-center"
+                      class="btn btn-sm btn-ghost min-h-10 min-w-10 p-0 flex items-center justify-center cursor-pointer"
                       :disabled="i === plan.clips.length - 1"
                       aria-label="Move down"
                       @click="moveClip(i, 1)"
@@ -518,7 +758,7 @@ async function useOwnEdit(e: Event) {
                     </button>
                     <button
                       type="button"
-                      class="btn btn-sm btn-ghost min-h-10 min-w-10 p-0 flex items-center justify-center text-danger"
+                      class="btn btn-sm btn-ghost min-h-10 min-w-10 p-0 flex items-center justify-center text-danger cursor-pointer"
                       :disabled="plan.clips.length === 1"
                       aria-label="Remove clip"
                       @click="plan.clips.splice(i, 1)"
@@ -544,7 +784,7 @@ async function useOwnEdit(e: Event) {
                       <button
                         type="button"
                         class="text-[10px] text-accent font-medium hover:underline flex items-center gap-0.5 min-h-7.5"
-                        title="Approximation: reads current time from preview player"
+                        title="Reads current time from preview player"
                         @click="setClipStartFromPlayer(c)"
                       >
                         <Clock :size="11" /> From player
@@ -559,7 +799,7 @@ async function useOwnEdit(e: Event) {
                       <button
                         type="button"
                         class="text-[10px] text-accent font-medium hover:underline flex items-center gap-0.5 min-h-7.5"
-                        title="Approximation: reads current time from preview player"
+                        title="Reads current time from preview player"
                         @click="setClipEndFromPlayer(c)"
                       >
                         <Clock :size="11" /> From player
@@ -608,7 +848,7 @@ async function useOwnEdit(e: Event) {
                     <button
                       type="button"
                       class="text-[10px] text-accent hover:underline flex items-center gap-0.5"
-                      title="Approximation: reads current time from preview player"
+                      title="Reads current time from preview player"
                       @click="setClipStartFromPlayer(c)"
                     >
                       <Clock :size="10" /> Now
@@ -623,7 +863,7 @@ async function useOwnEdit(e: Event) {
                     <button
                       type="button"
                       class="text-[10px] text-accent hover:underline flex items-center gap-0.5"
-                      title="Approximation: reads current time from preview player"
+                      title="Reads current time from preview player"
                       @click="setClipEndFromPlayer(c)"
                     >
                       <Clock :size="10" /> Now
@@ -654,7 +894,7 @@ async function useOwnEdit(e: Event) {
                 <div class="flex gap-1 pb-0.5">
                   <button
                     type="button"
-                    class="btn btn-sm btn-ghost px-2 min-h-9.5"
+                    class="btn btn-sm btn-ghost px-2 min-h-9.5 cursor-pointer"
                     :disabled="i === 0"
                     aria-label="Move up"
                     @click="moveClip(i, -1)"
@@ -663,7 +903,7 @@ async function useOwnEdit(e: Event) {
                   </button>
                   <button
                     type="button"
-                    class="btn btn-sm btn-ghost px-2 min-h-9.5"
+                    class="btn btn-sm btn-ghost px-2 min-h-9.5 cursor-pointer"
                     :disabled="i === plan.clips.length - 1"
                     aria-label="Move down"
                     @click="moveClip(i, 1)"
@@ -672,7 +912,7 @@ async function useOwnEdit(e: Event) {
                   </button>
                   <button
                     type="button"
-                    class="btn btn-sm btn-ghost px-2 min-h-9.5 text-danger"
+                    class="btn btn-sm btn-ghost px-2 min-h-9.5 text-danger cursor-pointer"
                     :disabled="plan.clips.length === 1"
                     aria-label="Remove clip"
                     @click="plan.clips.splice(i, 1)"
@@ -681,6 +921,80 @@ async function useOwnEdit(e: Event) {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtitles Section -->
+        <div class="card p-4 space-y-3.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <h2 class="flex items-center gap-2 font-semibold text-base">
+                <SubtitlesIcon :size="17" class="text-accent" /> Subtitles
+              </h2>
+              <span
+                class="chip chip-sm text-[10px]"
+                :class="plan.subtitles ? 'bg-accent/15 text-accent border-accent/30 font-medium' : 'text-muted'"
+              >
+                {{ plan.subtitles ? 'Enabled' : 'Off' }}
+              </span>
+            </div>
+
+            <!-- Toggle Switch -->
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <span class="text-xs text-muted font-medium">{{ plan.subtitles ? 'Burn in subtitles' : 'No subtitles' }}</span>
+              <input
+                type="checkbox"
+                class="accent-accent size-4 cursor-pointer"
+                :checked="!!plan.subtitles"
+                @change="toggleSubtitles"
+              />
+            </label>
+          </div>
+
+          <p v-if="!plan.subtitles" class="text-xs text-muted leading-relaxed">
+            Burn in timed subtitles generated from whisper speech recognition. Requires video transcription first.
+          </p>
+
+          <!-- Controls when enabled -->
+          <div v-else class="space-y-3 pt-2 border-t border-line/60">
+            <div class="grid gap-3 sm:grid-cols-3">
+              <label>
+                <span class="label text-xs">Subtitle style</span>
+                <select v-model="plan.subtitles.style" class="input text-sm min-h-10 w-full">
+                  <option value="pop">Pop (2 words, TikTok)</option>
+                  <option value="line">Line (up to 6 words)</option>
+                </select>
+              </label>
+
+              <label>
+                <span class="label text-xs">Position</span>
+                <select v-model="plan.subtitles.position" class="input text-sm min-h-10 w-full">
+                  <option value="bottom">Bottom</option>
+                  <option value="middle">Middle</option>
+                </select>
+              </label>
+
+              <label class="flex items-center gap-2.5 text-xs text-fg min-h-10 mt-auto cursor-pointer select-none">
+                <input
+                  v-model="plan.subtitles.uppercase"
+                  type="checkbox"
+                  class="accent-accent size-4 cursor-pointer"
+                />
+                <span class="font-medium">Uppercase text</span>
+              </label>
+            </div>
+
+            <!-- Live subtitle cue indicator -->
+            <div v-if="activeCue" class="rounded-lg border border-accent/25 bg-accent/5 p-2.5 flex items-center justify-between text-xs">
+              <span class="text-muted text-[11px] font-mono">Current cue ({{ activeCue.start }}s - {{ activeCue.end }}s):</span>
+              <span class="font-bold text-fg truncate ml-2">{{ activeCue.text }}</span>
+            </div>
+            <div v-else-if="allSubtitleCues.length" class="text-[11px] text-muted">
+              {{ allSubtitleCues.length }} subtitle cues ready across clips. Play video to preview live.
+            </div>
+            <div v-else class="text-[11px] text-muted">
+              No speech cues found in current clips. Make sure video source has a transcript.
             </div>
           </div>
         </div>
@@ -696,7 +1010,7 @@ async function useOwnEdit(e: Event) {
             </div>
             <button
               type="button"
-              class="btn btn-sm min-h-10 px-3 font-medium flex items-center gap-1.5"
+              class="btn btn-sm min-h-10 px-3 font-medium flex items-center gap-1.5 cursor-pointer"
               :disabled="plan.captions.length >= 40"
               @click="addCaption"
             >
@@ -726,7 +1040,7 @@ async function useOwnEdit(e: Event) {
                     <span class="chip chip-sm text-[10px]">{{ cap.position }}</span>
                     <button
                       type="button"
-                      class="btn btn-sm btn-ghost min-h-10 min-w-10 p-0 flex items-center justify-center text-danger"
+                      class="btn btn-sm btn-ghost min-h-10 min-w-10 p-0 flex items-center justify-center text-danger cursor-pointer"
                       aria-label="Remove caption"
                       @click="plan.captions.splice(i, 1)"
                     >
@@ -799,7 +1113,7 @@ async function useOwnEdit(e: Event) {
                 <div class="pb-0.5">
                   <button
                     type="button"
-                    class="btn btn-sm btn-ghost px-2 min-h-9.5 text-danger"
+                    class="btn btn-sm btn-ghost px-2 min-h-9.5 text-danger cursor-pointer"
                     aria-label="Remove caption"
                     @click="plan.captions.splice(i, 1)"
                   >
@@ -886,7 +1200,7 @@ async function useOwnEdit(e: Event) {
             <div class="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
-                class="btn btn-primary min-h-10 px-4 font-medium flex items-center gap-2"
+                class="btn btn-primary min-h-10 px-4 font-medium flex items-center gap-2 cursor-pointer shadow-xs"
                 :disabled="busy || rendering || tooLong"
                 @click="renderAgain"
               >
@@ -897,7 +1211,7 @@ async function useOwnEdit(e: Event) {
 
               <button
                 type="button"
-                class="btn btn-ghost min-h-10 px-3.5 flex items-center gap-1.5"
+                class="btn btn-ghost min-h-10 px-3.5 flex items-center gap-1.5 cursor-pointer"
                 :disabled="rendering || !isEdited"
                 @click="resetPlan"
               >
@@ -941,7 +1255,7 @@ async function useOwnEdit(e: Event) {
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="btn btn-primary flex-1 min-h-10.5 font-medium justify-center flex items-center gap-2"
+          class="btn btn-primary flex-1 min-h-10.5 font-medium justify-center flex items-center gap-2 cursor-pointer shadow-xs"
           :disabled="busy || rendering || tooLong"
           @click="renderAgain"
         >
@@ -952,7 +1266,18 @@ async function useOwnEdit(e: Event) {
 
         <button
           type="button"
-          class="btn btn-ghost min-h-10.5 px-3.5 shrink-0 flex items-center gap-1.5"
+          class="btn btn-ghost min-h-10.5 px-3 shrink-0 flex items-center gap-1.5 cursor-pointer"
+          title="Ask Editor"
+          aria-label="Ask Editor"
+          @click="askEditorOpen = true"
+        >
+          <Bot :size="16" class="text-accent" />
+          <span class="text-xs">Ask</span>
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-ghost min-h-10.5 px-3 shrink-0 flex items-center gap-1.5 cursor-pointer"
           :disabled="rendering || !isEdited"
           title="Undo changes"
           aria-label="Undo changes"
@@ -964,7 +1289,28 @@ async function useOwnEdit(e: Event) {
       </div>
     </div>
 
-    <div v-else-if="!error" class="card p-8 text-center text-sm text-muted">
+    <!-- Ask Editor Drawer / Bottom Sheet -->
+    <Teleport to="body">
+      <div
+        v-if="askEditorOpen && info"
+        class="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs transition-opacity"
+        @click.self="askEditorOpen = false"
+      >
+        <!-- On phone: bottom sheet (bottom-0 w-full max-h-[85vh]); on desktop: right side drawer (w-96 sm:w-[420px] h-full) -->
+        <div
+          class="w-full sm:w-[440px] max-w-full h-[85vh] sm:h-full mt-auto sm:mt-0 flex flex-col shadow-2xl transition-transform"
+        >
+          <AskEditorPanel
+            :upload-id="info.upload.id"
+            :video-sources="videoSources"
+            @use-suggestion="applySuggestion"
+            @close="askEditorOpen = false"
+          />
+        </div>
+      </div>
+    </Teleport>
+
+    <div v-if="!info && !error" class="card p-8 text-center text-sm text-muted">
       <LoaderCircle :size="24" class="mx-auto mb-2 animate-spin text-accent" />
       Loading video studio…
     </div>
