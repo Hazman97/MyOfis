@@ -146,6 +146,11 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - Each problem goes to Telegram once a day.
 - **Backups mirror `data/files`** into `BACKUP_DIR/files/` (see the Nightly backup note above).
 - The runner sends photos to the model as `file` parts (the AI SDK deprecated `image` parts).
+- **System page** (`/system`, Stage 1 of the 2026-10-19 plan).
+  - `GET /api/system` (`apps/hub/src/systemInfo.ts`) returns: versions (from the package.json files), the DB schema read with Drizzle `getTableConfig` (plus the FTS `search_index`), counts, and connected integrations (booleans only).
+  - `views/SystemView.vue` draws the architecture, ERD and flow with **mermaid** (`components/MermaidDiagram.vue`: lazy chunk, `securityLevel: "strict"`, follows light/dark, scrolls sideways on phones).
+  - Next: Stage 2 Video Studio (plus the OpenCut button and watcher), then Stage 3 members and shared agents. Plan file: `~/.claude/plans/pasted-content-id-923a-agent-mellow-parrot.md`.
+  - Gemini 009 polishes the page.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

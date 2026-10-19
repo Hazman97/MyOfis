@@ -33,6 +33,7 @@ import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
 import { fileResponse } from "./uploads.ts";
+import { systemInfo } from "./systemInfo.ts";
 import { CATALOG_SOURCES, SkillCatalog } from "./skillCatalog.ts";
 import type { Integrations } from "./integrations.ts";
 import type { TelegramBot } from "./telegram.ts";
@@ -685,6 +686,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
 
   // tools catalog (for the agent editor)
+  // the System page: versions, schema (ERD), counts, connected integrations (no secrets)
+  api.get("/system", (c) => c.json(systemInfo(hub, integrations)));
   api.get("/tools", (c) =>
     c.json({
       tools: Object.values(TOOL_REGISTRY).map((t) => ({ name: t.name, description: t.description, category: t.category })),

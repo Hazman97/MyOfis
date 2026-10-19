@@ -271,6 +271,18 @@ Chat with **Publisher** (here or in Telegram), press 📷 to add photos (up to 4
 
 Each website exposes one signed endpoint. Set it per project in **Projects → Brief → Website**, then press **Test**. SmashPoint's is in its Worker. The setup and the contract for other sites are in [docs/website-publishing.md](docs/website-publishing.md).
 
+## System page
+
+**System → System** shows the whole system on one page, read live from the running hub:
+- counts;
+- an architecture diagram;
+- the stack with versions;
+- the database ERD;
+- agents, tools and events;
+- the main flow;
+- what is connected;
+- the safety rules.
+
 ## Ketua: ask the whole office
 
 Chat with **Ketua** (or `/agent ketua` in Telegram) when you want the team's view, for example "nak buat sistem booking kamera, okay ke?". Ketua picks the colleagues who matter (Researcher, Coder, Marketing, Kerani…) and asks them **at the same time** (`consult_team`). In the office they walk to the meeting room. Then you get one answer: a short verdict, each colleague's point, the risks and a numbered plan. Say "ok proceed" and Ketua hands the work to the right agents.

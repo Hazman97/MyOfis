@@ -24,6 +24,23 @@ export interface ToolInfo {
   category: string;
 }
 
+/** GET /api/system: the running system, for the System page. */
+export interface SystemTable {
+  name: string;
+  columns: { name: string; type: string; not_null: boolean; primary: boolean }[];
+  foreign_keys: { columns: string[]; table: string; foreign_columns: string[] }[];
+  note?: string;
+}
+export interface SystemInfo {
+  generated_at: string;
+  runtime: { bun: string; platform: string; auth_mode: string };
+  versions: { package: string; name: string; deps: Record<string, string> }[];
+  counts: Record<string, number>;
+  event_types: string[];
+  integrations: { telegram: boolean; gitea: boolean; web_search: string; websites: string[]; social: Record<string, string[]>; backups: number };
+  schema: SystemTable[];
+}
+
 export interface Approval {
   id: string;
   run_id: string;
@@ -239,6 +256,7 @@ export const api = {
   revokeRunner: (id: string) => request<{ ok: true }>(`/runners/${id}/revoke`, { method: "POST" }),
 
   tools: () => request<{ tools: ToolInfo[] }>("/tools"),
+  system: () => request<SystemInfo>("/system"),
 
   integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings }>("/settings/integrations"),
   saveWebSearch: (body: { provider: WebSearchProvider; searxng_url?: string; key_provider?: "tavily" | "brave"; api_key?: string }) =>
