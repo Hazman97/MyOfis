@@ -81,6 +81,9 @@ describe("skills", () => {
 
   test("agent proposes, owner approves, file is written; patch and delete also wait for approval", async () => {
     env = await createTestEnv();
+    // built-in skills are seeded once (Editor's short-video-editing); this test starts without them
+    expect(env.hub.hub.learning.skill("short-video-editing")?.description).toContain("TikTok");
+    env.hub.hub.learning.deleteSkill("short-video-editing");
     await env.pairRunner();
     const web = await env.web();
     const a = await bot(env, ["skill_manage", "skills_list", "skill_view"]);

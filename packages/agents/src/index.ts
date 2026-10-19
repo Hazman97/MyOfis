@@ -4,7 +4,7 @@ import { echoAgent } from "./echo.ts";
 import { englishCoachAgent } from "./englishCoach.ts";
 import { researcherAgent } from "./researcher.ts";
 import { publisherAgent } from "./publisher.ts";
-import { editorAgent } from "./editor.ts";
+import { SHORT_VIDEO_EDITING_SKILL, editorAgent, editorUpgrade } from "./editor.ts";
 import { ketuaAgent, ketuaSchedule } from "./ketua.ts";
 import { projectAssistantAgent, projectAssistantSchedule } from "./projectAssistant.ts";
 import { keraniAgent, keraniSchedule } from "./kerani.ts";
@@ -20,7 +20,7 @@ export { marketingAgent, MARKETING_PROMPT } from "./marketing.ts";
 export { englishCoachAgent, ENGLISH_COACH_PROMPT } from "./englishCoach.ts";
 export { researcherAgent, RESEARCHER_PROMPT } from "./researcher.ts";
 export { publisherAgent, PUBLISHER_PROMPT } from "./publisher.ts";
-export { editorAgent, EDITOR_PROMPT } from "./editor.ts";
+export { editorAgent, EDITOR_PROMPT, SHORT_VIDEO_EDITING_SKILL } from "./editor.ts";
 export { ketuaAgent, ketuaSchedule, KETUA_PROMPT } from "./ketua.ts";
 export { projectAssistantAgent, projectAssistantSchedule, PROJECT_ASSISTANT_PROMPT } from "./projectAssistant.ts";
 export { keraniAgent, keraniSchedule, KERANI_PROMPT } from "./kerani.ts";
@@ -31,7 +31,13 @@ export interface BuiltinAgent {
   needsLlm: boolean;
   /** Schedules created together with the agent (seeded disabled; the owner turns them on). */
   schedules?: (agentId: string) => ScheduleInput[];
+  /** For an agent seeded earlier: tools added once (the owner may remove them later), and older
+   *  built-in prompts that are replaced by the current one (an edited prompt is never touched). */
+  upgrade?: { tools?: string[]; previousPrompts?: string[] };
 }
+
+/** SKILL.md files seeded once into the skills folder (the owner may edit or delete them). */
+export const BUILTIN_SKILLS: { name: string; content: string }[] = [{ name: "short-video-editing", content: SHORT_VIDEO_EDITING_SKILL }];
 
 /** Seeded on first boot by slug; never overwrites owner edits. */
 export const BUILTIN_AGENTS: BuiltinAgent[] = [
@@ -44,7 +50,7 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: researcherAgent, needsLlm: true },
   { agent: publisherAgent, needsLlm: true },
   { agent: keraniAgent, needsLlm: true, schedules: (id) => [keraniSchedule(id)] },
-  { agent: editorAgent, needsLlm: true },
+  { agent: editorAgent, needsLlm: true, upgrade: editorUpgrade },
   { agent: ketuaAgent, needsLlm: true, schedules: (id) => [ketuaSchedule(id)] },
   { agent: projectAssistantAgent, needsLlm: true, schedules: (id) => [projectAssistantSchedule(id)] },
 ];

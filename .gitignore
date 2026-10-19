@@ -15,3 +15,6 @@ shots-*/
 
 # Gemini / local test scripts
 scratch/
+
+# the owner's skills library (SKILLS_DIR); runtime data, backed up nightly
+skills/

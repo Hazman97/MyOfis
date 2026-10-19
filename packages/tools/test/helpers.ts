@@ -57,6 +57,7 @@ export function makeCtx(
     uploadVideo: async () => ({ id: "upl_test", size: 0 }),
     renders: [],
     projectData: async () => ({}),
+    videoData: async () => ({ transcript: null }),
     siteData: async () => ({}),
     webPost: async () => ({}),
   };

@@ -19,6 +19,22 @@ Editor is a built-in agent that cuts, reframes and exports your videos with **ff
 
 Until TikTok or YouTube posting is connected, approving only records the draft. You download the video and post it yourself.
 
+## Transcripts, suggestions and subtitles
+Editor hears what is said in a video with **whisper.cpp** on the runner PC (free, offline, uses the NVIDIA GPU).
+- **Setup on this PC (done 2026-10-19).** `C:\whisper\bin\Release\whisper-cli.exe` is whisper.cpp b5130 (v1.9.4), CUDA 12.4 build; the model is `C:\whisper\models\ggml-large-v3-turbo-q5_0.bin` (good for Malay and English).
+- **Another PC.** Download `whisper-cublas-12.4.0-bin-x64.zip` (NVIDIA) or `whisper-bin-x64.zip` (CPU) from github.com/ggml-org/whisper.cpp releases, and a `ggml-*.bin` model from huggingface.co/ggerganov/whisper.cpp. Put them in `C:\whisper\bin` and `C:\whisper\models`, or set `WHISPER_CPP` / `WHISPER_MODEL` in the runner's `.env`. The Runners page lists `whisper` when it is found.
+- **video_transcribe:**
+  1. it takes the sound out with ffmpeg (16 kHz mono);
+  2. whisper gives every word with its time;
+  3. ffmpeg `silencedetect` measures the real pauses, because whisper's word times run into each other.
+
+  The transcript is saved on the video (`uploads.transcript`), so it is done once.
+- **suggest_edits:** after looking, Editor shows 2–4 options as cards (for example tight cut + subtitles / 30 s highlight / just compress). Pick one in Chat ("Pick A") or press **Use in timeline** in the Video Studio.
+- **Tight cut:** drops pauses over 0.6 s and every "um / uh / erm / ah", keeping 0.12 s of air. The Video Studio's **Tight cut** button does it without the AI.
+- **Subtitles** (`subtitles: {style: "pop" | "line"}`):
+  - built from the transcript at render time, so they follow every cut;
+  - "pop" = 2 words, uppercase, yellow, bigger.
+
 ## Presets
 | Preset | Size | Longest |
 |---|---|---|
@@ -43,7 +59,7 @@ The quality is high so that TikTok's own re-encode starts from a clean picture.
 **Captions** are burned in: big white bold text with a black outline, placed above TikTok's buttons. Editor writes only your words or facts from the brief.
 
 ## Limits (for now)
-- Editor cannot see the picture. It cuts at the times you give, or at the scene changes ffprobe finds. If you want a specific moment, say the time.
+- Editor cannot see the picture. It cuts by the transcript, the times you give, or the scene changes ffprobe finds. If you want a specific moment, say the time.
 - There is no background music or voice-over yet.
 - Posting to TikTok and YouTube is not connected yet: download and post them yourself.
 

@@ -42,6 +42,12 @@ export const UPLOAD_PART_BYTES = 32 * 1024 ** 2;
 
 export const isVideoType = (type: string) => type in VIDEO_TYPES;
 
+/**
+ * Jobs the runner does without the AI (no provider, key or tokens): the one tool each may use.
+ * video_render = the Video Studio's "Render again"; video_transcribe = its "Transcribe".
+ */
+export const DIRECT_JOBS: Record<string, string> = { video_render: "video_edit", video_transcribe: "video_transcribe" };
+
 // ---------------------------------------------------------------- Editor's edit plan (video_edit input; the studio edits it too)
 
 export const Clip = z.object({

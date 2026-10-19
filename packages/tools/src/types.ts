@@ -94,6 +94,8 @@ export interface ToolContext {
   renders: { id: string; name: string; content_type: string }[];
   /** Project documents and log, through the hub (scoped to this job's room). */
   projectData(action: "search" | "read" | "summary" | "log_add" | "log_list" | "log_update", params: Record<string, unknown>): Promise<unknown>;
+  /** Video Studio data through the hub: a source video's transcript, and Editor's edit options. */
+  videoData(action: "transcript_get" | "transcript_put" | "suggestions", params: Record<string, unknown>): Promise<unknown>;
   /** Data a project's website shares with Agent Office (Kerani: bookings). */
   siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
   /** Change or remove a live website post (after the owner approved the tool call). */

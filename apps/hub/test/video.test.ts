@@ -163,6 +163,77 @@ describe.skipIf(!ffmpeg || !Bun.which("ffprobe"))("Editor renders on the runner"
     await env.api(`/api/drafts/${draft.id}/decide`, { body: { decision: "reject" } });
     expect((await env.api(`/api/drafts/${draft.id}/video`, { method: "PATCH", body: { upload_id: mine.id } })).status).toBe(409);
   }, 300_000);
+
+  test("transcripts: Studio Transcribe (no AI) → Editor suggests options → render with pop subtitles", async () => {
+    // a fake whisper-cli (the real one needs a 500 MB model)
+    const fake = join(dir, process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli");
+    const built = Bun.spawnSync(["bun", "build", "--compile", join(import.meta.dir, "fakeWhisper.ts"), "--outfile", fake]);
+    expect(built.exitCode).toBe(0);
+    const model = join(dir, "ggml-test.bin");
+    await Bun.write(model, "x");
+    process.env.WHISPER_CPP = fake;
+    process.env.WHISPER_MODEL = model;
+    try {
+      env = await createTestEnv();
+      await env.pairRunner();
+      const v = await sendVideo(clip, "talk.mp4");
+      expect((await env.api("/api/videos")).body.videos).toMatchObject([{ id: v.id, name: "talk.mp4", run_id: null, has_transcript: false }]);
+
+      // the studio's Transcribe button: the seeded Editor runs whisper directly, 0 tokens
+      const tj = (await env.api(`/api/videos/${v.id}/transcribe`, { method: "POST" })).body.job;
+      expect(tj).toMatchObject({ type: "video_transcribe" });
+      await waitFor(() => ["done", "failed"].includes(env.hub.hub.store.state.jobs[tj.id]?.status ?? ""), 120_000, "transcribe");
+      expect(env.hub.hub.store.state.jobs[tj.id]?.status).toBe("done");
+      const info = (await env.api(`/api/videos/${v.id}`)).body;
+      expect(info.transcripts[v.id]).toMatchObject({ language: "ms", model: "ggml-test.bin", words: [{ w: "Um," }, { w: "Smash" }, { w: "Sabtu" }, { w: "ni." }] });
+      expect(info.transcribe_job).toMatchObject({ id: tj.id, status: "done" });
+      const run = env.hub.hub.store.state.runs[env.hub.hub.store.state.jobs[tj.id]!.run_ids[0]!]!;
+      expect(run.tokens_in + run.tokens_out).toBe(0);
+
+      // Editor reads it (cached now), suggests options, the owner picks A, Editor renders it with subtitles
+      const agent = (
+        await env.api("/api/agents", { body: { slug: "ed3", name: "Editor 3", provider: "mock", model: "mock-script", tools: ["video_transcribe", "suggest_edits", "video_edit"], config: { self_review: false } } })
+      ).body.agent;
+      const planA = { clips: [{ video: 1, start: 0.3 }], name: "tight", subtitles: { style: "pop" } };
+      const script = [
+        { tool: "video_transcribe", input: { video: 1 } },
+        { tool: "suggest_edits", input: { intro: "A short talk.", options: [{ key: "A", title: "Bad", why: "file 2 does not exist", plan: { clips: [{ video: 2 }] } }] } },
+        {
+          tool: "suggest_edits",
+          input: {
+            intro: "A short talk about Saturday.",
+            options: [
+              { key: "A", title: "Tight cut + subtitles", why: "Drops the um.", plan: planA },
+              { key: "B", title: "Just compress", why: "Whole video.", plan: { clips: [{ video: 1 }], name: "whole" } },
+            ],
+          },
+        },
+        { tool: "video_edit", input: planA },
+        { text: "Pick A or B" },
+      ];
+      const job = (await env.api("/api/jobs", { body: { agent_id: agent.id, title: "talk", input: { script, attachments: [{ id: v.id, name: "talk.mp4", content_type: "video/mp4" }] } } })).body.job;
+      await waitFor(() => ["done", "failed"].includes(env.hub.hub.store.state.jobs[job.id]?.status ?? ""), 120_000, "editor run");
+      expect(env.hub.hub.store.state.jobs[job.id]?.status).toBe("done");
+      const runId = env.hub.hub.store.state.jobs[job.id]!.run_ids[0]!;
+      const results = (await env.api(`/api/runs/${runId}`)).body.events.filter((e: { type: string }) => e.type === "agent.tool_result").map((e: { payload: { tool: string; ok: boolean; summary: string } }) => e.payload);
+      expect(results.map((r: { ok: boolean }) => r.ok)).toEqual([true, false, true, true]);
+      expect(results[0].summary).toContain("4 words (ms), 1 fillers");
+
+      // the chat and the studio both see the options
+      const sug = env.hub.hub.studio.suggestionsForRuns([runId])!;
+      expect(sug).toMatchObject({ intro: "A short talk about Saturday.", attachments: [{ id: v.id }], options: [{ key: "A", plan: { subtitles: { style: "pop", uppercase: true } } }, { key: "B" }] });
+      expect((await env.api(`/api/videos/${v.id}`)).body.suggestions.id).toBe(sug.id);
+
+      // the render burned in pop subtitles from the transcript (the "um" left out)
+      const ass = readFileSync(join(env.dir, "workspaces", "ed3", runId, "media", "tight.ass"), "utf8");
+      expect(ass).toContain("Pop,,0,0,0,,{\\an2}SMASH SABTU");
+      expect(ass).not.toContain("UM");
+      expect(env.hub.hub.db.select().from(uploads).all().find((u) => u.name === "tight-tiktok_fhd.mp4")?.render?.plan.subtitles).toMatchObject({ style: "pop" });
+    } finally {
+      delete process.env.WHISPER_CPP;
+      delete process.env.WHISPER_MODEL;
+    }
+  }, 300_000);
 });
 
 describe("OpenCut watcher", () => {

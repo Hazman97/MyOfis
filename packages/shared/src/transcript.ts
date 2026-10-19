@@ -14,6 +14,9 @@ export const Transcript = z.object({
   duration: z.number().min(0),
   model: z.string().max(80),
   words: z.array(TranscriptWord).max(60_000),
+  /** Quiet stretches measured on the sound itself (ffmpeg silencedetect): whisper's word times run
+   *  into each other, so pauses come from here. */
+  silences: z.array(z.object({ s: z.number().min(0), e: z.number().min(0) })).max(20_000).optional(),
 });
 export type Transcript = z.infer<typeof Transcript>;
 
@@ -40,9 +43,13 @@ export function packTranscript(t: Transcript, video: number, maxChars = 12_000):
     lines.push(`[${r1(phrase[0]!.s)}–${r1(phrase.at(-1)!.e)}] ${text}`);
     phrase = [];
   };
+  const pauses = (t.silences ?? []).filter((p) => p.e - p.s >= 0.5);
   t.words.forEach((x, i) => {
     const prev = t.words[i - 1];
-    const gap = prev ? x.s - prev.e : 0;
+    // a measured silence between the two words, else the gap in the word times
+    // (whisper often stretches a word over the pause after it, so look from the previous word's start)
+    const quiet = prev ? pauses.find((p) => p.s >= prev.s && (p.s + p.e) / 2 <= x.s) : undefined;
+    const gap = quiet ? quiet.e - quiet.s : prev ? x.s - prev.e : 0;
     if (prev && (gap >= 0.5 || /[.?!]$/.test(prev.w) || phrase.length >= 14)) flush();
     if (gap >= 1) lines.push(`(pause ${r1(gap)}s)`);
     phrase.push(x);
@@ -64,27 +71,45 @@ export interface TightOptions {
   to?: number;
 }
 
-/** Clips that keep the speech and drop long pauses (and fillers): a "tight cut". At most 80 clips. */
+/**
+ * Clips that keep the speech and drop long pauses and fillers: a "tight cut". Pauses come from the
+ * measured silences (and gaps in the word times); fillers are always cut, however short. At most 80 clips.
+ */
 export function tightCuts(t: Transcript, video: number, opts: TightOptions = {}): Clip[] {
   const { min_pause = 0.6, pad = 0.12, drop_fillers = true, from = 0, to = t.duration } = opts;
-  const words = t.words.filter((x) => x.e > from && x.s < to && x.e > x.s && !(drop_fillers && isFiller(x.w)));
-  if (!words.length) return [{ video, start: r2(from), end: r2(to), speed: 1 }];
-  const ranges: [number, number][] = [];
-  for (const x of words) {
-    const s = Math.max(from, x.s - pad);
-    const e = Math.min(to, x.e + pad);
-    const last = ranges.at(-1);
-    if (last && s - last[1] < min_pause) last[1] = Math.max(last[1], e);
-    else ranges.push([s, e]);
+  const words = t.words.filter((x) => x.e > from && x.s < to && x.e > x.s);
+  const speech = drop_fillers ? words.filter((x) => !isFiller(x.w)) : words;
+  if (!speech.length) return [{ video, start: r2(from), end: r2(to), speed: 1 }];
+  const cuts: [number, number][] = [];
+  const quiet = (s: number, e: number) => e - s >= min_pause && cuts.push([s + pad, e - pad]);
+  for (const p of t.silences ?? []) quiet(Math.max(from, p.s), Math.min(to, p.e));
+  for (let i = 1; i < speech.length; i++) quiet(speech[i - 1]!.e, speech[i]!.s);
+  quiet(from - pad, speech[0]!.s);
+  quiet(speech.at(-1)!.e, to + pad);
+  if (drop_fillers) for (const x of words) if (isFiller(x.w)) cuts.push([x.s, x.e]);
+  // merge the cuts, then keep what is between them
+  const merged: [number, number][] = [];
+  for (const c of cuts.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0])) {
+    const last = merged.at(-1);
+    if (last && c[0] <= last[1] + 0.05) last[1] = Math.max(last[1], c[1]);
+    else merged.push([c[0], c[1]]);
   }
-  // too many pieces: merge across the shortest gaps first
-  while (ranges.length > 80) {
+  let keep: [number, number][] = [];
+  let at = from;
+  for (const [s, e] of merged) {
+    if (s > at) keep.push([at, Math.min(s, to)]);
+    at = Math.max(at, e);
+  }
+  if (at < to) keep.push([at, to]);
+  keep = keep.filter(([s, e]) => e - s >= 0.15);
+  // too many pieces: put back the shortest cuts first
+  while (keep.length > 80) {
     let k = 0;
-    for (let i = 1; i < ranges.length - 1; i++) if (ranges[i + 1]![0] - ranges[i]![1] < ranges[k + 1]![0] - ranges[k]![1]) k = i;
-    ranges[k]![1] = ranges[k + 1]![1];
-    ranges.splice(k + 1, 1);
+    for (let i = 1; i < keep.length - 1; i++) if (keep[i + 1]![0] - keep[i]![1] < keep[k + 1]![0] - keep[k]![1]) k = i;
+    keep[k]![1] = keep[k + 1]![1];
+    keep.splice(k + 1, 1);
   }
-  return ranges.map(([s, e]) => ({ video, start: r2(s), end: r2(e), speed: 1 }));
+  return keep.map(([s, e]) => ({ video, start: r2(s), end: r2(e), speed: 1 }));
 }
 
 export interface SubtitleCue {

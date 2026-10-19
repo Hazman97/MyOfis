@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import type { AgentConfig, PublishInfo, RenderInfo, SelfCheck, WebPost } from "@agent-office/shared";
+import type { AgentConfig, EditSuggestionsInput, PublishInfo, RenderInfo, SelfCheck, Transcript, WebPost } from "@agent-office/shared";
 
 export interface ProjectPublish {
   url: string;
@@ -351,8 +351,25 @@ export const uploads = sqliteTable("uploads", {
   run_id: text("run_id"),
   /** For renders: the edit plan and source files, so the Video Studio can show and re-render it. */
   render: json<RenderInfo>("render"),
+  /** Videos: the speech, word by word (whisper.cpp on the runner; video_transcribe). */
+  transcript: json<Transcript>("transcript"),
   created_at: text("created_at").notNull().default(now),
 });
+
+/** Editor's edit options for a set of videos (tool suggest_edits); the chat and the Video Studio show them. */
+export const editSuggestions = sqliteTable(
+  "edit_suggestions",
+  {
+    id: text("id").primaryKey(),
+    workspace_id: ws(),
+    run_id: text("run_id").notNull(),
+    /** The job's files in order (plan.clips[].video points into it). */
+    attachments: json<{ id: string; name: string; content_type: string }[]>("attachments").notNull(),
+    data: json<EditSuggestionsInput>("data").notNull(),
+    created_at: text("created_at").notNull().default(now),
+  },
+  (t) => [index("edit_suggestions_run").on(t.run_id)],
+);
 
 /**
  * Project documents (owner request, 2026-10-19: a project assistant that knows every file of a

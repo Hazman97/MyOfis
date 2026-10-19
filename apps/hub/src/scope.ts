@@ -19,7 +19,7 @@ export const isOwnerWs = (ws: string) => ws === OWNER_WORKSPACE;
 export const MEMBER_TOOLS = new Set([
   "read_brief", "read_feature_log", "read_past_drafts", "save_draft", "draft_web_post", "update_web_post", "take_down_web_post", "read_bookings",
   "web_search", "web_fetch", "write_report", "handoff", "consult_agent", "consult_team",
-  "memory", "session_search", "skills_list", "skill_view", "video_probe", "video_edit",
+  "memory", "session_search", "skills_list", "skill_view", "video_probe", "video_edit", "video_transcribe", "suggest_edits",
 ]);
 
 export function assertMemberTools(tools: string[]): void {

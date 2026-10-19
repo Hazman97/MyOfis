@@ -12,11 +12,12 @@ import {
   type RunnerToHub,
   UPLOAD_PART_BYTES,
   type RenderInfo,
+  DIRECT_JOBS,
 } from "@agent-office/shared";
 import { aiSdkRuntime } from "./runtimes/aiSdk.ts";
 import { mockRuntime } from "./runtimes/mock.ts";
 import { directRuntime } from "./runtimes/direct.ts";
-import type { ApprovalRequest, ConsultAnswer } from "@agent-office/tools";
+import { whisperBinary, type ApprovalRequest, type ConsultAnswer } from "@agent-office/tools";
 import { RunError, type AgentRuntime } from "./runtimes/types.ts";
 import { resolveOpenCode } from "./opencode/binary.ts";
 import { opencodeRuntime } from "./opencode/runtime.ts";
@@ -28,7 +29,7 @@ export const RUNNER_VERSION = "0.2.0";
 /** Mock echo models skip the LLM entirely; everything else (incl. `mock-script`) runs the AI SDK tool loop. */
 export const pickRuntime = (a: RunAssignment): AgentRuntime => {
   // the Video Studio's "Render again": run video_edit with the owner's plan, no LLM
-  if (a.job.type === "video_render") return directRuntime;
+  if (DIRECT_JOBS[a.job.type]) return directRuntime;
   // feature notes are a short text job: never spin up OpenCode for them
   if (a.agent.config.runtime === "opencode" && a.job.type !== "feature_note") return opencodeRuntime;
   return a.provider.kind === "mock" && a.agent.model !== "mock-script" ? mockRuntime : aiSdkRuntime;
@@ -345,6 +346,18 @@ export class RunnerClient {
     return body.data;
   }
 
+  async #videoData(runId: string, action: string, params: Record<string, unknown>): Promise<unknown> {
+    const res = await freshFetch(new URL("/api/runner/video-data", this.#opts.hubUrl), {
+      method: "POST",
+      timeoutMs: 60_000,
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ run_id: runId, action, params }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { data?: unknown; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `video data failed (${res.status})`);
+    return body.data;
+  }
+
   async #webSearch(runId: string, query: string, count: number) {
     const res = await freshFetch(new URL("/api/runner/web-search", this.#opts.hubUrl), {
       method: "POST",
@@ -425,6 +438,7 @@ export class RunnerClient {
         downloadUpload: (id, dest) => this.#downloadUpload(a.run_id, id, dest),
         uploadVideo: (path, name, render) => this.#uploadVideo(a.run_id, path, name, render),
         projectData: (action, params) => this.#projectData(a.run_id, action, params),
+        videoData: (action, params) => this.#videoData(a.run_id, action, params),
         siteData: (projectId, resource, params) => this.#siteData(a.run_id, projectId, resource, params),
         webPost: (action, draftId, edits) => this.#webPost(a.run_id, action, draftId, edits),
         consult: (toAgent, question, timeoutMs) => this.#consult(a.run_id, toAgent, question, timeoutMs, run.abort.signal),
@@ -447,5 +461,6 @@ export class RunnerClient {
 }
 
 /** Programs agents may want on this machine; reported once per connection. */
-const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "opencode", "openscad", "blender", "pandoc", "soffice", "gh"];
-export const detectPrograms = (): string[] => PROGRAMS.filter((p) => Bun.which(p));
+const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "whisper", "opencode", "openscad", "blender", "pandoc", "soffice", "gh"];
+// whisper.cpp is found by its own path (WHISPER_CPP) or C:\whisper, rarely on PATH
+export const detectPrograms = (): string[] => PROGRAMS.filter((p) => (p === "whisper" ? !!whisperBinary() : Bun.which(p)));

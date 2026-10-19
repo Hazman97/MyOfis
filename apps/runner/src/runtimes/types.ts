@@ -31,6 +31,7 @@ export interface RunContext {
   uploadVideo(path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }>;
   /** Project documents and log (Project Assistant), answered by the hub. */
   projectData(action: string, params: Record<string, unknown>): Promise<unknown>;
+  videoData(action: string, params: Record<string, unknown>): Promise<unknown>;
   /** Data a project's website shares with Agent Office (through the hub, which holds its secret). */
   siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
   webPost(action: "update" | "take_down", draftId: string, edits: { title?: string; body?: string; meta?: Record<string, unknown> }): Promise<unknown>;

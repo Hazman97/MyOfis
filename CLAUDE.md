@@ -228,6 +228,19 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - **Web:** Projects → Docs (`ProjectDocs.vue`) and Log (`ProjectLog.vue`); chat shows documents as chips. Gemini 014 polishes them.
 - **Job routing by programs** (2026-10-19): `requiredPrograms()` (`packages/shared/src/programs.ts`) maps tools to programs (video_* → ffmpeg, git_* → git, browser_check → node, runtime opencode → opencode). `#pickRunner` keeps to runners that reported all of them (waiting for a busy one); if no online runner has them, any runner. A pinned runner always wins. The runner now also reports `opencode`.
 - **Scheduled posts** (2026-10-19, migration 0012 `content_drafts.publish_at`): approve with `publish_at` (≥ 1 min, ≤ 60 days, only for drafts `hub.canPublish`) → `afterApprove` skips it; a 1-minute timer runs `hub.publishDue()` (clears the time first, so a failure is not retried) and tells the owner on Telegram. `POST /api/drafts/:id/schedule {publish_at|null}` moves or cancels; Publish now clears it. DraftCard: "Schedule…".
+- **Editor hears speech** (owner chose option 1 of the 2026-10-19 research: whisper + a skill; Gemini 015 builds the UI in parallel).
+  - **whisper.cpp** b5130 / v1.9.4 CUDA 12.4 in `C:\whisper` (model `ggml-large-v3-turbo-q5_0.bin`), found by `whisperBinary()` / `whisperModel()` or `WHISPER_CPP` / `WHISPER_MODEL`; reported as program `whisper`.
+  - **Word times:** `-ml 1 -sow -ojf` gives word times, but they touch each other, and `-dtw` gave nothing in this mode. So `video_transcribe` also runs ffmpeg `silencedetect` (`Transcript.silences`).
+  - **Pure logic** in `packages/shared/src/transcript.ts`: `packTranscript`, `tightCuts` (fillers always cut; at most 80 clips, `EditPlan.clips` max 80), `subtitleCues` (follows cuts and speed).
+  - **Storage:** migration 0013 adds `uploads.transcript` and the table `edit_suggestions`.
+  - **Runner route** `POST /api/runner/video-data`: transcript_get / transcript_put / suggestions, only for files of the running job, gated by tool.
+  - **Tools:**
+    - `video_transcribe` (cached per upload);
+    - `suggest_edits` (2–4 options with full plans → the chat thread `suggestions` and `VideoInfo.suggestions`);
+    - `video_edit` `subtitles` → "Pop" ASS style.
+  - **Direct jobs:** `DIRECT_JOBS` (shared) = `video_render` → video_edit, `video_transcribe` → video_transcribe. No LLM; the Studio's Transcribe = `POST /api/videos/:id/transcribe`; `GET /api/videos` lists the room's videos.
+  - **Built-in upgrades:** `BuiltinAgent.upgrade` adds new tools once (`seeded.tool.<slug>.<tool>`) and replaces a prompt only if it equals an older built-in one. `BUILTIN_SKILLS` are written once (`seeded.skill.<name>`): `short-video-editing`.
+  - `spawn()` keeps the full stderr in `log`. Scene changes used the 4000-char tail before, a bug fixed here.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

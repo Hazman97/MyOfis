@@ -6,6 +6,7 @@ import {
   dayKey,
   fixEscapedNewlines,
   requiredPrograms,
+  DIRECT_JOBS,
   type HubToRunner,
   type ContentDraft,
   type Job,
@@ -988,7 +989,7 @@ Error: ${r.error}` : ""}` });
       for (const b of busy) if (!waiting.has(b.id)) load.set(b.runner_id, (load.get(b.runner_id) ?? 0) + 1);
 
       for (const { job, agent } of queued) {
-        const render = job.type === "video_render";
+        const render = !!DIRECT_JOBS[job.type];
         // over today's token budget: the job waits (for tomorrow, or for a higher budget); a re-render uses no tokens
         if (!render && !this.#checkBudget(agent)) continue;
         // a shared agent working for a member: that member's daily limit too
@@ -1039,8 +1040,9 @@ Error: ${r.error}` : ""}` });
       emit({ type: "run.started", payload: { run_id: runId, job_id: job.id, agent_id: agent.id, runner_id: conn.runnerId } }, meta);
     });
 
-    // a re-render from the Video Studio runs the video_edit tool directly: no LLM, no key, no tokens
-    const render = job.type === "video_render";
+    // the Video Studio's render / transcribe runs one tool directly: no LLM, no key, no tokens
+    const direct = DIRECT_JOBS[job.type];
+    const render = !!direct;
     // whose work it is: projects, files, memory and colleagues come from the job's workspace;
     // the provider and key from the agent's (a shared agent runs on the owner's AI)
     const ws = job.workspace_id;
@@ -1062,8 +1064,8 @@ Error: ${r.error}` : ""}` });
     const featureNote = job.type === "feature_note";
     // a consult answer is one level deep: no asking or handing off from there
     const tools = (
-      render
-        ? ["video_edit"]
+      direct
+        ? [direct]
         : featureNote
           ? FEATURE_NOTE_TOOLS
           : job.type === "consult"

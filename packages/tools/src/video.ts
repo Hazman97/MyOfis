@@ -1,7 +1,18 @@
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { EditPlan, VIDEO_PRESETS, VIDEO_TYPES, type VideoPreset } from "@agent-office/shared";
+import {
+  EditPlan,
+  EditSuggestionsInput,
+  Transcript,
+  VIDEO_PRESETS,
+  VIDEO_TYPES,
+  isFiller,
+  packTranscript,
+  subtitleCues,
+  tightCuts,
+  type VideoPreset,
+} from "@agent-office/shared";
 import { scrubbedEnv } from "./safety.ts";
 import { ToolDenied, defineTool, type ToolContext } from "./types.ts";
 
@@ -112,7 +123,7 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
 }
 
 /** ASS subtitles for burned-in captions: big white bold text with a black outline, clear of TikTok's buttons. */
-export function captionsAss(captions: EditPlan["captions"], preset: VideoPreset): string {
+export function captionsAss(captions: EditPlan["captions"], preset: VideoPreset, popCount = 0): string {
   const { width: W, height: H } = preset;
   const size = Math.round(Math.min(W, H) * 0.075);
   const margin = Math.round(W * 0.08);
@@ -137,10 +148,13 @@ export function captionsAss(captions: EditPlan["captions"], preset: VideoPreset)
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
     `Style: Default,Arial,${size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,${Math.max(3, Math.round(size / 14))},0,2,${margin},${margin},${marginV},1`,
+    // "pop" subtitles (2 words at a time): larger, yellow, thick outline
+    `Style: Pop,Arial,${Math.round(size * 1.25)},&H0000E5FF,&H0000E5FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,${Math.max(4, Math.round(size / 10))},0,2,${margin},${margin},${marginV},1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-    ...captions.map((c) => `Dialogue: 0,${ts(c.start)},${ts(Math.max(c.end, c.start + 0.3))},Default,,0,0,0,,{\\an${align[c.position]}}${clean(c.text)}`),
+    // the last `popCount` entries are pop subtitles
+    ...captions.map((c, i) => `Dialogue: 0,${ts(c.start)},${ts(Math.max(c.end, c.start + 0.3))},${i >= captions.length - popCount ? "Pop" : "Default"},,0,0,0,,{\\an${align[c.position]}}${clean(c.text)}`),
     "",
   ].join("\n");
 }
@@ -150,7 +164,10 @@ export function captionsAss(captions: EditPlan["captions"], preset: VideoPreset)
 interface Proc {
   code: number | null;
   stdout: string;
+  /** The end of stderr, for error messages. */
   stderr: string;
+  /** All of stderr (ffmpeg's filter logs: scene changes, silences). */
+  log: string;
 }
 
 async function spawn(argv: string[], cwd: string, signal: AbortSignal, onStdout?: (chunk: string) => void, timeoutMs = 60 * 60_000): Promise<Proc> {
@@ -175,7 +192,7 @@ async function spawn(argv: string[], cwd: string, signal: AbortSignal, onStdout?
       return all;
     };
     const [stdout, stderr, code] = await Promise.all([readOut(), new Response(proc.stderr as ReadableStream).text(), proc.exited]);
-    return { code, stdout, stderr: stderr.slice(-4000) };
+    return { code, stdout, stderr: stderr.slice(-4000), log: stderr.slice(0, 8_000_000) };
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", kill);
@@ -218,7 +235,7 @@ async function sceneChanges(ctx: ToolContext, file: string): Promise<number[]> {
   const bin = ffmpegBin()!;
   const r = await spawn([bin, "-hide_banner", "-nostdin", "-i", file, "-an", "-vf", "scale=320:-2,select='gt(scene,0.32)',showinfo", "-f", "null", "-"], mediaDir(ctx), ctx.signal, undefined, 10 * 60_000);
   const out: number[] = [];
-  for (const m of r.stderr.matchAll(/pts_time:([\d.]+)/g)) if (out.length < 60) out.push(round2(Number(m[1])));
+  for (const m of r.log.matchAll(/pts_time:([\d.]+)/g)) if (out.length < 60) out.push(round2(Number(m[1])));
   return out;
 }
 
@@ -266,8 +283,22 @@ export const videoEditTool = defineTool({
     if (total > preset.max_seconds) throw new ToolDenied(`the edit is ${total}s; ${plan.preset} takes at most ${preset.max_seconds}s. Cut it shorter.`);
     for (const c of plan.captions) if (c.start >= total) throw new ToolDenied(`caption "${c.text.slice(0, 30)}" starts at ${c.start}s but the video is only ${total}s`);
     const dir = mediaDir(ctx);
-    const captionsFile = plan.captions.length ? `${plan.name.replace(/\s+/g, "_")}.ass` : null;
-    if (captionsFile) writeFileSync(join(dir, captionsFile), captionsAss(plan.captions, preset));
+    // subtitles from the speech: every clip's file needs its transcript (video_transcribe)
+    const cues: EditPlan["captions"] = [];
+    if (plan.subtitles) {
+      const transcripts: Record<number, Transcript> = {};
+      const durations: Record<number, number> = {};
+      for (const [n, input] of probes) {
+        const t = await savedTranscript(ctx, n);
+        if (!t) throw new ToolDenied(`video ${n} has no transcript yet: run video_transcribe(video: ${n}) first, or turn subtitles off`);
+        transcripts[n] = t;
+        durations[n] = input.probe.duration;
+      }
+      for (const c of subtitleCues(plan, transcripts, durations)) cues.push({ text: c.text, start: c.start, end: c.end, position: plan.subtitles.position });
+    }
+    const allCaptions = [...plan.captions, ...cues];
+    const captionsFile = allCaptions.length ? `${plan.name.replace(/\s+/g, "_")}.ass` : null;
+    if (captionsFile) writeFileSync(join(dir, captionsFile), captionsAss(allCaptions, preset, plan.subtitles?.style === "pop" ? cues.length : 0));
     const out = `${plan.name.replace(/\s+/g, "_")}-${plan.preset}.mp4`;
 
     let last = 0;
@@ -302,4 +333,156 @@ export const videoEditTool = defineTool({
   },
 });
 
-export const VIDEO_TOOLS = [videoProbeTool, videoEditTool];
+// ---------------------------------------------------------------- speech (whisper.cpp) and suggestions
+
+/** whisper.cpp's CLI: WHISPER_CPP, else on PATH, else the usual Windows folder C:\whisper. */
+export function whisperBinary(): string | null {
+  const env = process.env.WHISPER_CPP;
+  if (env && existsSync(env)) return env;
+  const onPath = Bun.which("whisper-cli");
+  if (onPath) return onPath;
+  for (const f of ["C:\\whisper\\bin\\Release\\whisper-cli.exe", "C:\\whisper\\bin\\whisper-cli.exe"]) if (existsSync(f)) return f;
+  return null;
+}
+
+/** The ggml model: WHISPER_MODEL, else the largest .bin in C:\whisper\models (or ~/.whisper/models). */
+export function whisperModel(): string | null {
+  const env = process.env.WHISPER_MODEL;
+  if (env && existsSync(env)) return env;
+  for (const dir of ["C:\\whisper\\models", join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".whisper", "models")]) {
+    if (!existsSync(dir)) continue;
+    const bins = readdirSync(dir).filter((f) => f.startsWith("ggml-") && f.endsWith(".bin")).map((f) => join(dir, f));
+    if (bins.length) return bins.sort((a, b) => statSync(b).size - statSync(a).size)[0]!;
+  }
+  return null;
+}
+
+/** whisper-cli -ojf -ml 1 -sow output → words with times (seconds). */
+export function parseWhisperJson(json: unknown, duration: number, model: string): Transcript {
+  const j = json as { result?: { language?: string }; transcription?: { offsets?: { from?: number; to?: number }; text?: string }[] };
+  const words: Transcript["words"] = [];
+  for (const seg of j.transcription ?? []) {
+    const raw = seg.text ?? "";
+    const w = raw.trim();
+    if (!w || /^\[.*\]$/.test(w)) continue; // [BLANK_AUDIO], [Music]
+    const s = round2((seg.offsets?.from ?? 0) / 1000);
+    const e = round2((seg.offsets?.to ?? 0) / 1000);
+    const prev = words.at(-1);
+    // a piece without a leading space continues the previous word ("Smash" + "Point" stay apart; "tourna" + "ment" join)
+    if (prev && !/^\s/.test(raw) && !/^[,.?!]/.test(w)) {
+      prev.w += w;
+      prev.e = e;
+    } else if (prev && /^[,.?!]+$/.test(w)) prev.w += w;
+    else words.push({ w, s, e: Math.max(e, s) });
+  }
+  return { language: j.result?.language ?? "auto", duration, model, words };
+}
+
+/** ffmpeg silencedetect's log → quiet stretches (seconds). An open silence at the end runs to `duration`. */
+export function parseSilences(log: string, duration: number): { s: number; e: number }[] {
+  const out: { s: number; e: number }[] = [];
+  let start: number | null = null;
+  for (const m of log.matchAll(/silence_(start|end): (-?[\d.]+)/g)) {
+    const v = Math.max(0, Number(m[2]));
+    if (m[1] === "start") start = v;
+    else if (start !== null) {
+      out.push({ s: round2(start), e: round2(v) });
+      start = null;
+    }
+  }
+  if (start !== null && duration > start) out.push({ s: round2(start), e: round2(duration) });
+  return out.slice(0, 20_000);
+}
+
+async function savedTranscript(ctx: ToolContext, n: number): Promise<Transcript | null> {
+  const a = ctx.attachments[n - 1];
+  if (!a) return null;
+  const r = (await ctx.videoData("transcript_get", { upload_id: a.id })) as { transcript: Transcript | null };
+  return r.transcript ? Transcript.parse(r.transcript) : null;
+}
+
+export const videoTranscribeTool = defineTool({
+  name: "video_transcribe",
+  description:
+    "Turn the speech in a video the owner sent into text with times (whisper on this PC, free). " +
+    "Use it on every video with talking before you suggest edits: it shows what is said and when, the pauses and the 'um's, " +
+    "and the seconds a tight cut would save. Needed before video_edit can burn in subtitles.",
+  category: "read_docs",
+  input: z.object({
+    video: z.number().int().min(1).max(10).describe("Which file the owner sent (1 = first)"),
+    language: z.enum(["auto", "ms", "en", "zh", "ta"]).default("auto").describe("auto, or force Malay (ms), English, Chinese, Tamil"),
+  }),
+  risk: () => "safe",
+  describe: (i) => `transcribe video ${i.video}`,
+  async execute(i, ctx) {
+    const { file, name } = await attachmentFile(ctx, i.video);
+    let t = await savedTranscript(ctx, i.video);
+    if (!t) {
+      const ffmpeg = ffmpegBin();
+      if (!ffmpeg) throw new ToolDenied("ffmpeg is not installed on the runner PC (ffmpeg.org). Tell the owner.");
+      const bin = whisperBinary();
+      const model = whisperModel();
+      if (!bin || !model) throw new ToolDenied("whisper.cpp is not set up on the runner PC (see docs/video-editor.md: Transcripts). Tell the owner; you can still edit by times.");
+      const p = await probe(ctx, file);
+      if (!p.has_audio) throw new ToolDenied(`video ${i.video} has no sound to transcribe`);
+      const dir = mediaDir(ctx);
+      const wav = `in-${i.video}.wav`;
+      const x = await spawn([ffmpeg, "-hide_banner", "-nostdin", "-y", "-i", file, "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], dir, ctx.signal, undefined, 30 * 60_000);
+      if (x.code !== 0) throw new ToolDenied(`ffmpeg could not read the sound: ${x.stderr.slice(-300)}`);
+      ctx.emit({ type: "agent.thinking", payload: { summary: `Transcribing video ${i.video} (${Math.round(p.duration)} s) with whisper` } });
+      const out = `in-${i.video}`;
+      const r = await spawn([bin, "-m", model, "-f", wav, "-l", i.language, "-ojf", "-of", out, "-ml", "1", "-sow", "-np"], dir, ctx.signal, undefined, 60 * 60_000);
+      if (r.code !== 0 || !existsSync(join(dir, `${out}.json`))) throw new ToolDenied(`whisper failed: ${r.stderr.slice(-400)}`);
+      t = parseWhisperJson(JSON.parse(readFileSync(join(dir, `${out}.json`), "utf8")), p.duration, model.split(/[\\/]/).pop() ?? "whisper");
+      // whisper's word times touch each other: measure the pauses on the sound itself
+      const quiet = await spawn([ffmpeg, "-hide_banner", "-nostdin", "-i", wav, "-af", "silencedetect=noise=-35dB:d=0.3", "-f", "null", "-"], dir, ctx.signal, undefined, 30 * 60_000);
+      if (quiet.code === 0) t.silences = parseSilences(quiet.log, p.duration);
+      await ctx.videoData("transcript_put", { upload_id: ctx.attachments[i.video - 1]!.id, transcript: t });
+    }
+    const fillers = t.words.filter((w) => isFiller(w.w)).length;
+    const tight = tightCuts(t, i.video);
+    const kept = round2(tight.reduce((a, c) => a + ((c.end ?? t!.duration) - c.start), 0));
+    return {
+      ok: true,
+      summary: `video ${i.video}: ${t.words.length} words (${t.language}), ${fillers} fillers`,
+      output: {
+        video: i.video,
+        name,
+        language: t.language,
+        words: t.words.length,
+        fillers,
+        tight_cut: { clips: tight.length, seconds: kept, saves_seconds: round2(t.duration - kept), plan_clips: tight.length <= 30 ? tight : "too many to list; use the Video Studio's Tight cut" },
+        transcript: packTranscript(t, i.video),
+      },
+    };
+  },
+});
+
+export const suggestEditsTool = defineTool({
+  name: "suggest_edits",
+  description:
+    "Show the owner 2–4 ready edit options as cards in the chat and the Video Studio (each with a full video_edit plan). " +
+    "Use it after video_probe / video_transcribe when the owner has not said exactly what to make. The owner picks one (or opens it in the studio); " +
+    "then render that plan with video_edit. Keys A, B, C, D. Make the options really different (e.g. tight cut with subtitles / 30 s hook highlight / just compress).",
+  category: "write",
+  input: EditSuggestionsInput,
+  risk: () => "safe",
+  describe: (i) => `suggest ${i.options.length} edits`,
+  async execute(i, ctx) {
+    const keys = new Set<string>();
+    for (const o of i.options) {
+      if (keys.has(o.key)) throw new ToolDenied(`option ${o.key} appears twice`);
+      keys.add(o.key);
+      for (const c of o.plan.clips) {
+        const a = ctx.attachments[c.video - 1];
+        if (!a || !VIDEO_TYPES[a.content_type]) throw new ToolDenied(`option ${o.key}: file ${c.video} is not one of the videos the owner sent`);
+        if (c.end !== undefined && c.end <= c.start) throw new ToolDenied(`option ${o.key}: a clip ends before it starts`);
+      }
+      if (o.plan.subtitles) for (const c of o.plan.clips) if (!(await savedTranscript(ctx, c.video))) throw new ToolDenied(`option ${o.key} has subtitles: run video_transcribe(video: ${c.video}) first`);
+    }
+    await ctx.videoData("suggestions", { suggestions: i });
+    return { ok: true, summary: `${i.options.length} edit options shown to the owner`, output: { shown: i.options.map((o) => `${o.key}: ${o.title}`), next: "Wait for the owner to pick one, then video_edit that plan." } };
+  },
+});
+
+export const VIDEO_TOOLS = [videoProbeTool, videoTranscribeTool, videoEditTool, suggestEditsTool];

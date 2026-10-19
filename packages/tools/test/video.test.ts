@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VIDEO_PRESETS } from "@agent-office/shared";
-import { EditPlan, TOOL_REGISTRY, buildEditArgs, captionsAss, parseProbe, runTool } from "../src/index.ts";
+import { EditPlan, TOOL_REGISTRY, buildEditArgs, captionsAss, parseProbe, parseSilences, parseWhisperJson, runTool } from "../src/index.ts";
 import { makeCtx } from "./helpers.ts";
 
 const probe = { duration: 10, width: 1920, height: 1080, fps: 30, has_audio: true, video_codec: "h264", size_bytes: 1 };
@@ -89,4 +89,62 @@ describe.skipIf(!ffmpeg || !ffprobe)("video tools with real ffmpeg", () => {
     expect(events.some((e) => e.type === "agent.tool_call")).toBe(true);
     if (process.env.SHOW_ENCODER) console.log((r.output as { encoder: string }).encoder, sent);
   }, 180_000);
+});
+
+describe("speech (whisper.cpp)", () => {
+  test("whisper -ojf -ml 1 -sow output becomes words with times", () => {
+    const json = {
+      result: { language: "ms" },
+      transcription: [
+        { offsets: { from: 0, to: 230 }, text: "" },
+        { offsets: { from: 230, to: 760 }, text: " Selamat" },
+        { offsets: { from: 760, to: 900 }, text: " datang" },
+        { offsets: { from: 900, to: 950 }, text: "," },
+        { offsets: { from: 1000, to: 1300 }, text: " ke" },
+        { offsets: { from: 1300, to: 1500 }, text: " Smash" },
+        { offsets: { from: 1500, to: 1800 }, text: "Point" },
+        { offsets: { from: 2000, to: 3000 }, text: " [BLANK_AUDIO]" },
+      ],
+    };
+    expect(parseWhisperJson(json, 3.2, "ggml-test.bin")).toEqual({
+      language: "ms",
+      duration: 3.2,
+      model: "ggml-test.bin",
+      words: [
+        { w: "Selamat", s: 0.23, e: 0.76 },
+        { w: "datang,", s: 0.76, e: 0.9 },
+        { w: "ke", s: 1, e: 1.3 },
+        { w: "SmashPoint", s: 1.3, e: 1.8 },
+      ],
+    });
+  });
+
+  test("pop subtitles get their own bigger style; captions keep the default", () => {
+    const ass = captionsAss(
+      [
+        { text: "Sabtu ni", start: 0, end: 1, position: "top" },
+        { text: "HELLO EVERYONE", start: 0.2, end: 1.5, position: "bottom" },
+      ],
+      VIDEO_PRESETS.tiktok_fhd,
+      1,
+    );
+    expect(ass).toContain("Style: Pop,Arial,101,");
+    expect(ass).toContain("Default,,0,0,0,,{\\an8}Sabtu ni");
+    expect(ass).toContain("Pop,,0,0,0,,{\\an2}HELLO EVERYONE");
+  });
+});
+
+test("silencedetect log becomes quiet stretches; an open one runs to the end", () => {
+  const log = [
+    "[silencedetect @ 0x1] silence_start: 1.156125",
+    "[silencedetect @ 0x1] silence_end: 2.095938 | silence_duration: 0.939813",
+    "[silencedetect @ 0x1] silence_start: -0.01",
+    "[silencedetect @ 0x1] silence_end: 0.4 | silence_duration: 0.41",
+    "[silencedetect @ 0x1] silence_start: 10.79",
+  ].join("\n");
+  expect(parseSilences(log, 11.5)).toEqual([
+    { s: 1.16, e: 2.1 },
+    { s: 0, e: 0.4 },
+    { s: 10.79, e: 11.5 },
+  ]);
 });

@@ -57,9 +57,24 @@ export function seed(db: Db, config: HubConfig, secrets: Secrets): void {
   }
 
   const llm = pickLlm(db);
-  for (const { agent: def, needsLlm, schedules: makeSchedules } of BUILTIN_AGENTS) {
-    const existing = db.select({ id: agents.id, workspace_id: agents.workspace_id }).from(agents).where(eq(agents.slug, def.slug)).get();
+  for (const { agent: def, needsLlm, schedules: makeSchedules, upgrade } of BUILTIN_AGENTS) {
+    const existing = db.select({ id: agents.id, workspace_id: agents.workspace_id, tools: agents.tools, system_prompt: agents.system_prompt }).from(agents).where(eq(agents.slug, def.slug)).get();
     if (existing) {
+      // new built-in tools: added once (a tool the owner removes later stays removed)
+      const add = (upgrade?.tools ?? []).filter((t) => {
+        const marker = `seeded.tool.${def.slug}.${t}`;
+        if (db.select({ key: settings.key }).from(settings).where(eq(settings.key, marker)).get()) return false;
+        db.insert(settings).values({ key: marker, value: true }).run();
+        return !existing.tools.includes(t);
+      });
+      // a newer built-in prompt replaces an older one the owner never edited
+      const prompt = upgrade?.previousPrompts?.includes(existing.system_prompt) ? def.system_prompt : null;
+      if (add.length || prompt) {
+        db.update(agents)
+          .set({ ...(add.length ? { tools: [...existing.tools, ...add] } : {}), ...(prompt ? { system_prompt: prompt } : {}) })
+          .where(eq(agents.id, existing.id))
+          .run();
+      }
       // a built-in schedule added after the agent was seeded (e.g. Ketua's morning briefing): offer it once, switched off
       for (const s of makeSchedules?.(existing.id) ?? []) {
         const type = String((s.job_template as { type?: unknown }).type ?? "");

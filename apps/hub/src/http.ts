@@ -22,6 +22,7 @@ import {
   ScheduleInput,
   TIMEZONE,
   RenderInfo,
+  Transcript,
   UPLOAD_PART_BYTES,
   WebPostEdit,
 } from "@agent-office/shared";
@@ -282,6 +283,38 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (!upload || upload.run_id !== run.id) throw new HttpError(404, "upload not found");
     hub.publisher.setRender(upload.id, RenderInfo.parse(await c.req.json()));
     return c.json({ ok: true });
+  });
+
+  /** Video Studio data for a running job: transcripts of its videos, and Editor's edit options. */
+  app.post("/api/runner/video-data", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
+    const run = getRun(db, body.run_id);
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+    const tools = getAgent(db, run.agent_id)?.tools ?? [];
+    const need = { transcript_get: ["video_transcribe", "video_edit", "suggest_edits"], transcript_put: ["video_transcribe"], suggestions: ["suggest_edits"] }[body.action];
+    if (!need.some((t) => tools.includes(t))) throw new HttpError(403, `this agent may not use ${need.join(" / ")}`);
+    const job = getJob(db, run.job_id);
+    const ws = job?.workspace_id ?? OWNER_WORKSPACE;
+    // only the files of the job this run is doing
+    const files = (Array.isArray(job?.input.attachments) ? job.input.attachments : []) as { id: string; name: string; content_type: string }[];
+    const fileOf = (id: unknown) => {
+      const f = files.find((a) => a.id === id);
+      if (!f) throw new HttpError(404, "that file is not part of this job");
+      return f.id;
+    };
+    switch (body.action) {
+      case "transcript_get":
+        return c.json({ data: { transcript: hub.studio.transcript(fileOf(body.params.upload_id), ws) } });
+      case "transcript_put":
+        hub.studio.setTranscript(fileOf(body.params.upload_id), Transcript.parse(body.params.transcript));
+        return c.json({ data: { saved: true } });
+      case "suggestions":
+        return c.json({ data: { suggestions: hub.studio.saveSuggestions(run.id, ws, files, body.params.suggestions) } });
+    }
   });
 
   /** Runner sends a video it made (Editor's video_edit), in parts. It becomes an upload tied to the run. */
@@ -751,6 +784,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         run_id: hub.store.state.jobs[j.id]?.run_ids.at(-1) ?? null,
         reply: hub.chatReply(j),
         attachments: Array.isArray(j.input.attachments) && !j.input.attachments_carried ? j.input.attachments : [],
+        // Editor's edit options from this message's runs (tool suggest_edits)
+        suggestions: hub.studio.suggestionsForRuns(hub.store.state.jobs[j.id]?.run_ids ?? []),
         // videos the agent made in this message's runs (Editor), so the chat can open them in the studio
         renders: hub.store.state.jobs[j.id]?.run_ids.length
           ? db
@@ -791,7 +826,9 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.patch("/log/:id", async (c) => c.json({ entry: hub.docs.updateLog(c.req.param("id"), W(c), (await c.req.json()) as never) }));
 
   // Video Studio: how a video was made, render it again without the AI, or use your own edit
+  api.get("/videos", (c) => c.json({ videos: hub.studio.list(W(c)) }));
   api.get("/videos/:id", (c) => c.json(hub.studio.info(c.req.param("id"), W(c))));
+  api.post("/videos/:id/transcribe", (c) => c.json({ job: hub.studio.transcribe(c.req.param("id"), W(c)) }, 201));
   api.post("/videos/:id/render", async (c) => {
     const body = z.object({ plan: z.unknown(), draft_id: z.string().nullable().optional() }).parse(await c.req.json());
     return c.json({ job: hub.studio.render(c.req.param("id"), body, W(c)) }, 201);

@@ -23,6 +23,7 @@ import { Publisher } from "./publisher.ts";
 import { Social } from "./social.ts";
 import { Scheduler } from "./scheduler.ts";
 import { seed } from "./seed.ts";
+import { BUILTIN_SKILLS } from "@agent-office/agents";
 import { LocalStorage } from "./storage.ts";
 
 type RunnerSocketData = { kind: "runner"; runnerId: string; name: string; conn: RunnerConn | null };
@@ -61,6 +62,13 @@ export function startHub(
   hub.storage = storage;
   hub.content = new Content(db, store, config.projectsDir);
   hub.learning = new Learning(db, store, config.skillsDir);
+  // built-in skills (e.g. Editor's short-video-editing): written once; the owner may edit or delete them
+  for (const s of BUILTIN_SKILLS) {
+    const marker = `seeded.skill.${s.name}`;
+    if (db.select({ key: settings.key }).from(settings).where(eq(settings.key, marker)).get()) continue;
+    if (!hub.learning.skill(s.name)) hub.learning.writeSkill(s.content);
+    db.insert(settings).values({ key: marker, value: true }).run();
+  }
   hub.publisher = new Publisher(db, store, secrets, config.filesDir);
   hub.uploadParts = new UploadParts(hub.publisher, config.filesDir);
   hub.studio = new Studio(hub);
