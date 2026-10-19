@@ -12,3 +12,6 @@ workspaces/*
 coverage/
 apps/web/dist/
 shots-*/
+
+# Gemini / local test scripts
+scratch/
