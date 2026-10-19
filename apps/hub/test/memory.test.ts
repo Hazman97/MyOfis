@@ -122,6 +122,42 @@ describe("skills", () => {
     await env.api("/api/skills/imported-skill", { method: "DELETE" });
     expect(existsSync(join(env.dir, "skills", "imported-skill"))).toBe(false);
   });
+
+  test("skills are assigned per agent: all, a list, per skill or per agent; the Agents form keeps the choice", async () => {
+    env = await createTestEnv();
+    await env.pairRunner();
+    for (const n of ["alpha-skill", "beta-skill"]) await env.api("/api/skills", { body: { content: `---\nname: ${n}\ndescription: ${n} for tests\n---\n\nDo ${n}.` } });
+    const a = await bot(env, ["skill_view"]);
+    const b = await bot(env, ["memory"]); // cannot read skills yet
+    const sent = captureAssignments(env);
+    const seen = async (id: string) => {
+      await runScript(env, id, [{ text: "ok" }]);
+      return sent.at(-1)!.skills.map((s) => s.name).sort();
+    };
+    // default: everything, new skills too
+    expect(await seen(a)).toEqual(["alpha-skill", "beta-skill", "short-video-editing"]);
+
+    // per skill: beta only for b (gets the skill tools); a was on "all" and loses beta
+    expect((await env.api("/api/skills/beta-skill/agents", { method: "PUT", body: { agent_ids: [b] } })).status).toBe(200);
+    const asg = (await env.api("/api/skills/assignments")).body;
+    expect(asg.agents.find((x: { id: string }) => x.id === a).skills).toEqual(["alpha-skill", "short-video-editing"]);
+    expect(asg.agents.find((x: { id: string }) => x.id === b)).toMatchObject({ skills: ["beta-skill"], reads_skills: true });
+    expect(await seen(a)).toEqual(["alpha-skill", "short-video-editing"]);
+    expect(await seen(b)).toEqual(["beta-skill"]);
+
+    // saving the agent in the Agents form (config without "skills") keeps the choice
+    const cfg = (await env.api("/api/agents")).body.agents.find((x: { id: string }) => x.id === b).config;
+    const { skills: _drop, ...rest } = cfg;
+    await env.api(`/api/agents/${b}`, { method: "PATCH", body: { config: rest } });
+    expect(await seen(b)).toEqual(["beta-skill"]);
+
+    // per agent: back to all; none
+    await env.api(`/api/agents/${b}/skills`, { method: "PUT", body: { skills: "all" } });
+    expect(await seen(b)).toEqual(["alpha-skill", "beta-skill", "short-video-editing"]);
+    await env.api(`/api/agents/${a}/skills`, { method: "PUT", body: { skills: [] } });
+    expect(await seen(a)).toEqual([]);
+    expect((await env.api("/api/skills/nope/agents", { method: "PUT", body: { agent_ids: [] } })).status).toBe(404);
+  });
 });
 
 describe("owner preferences", () => {

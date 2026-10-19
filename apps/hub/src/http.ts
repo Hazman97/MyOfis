@@ -651,7 +651,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const all = learning.skills().map((s) => s.name);
     for (const a of skillAgents(W(c))) {
       const want = agent_ids.includes(a.id);
-      const cur = a.config.skills;
+      // an agent without the skill tools sees nothing yet, whatever its config says
+      const cur = a.tools.includes("skill_view") ? a.config.skills : [];
       const has = cur === "all" || cur.includes(name);
       if (want === has && (!want || a.tools.includes("skill_view"))) continue;
       setAgentSkills(a, want ? (cur === "all" ? "all" : [...cur, name]) : (cur === "all" ? all : cur).filter((n) => n !== name));

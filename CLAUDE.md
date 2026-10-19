@@ -241,6 +241,13 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - **Direct jobs:** `DIRECT_JOBS` (shared) = `video_render` → video_edit, `video_transcribe` → video_transcribe. No LLM; the Studio's Transcribe = `POST /api/videos/:id/transcribe`; `GET /api/videos` lists the room's videos.
   - **Built-in upgrades:** `BuiltinAgent.upgrade` adds new tools once (`seeded.tool.<slug>.<tool>`) and replaces a prompt only if it equals an older built-in one. `BUILTIN_SKILLS` are written once (`seeded.skill.<name>`): `short-video-editing`.
   - `spawn()` keeps the full stderr in `log`. Scene changes used the 4000-char tail before, a bug fixed here.
+- **Skills per agent** (owner request, 2026-10-19).
+  - **Config:** `AgentConfig.skills` = `"all"` (the default, includes new skills) or a list of names. `skillsFor()` (shared) filters `RunAssignment.skills`, so `skill_view` / `skills_list` only know the agent's own skills.
+  - **Routes** (owner):
+    - `GET /api/skills/assignments`;
+    - `PUT /api/skills/:name/agents {agent_ids}`: exactly these agents. An agent on "all" that is left out gets a list without the skill; an agent with no skill tools counts as having none. Assigned agents get `skills_list` + `skill_view`.
+    - `PUT /api/agents/:id/skills {skills}`.
+  - **Saving:** an agent PATCH whose config lacks `skills` keeps the old value (the Agents form). Gemini 016 builds the UI on /skills.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)
