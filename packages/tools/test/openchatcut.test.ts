@@ -1,0 +1,80 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { TOOL_REGISTRY, parseMcpBody, runTool } from "../src/index.ts";
+import { makeCtx } from "./helpers.ts";
+
+/** A stand-in for OpenChatCut's MCP endpoint: bearer token, session id, SSE answers. */
+const TOKEN = "occ_test_token_1234567890";
+const calls: { method: string; name?: string; args?: Record<string, unknown>; session: string | null }[] = [];
+let server: ReturnType<typeof Bun.serve>;
+let dir: string;
+
+beforeAll(() => {
+  dir = mkdtempSync(join(tmpdir(), "ao-occ-"));
+  server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(req) {
+      if (new URL(req.url).pathname !== "/api/external-mcp/mcp") return new Response("no", { status: 404 });
+      if (req.headers.get("authorization") !== `Bearer ${TOKEN}`) return Response.json({ error: "invalid request origin" }, { status: 403 });
+      const msg = (await req.json()) as { id?: number; method: string; params?: { name?: string; arguments?: Record<string, unknown> } };
+      calls.push({ method: msg.method, name: msg.params?.name, args: msg.params?.arguments, session: req.headers.get("mcp-session-id") });
+      if (msg.id === undefined) return new Response(null, { status: 202 });
+      const sse = (result: unknown) =>
+        new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\n\n`, { headers: { "content-type": "text/event-stream", "mcp-session-id": "sess-1" } });
+      if (msg.method === "initialize") return sse({ protocolVersion: "2025-06-18", serverInfo: { name: "openchatcut" } });
+      if (msg.method === "tools/list") return sse({ tools: [{ name: "list_projects", description: "List OpenChatCut projects, newest first. More text." }, { name: "import_asset", description: "Import ONE file." }] });
+      if (msg.params?.name === "list_projects") return sse({ content: [{ type: "text", text: '{"result":[{"id":"p1","name":"Promo"}]}' }] });
+      if (msg.params?.name === "import_asset") return sse({ content: [{ type: "text", text: `imported ${String(msg.params.arguments?.path).split(/[\\/]/).pop()}` }] });
+      return sse({ content: [{ type: "text", text: "unknown tool" }], isError: true });
+    },
+  });
+  process.env.OPENCHATCUT_URL = `http://127.0.0.1:${server.port}`;
+  process.env.OPENCHATCUT_MCP_TOKEN = TOKEN;
+  writeFileSync(join(dir, "clip.mp4"), "fake video");
+});
+afterAll(() => {
+  server.stop(true);
+  delete process.env.OPENCHATCUT_URL;
+  delete process.env.OPENCHATCUT_MCP_TOKEN;
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("SSE and plain JSON answers are both read", () => {
+  expect(parseMcpBody('event: message\ndata: {"jsonrpc":"2.0","id":2,"result":{"ok":1}}\n\n', 2)).toMatchObject({ result: { ok: 1 } });
+  expect(parseMcpBody('{"jsonrpc":"2.0","id":3,"error":{"message":"bad"}}', 3)).toMatchObject({ error: { message: "bad" } });
+});
+
+test("one MCP session per run: initialize once, then tool calls with the session id; import sends the local file path", async () => {
+  const { ctx } = makeCtx(join(dir, "ws"));
+  ctx.attachments = [{ id: "upl_1", name: "clip.mp4", content_type: "video/mp4" }];
+  ctx.downloadAttachment = async (_id, dest) => writeFileSync(dest, "fake video");
+
+  const list = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "tools/list" }, ctx);
+  expect(list.output).toEqual([
+    { name: "list_projects", does: "List OpenChatCut projects, newest first." },
+    { name: "import_asset", does: "Import ONE file." },
+  ]);
+  const projects = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "list_projects", arguments: {} }, ctx);
+  expect(projects).toMatchObject({ ok: true, output: '{"result":[{"id":"p1","name":"Promo"}]}' });
+  const imp = await runTool(TOOL_REGISTRY.openchatcut_import!, { video: 1, editSessionId: "es1" }, ctx);
+  expect(imp).toMatchObject({ ok: true, output: "imported in-1.mp4" });
+  expect(calls.find((c) => c.name === "import_asset")?.args).toMatchObject({ editSessionId: "es1", path: join(dir, "ws", "media", "in-1.mp4") });
+  // initialize once, every later call carries the session
+  expect(calls.filter((c) => c.method === "initialize")).toHaveLength(1);
+  expect(calls.filter((c) => c.method !== "initialize").every((c) => c.session === "sess-1")).toBe(true);
+  // an unknown tool is a failed result, and deleting is the owner's job
+  expect((await runTool(TOOL_REGISTRY.openchatcut!, { tool: "nope", arguments: {} }, ctx)).ok).toBe(false);
+  expect((await runTool(TOOL_REGISTRY.openchatcut!, { tool: "delete_project", arguments: { id: "p1" } }, ctx)).ok).toBe(false);
+});
+
+test("a wrong token is explained", async () => {
+  process.env.OPENCHATCUT_MCP_TOKEN = "wrong";
+  const { ctx } = makeCtx(join(dir, "ws2"));
+  const r = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "list_projects" }, ctx);
+  expect(r.ok).toBe(false);
+  expect(r.summary).toContain("refused the MCP token");
+  process.env.OPENCHATCUT_MCP_TOKEN = TOKEN;
+});

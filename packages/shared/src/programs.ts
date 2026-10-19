@@ -9,6 +9,8 @@ const TOOL_PROGRAMS: Record<string, string> = {
   video_transcribe: "whisper",
   video_edit: "ffmpeg",
   clip_library: "ffmpeg",
+  openchatcut: "openchatcut",
+  openchatcut_import: "openchatcut",
   git_clone: "git",
   git_status: "git",
   git_branch: "git",

@@ -272,6 +272,13 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - **Transitions:** `EditPlan.transition {type, seconds}` = xfade (fade/dissolve/slideleft/zoomin) + acrossfade. Each cut overlaps, so use `finishedSeconds` / `transitionSeconds` (shared); `subtitleCues` accounts for the overlap.
   - **Caption animation:** `Caption.animation` = fade/pop as ASS tags (`ad`, `	` scale).
   - Tested with a real render. Prompt upgrades: Editor V2 and TikTok V1 are replaced when unedited. Gemini 018 adds the studio controls.
+- **OpenChatCut** (owner wanted to watch the AI edit live; installed v0.2.17 on this PC, 2026-10-20).
+  - **Connection:** MCP is Streamable HTTP at `http://localhost:5199/api/external-mcp/mcp`. It needs `Authorization: Bearer <token>`: the app writes `~/.openchatcut/mcp-token`, or set `OPENCHATCUT_MCP_TOKEN`. Without it the server answers 403 "invalid request origin". It has 44 tools; render/export and manual approval need the editor page open.
+  - **Bridge:** `packages/tools/src/openchatcut.ts` (runner side; the token never leaves the PC). Tools:
+    - `openchatcut {tool, arguments}`: any MCP tool, or "tools/list"; deletes are refused;
+    - `openchatcut_import {video, editSessionId}`: a job file's local path → `import_asset`.
+    One MCP session per run (WeakMap on the ToolContext). Program `openchatcut` is detected by the token file.
+  - **Agent** `studio-pro` ("Studio Pro", `packages/agents/src/openchatcutEditor.ts`): edits in the app; the owner exports there and uses "Use my own edit" to bring it back. MP4 export is not available over MCP.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

@@ -251,7 +251,7 @@ const ffprobeBin = () => Bun.which("ffprobe");
 let nvencOk: boolean | null = null;
 
 /** The local video file for attachment `n` (1-based), downloaded once into the workspace. */
-async function attachmentFile(ctx: ToolContext, n: number): Promise<{ file: string; name: string }> {
+export async function attachmentFile(ctx: ToolContext, n: number): Promise<{ file: string; name: string }> {
   const a = ctx.attachments[n - 1];
   if (!a) throw new ToolDenied(`there is no file ${n}; the owner sent ${ctx.attachments.length}`);
   const ext = VIDEO_TYPES[a.content_type];

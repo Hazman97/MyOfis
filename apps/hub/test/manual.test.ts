@@ -30,7 +30,7 @@ test("/api/system describes the running system from code: schema with foreign ke
     versions: { package: string; deps: Record<string, string> }[];
     integrations: { telegram: boolean };
   };
-  expect(s.counts.tools).toBe(49);
+  expect(s.counts.tools).toBe(51);
   expect(s.counts.tables).toBe(s.schema.length);
   const drafts = s.schema.find((t) => t.name === "content_drafts")!;
   expect(drafts.foreign_keys).toContainEqual(expect.objectContaining({ columns: ["project_id"], table: "projects" }));
