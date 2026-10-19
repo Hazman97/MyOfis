@@ -199,6 +199,10 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - **Tools:** agents in personal rooms or in rooms with members get only `MEMBER_TOOLS` (`restrictedWorkspace()`); the owner's private rooms keep every tool. Members in a room may use and edit its agents and projects.
   - **API:** `Rooms` (`rooms.ts`) handles `GET /api/rooms` (rooms you may enter), and owner-only `POST/PATCH /api/rooms`, `PUT /api/rooms/:id/members`, `POST /api/agents/:id/move` (schedules go with the agent) and `POST /api/projects/:id/move` (brief folder and drafts go with it). Moving an agent does not carry its HQ memory notes.
   - **Web:** `RoomSwitcher` (sidebar and phone bar), `/rooms` (`RoomsView`) and `MoveToRoom` on agent and project cards. Gemini 011 polishes them.
+- **Morning briefing** (Ketua, job type `daily_briefing`, schedule 07:30 KL, seeded off; reported on Telegram like the other `REPORT_JOB_TYPES`).
+  - `briefingFacts()` (`apps/hub/src/briefing.ts`) collects, per room: yesterday's runs by agent, failures, pending drafts/approvals/skill proposals, cost, room limits and enabled schedules.
+  - `#startRun` adds the facts to the assignment's `job.input.facts` (the stored job stays clean). The runner's `jobText` appends any `input.facts` as "Facts from the hub (use only these)".
+  - Built-in schedules added after an agent was seeded are offered once (switched off), tracked by the `seeded.schedule.<slug>.<type>` settings keys.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

@@ -21,6 +21,7 @@ import type { Backups } from "./backup.ts";
 import type { Publisher } from "./publisher.ts";
 import type { UploadParts } from "./uploads.ts";
 import type { Studio } from "./studio.ts";
+import { briefingFacts } from "./briefing.ts";
 import { MEMBER_TOOLS, OWNER_WORKSPACE, aiWorkspace, restrictedWorkspace, roomBudgetLeft, shareOf, visibleAgents } from "./scope.ts";
 import type { OpencutWatch } from "./opencutWatch.ts";
 import type { Social } from "./social.ts";
@@ -1039,7 +1040,8 @@ Error: ${r.error}` : ""}` });
     }
     const assignment: RunAssignment = {
       run_id: runId,
-      job: { id: job.id, type: job.type, title: job.title, input: job.input, project_id: job.project_id },
+      // the morning briefing gets today's facts from the hub, fresh at run time
+      job: { id: job.id, type: job.type, title: job.title, input: job.type === "daily_briefing" ? { ...job.input, facts: briefingFacts(this, ws) } : job.input, project_id: job.project_id },
       agent: {
         id: agent.id,
         slug: agent.slug,

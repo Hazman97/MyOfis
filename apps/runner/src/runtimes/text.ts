@@ -6,7 +6,9 @@ import type { RunContext } from "./types.ts";
  */
 export function jobText(ctx: RunContext): string {
   const { input, title } = ctx.assignment.job;
-  const t = typeof input.text === "string" && input.text.trim() ? input.text : title;
+  const base = typeof input.text === "string" && input.text.trim() ? input.text : title;
+  // data the hub gathered for this job (e.g. the morning briefing's facts): the only facts to use
+  const t = input.facts && typeof input.facts === "object" ? `${base}\n\nFacts from the hub (use only these):\n${JSON.stringify(input.facts, null, 1).slice(0, 12_000)}` : base;
   const history = Array.isArray(input.history) ? (input.history as { role?: unknown; text?: unknown }[]) : [];
   const lines = history
     .filter((m) => typeof m.text === "string" && m.text.trim())

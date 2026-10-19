@@ -287,6 +287,12 @@ Each website exposes one signed endpoint. Set it per project in **Projects → B
 
 Chat with **Ketua** (or `/agent ketua` in Telegram) when you want the team's view, for example "nak buat sistem booking kamera, okay ke?". Ketua picks the colleagues who matter (Researcher, Coder, Marketing, Kerani…) and asks them **at the same time** (`consult_team`). In the office they walk to the meeting room. Then you get one answer: a short verdict, each colleague's point, the risks and a numbered plan. Say "ok proceed" and Ketua hands the work to the right agents.
 
+**Morning briefing.** In **Schedules**, turn on Ketua's 07:30 "Taklimat pagi". Every morning the hub gathers the facts and Ketua sends a short summary to Telegram:
+- yesterday's finished and failed work;
+- drafts and approvals waiting for you;
+- today's bookings (asked from Kerani);
+- AI cost, and rooms near their limit.
+
 ## Editor: videos for TikTok, Reels and Shorts
 
 Chat with **Editor** and attach videos:

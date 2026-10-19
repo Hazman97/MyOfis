@@ -12,7 +12,7 @@ import { OWNER_WORKSPACE, ownApproval, ownDraft } from "./scope.ts";
 const POLL_TIMEOUT_S = 25;
 const MESSAGE_MAX = 3500;
 /** Job types whose finished report is sent to the owner (Pak Guard's morning report, the nightly smoke test). */
-const REPORT_JOB_TYPES = new Set(["health_check", "smoke_test", "bookings_report"]);
+const REPORT_JOB_TYPES = new Set(["health_check", "smoke_test", "bookings_report", "daily_briefing"]);
 /** Photos sent as an album arrive as separate messages: wait this long for the rest. */
 const ALBUM_WAIT_MS = 1500;
 /** At most this many draft cards per run; the rest are summarised. */

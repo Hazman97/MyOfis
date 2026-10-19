@@ -4,7 +4,7 @@ import { AgentInput, ScheduleInput } from "@agent-office/shared";
 import type { HubConfig } from "./env.ts";
 import { keyHint, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
-import { agents, providers, schedules } from "./db/schema.ts";
+import { agents, providers, schedules, settings } from "./db/schema.ts";
 import { newId } from "./repo.ts";
 
 /** Idempotent: only inserts what is missing, never overwrites owner edits. */
@@ -58,12 +58,25 @@ export function seed(db: Db, config: HubConfig, secrets: Secrets): void {
 
   const llm = pickLlm(db);
   for (const { agent: def, needsLlm, schedules: makeSchedules } of BUILTIN_AGENTS) {
-    if (db.select({ id: agents.id }).from(agents).where(eq(agents.slug, def.slug)).get()) continue;
+    const existing = db.select({ id: agents.id, workspace_id: agents.workspace_id }).from(agents).where(eq(agents.slug, def.slug)).get();
+    if (existing) {
+      // a built-in schedule added after the agent was seeded (e.g. Ketua's morning briefing): offer it once, switched off
+      for (const s of makeSchedules?.(existing.id) ?? []) {
+        const type = String((s.job_template as { type?: unknown }).type ?? "");
+        const marker = `seeded.schedule.${def.slug}.${type}`;
+        if (db.select({ key: settings.key }).from(settings).where(eq(settings.key, marker)).get()) continue;
+        const have = db.select().from(schedules).where(eq(schedules.agent_id, existing.id)).all().some((r) => (r.job_template as { type?: unknown }).type === type);
+        if (!have) db.insert(schedules).values({ ...ScheduleInput.parse(s), id: newId("sch"), workspace_id: existing.workspace_id }).run();
+        db.insert(settings).values({ key: marker, value: true }).run();
+      }
+      continue;
+    }
     const id = newId("agt");
     const parsed = AgentInput.parse(needsLlm && llm ? { ...def, provider: llm.provider, model: llm.model } : def);
     db.insert(agents).values({ ...parsed, id }).run();
     for (const s of makeSchedules?.(id) ?? []) {
       db.insert(schedules).values({ ...ScheduleInput.parse(s), id: newId("sch") }).run();
+      db.insert(settings).values({ key: `seeded.schedule.${def.slug}.${String((s.job_template as { type?: unknown }).type ?? "")}`, value: true }).onConflictDoNothing().run();
     }
   }
 }
