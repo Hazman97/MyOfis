@@ -24,7 +24,7 @@ const items = computed(() => [
   { key: "poke", label: "Poke", icon: Hand },
 ]);
 
-const RADIUS = 56;
+const RADIUS = 64;
 const pos = (i: number) => {
   const a = -Math.PI / 2 + (i * 2 * Math.PI) / items.value.length;
   return { left: `${Math.cos(a) * RADIUS}px`, top: `${Math.sin(a) * RADIUS}px` };
@@ -33,7 +33,7 @@ const pos = (i: number) => {
 // Keep inside viewport near screen edges: shift x/y by up to 60px if needed
 const adjustedPos = computed(() => {
   if (typeof window === "undefined") return { x: props.x, y: props.y };
-  const pad = 76; // radius + button half
+  const pad = 86; // radius + button half
   let shiftX = 0;
   let shiftY = 0;
   if (props.x < pad) shiftX = Math.min(60, pad - props.x);
