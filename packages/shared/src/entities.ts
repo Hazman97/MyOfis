@@ -111,6 +111,12 @@ export const AgentConfig = z.object({
   preferences: AgentPreferences.prefault({}),
   /** Which skills from the library this agent sees: "all" (also new ones), or only these names. */
   skills: z.union([z.literal("all"), z.array(z.string().max(64)).max(500)]).default("all"),
+  /** Folder of the owner's video clips on the runner PC (clip_library), e.g. C:\MyOfis\tiktok-clips. "" = none. */
+  clip_folder: z.string().max(400).default(""),
+  /** Bypass approval: drafts this agent saves are approved and posted at once (owner-only switch). */
+  auto_publish: z.boolean().default(false),
+  /** At most this many auto-published posts a day; more wait for approval as usual. */
+  auto_publish_daily_max: z.number().int().min(1).max(15).default(3),
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 

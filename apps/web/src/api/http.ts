@@ -177,6 +177,18 @@ export interface InstagramSettings {
   ig_user_id: string | null;
   username: string | null;
 }
+/** GET /api/projects/:id/tiktok: TikTok posting through Zernio (zernio.com). The API key never reaches the browser. */
+export interface TikTokSettings {
+  has_key: boolean;
+  key_hint: string | null;
+  /** The chosen TikTok account (Zernio account id), or null. */
+  account_id: string | null;
+  username: string | null;
+  display_name: string | null;
+  /** TikTok accounts connected in Zernio (filled after saving / testing the key). */
+  accounts: { id: string; username: string; display_name: string; followers: number | null; needs_reconnection: boolean }[];
+}
+
 export interface ThreadsSettings {
   has_token: boolean;
   token_hint: string | null;
@@ -393,6 +405,11 @@ export const api = {
   instagramSettings: (projectId: string) => request<{ instagram: InstagramSettings }>(`/projects/${projectId}/instagram`),
   connectInstagram: (projectId: string) => request<{ instagram: InstagramSettings }>(`/projects/${projectId}/instagram/connect`, { method: "POST" }),
   setInstagramEnabled: (projectId: string, enabled: boolean) => request<{ instagram: InstagramSettings }>(`/projects/${projectId}/instagram`, { method: "PUT", body: { enabled } }),
+  tiktokSettings: (projectId: string) => request<{ tiktok: TikTokSettings }>(`/projects/${projectId}/tiktok`),
+  /** api_key: omit to keep, "" to remove. account_id: which connected TikTok account to post to. */
+  saveTikTok: (projectId: string, body: { api_key?: string; account_id?: string | null }) => request<{ tiktok: TikTokSettings }>(`/projects/${projectId}/tiktok`, { method: "PUT", body }),
+  /** Asks Zernio again for the connected accounts (and their health). */
+  testTikTok: (projectId: string) => request<{ tiktok: TikTokSettings }>(`/projects/${projectId}/tiktok/test`, { method: "POST" }),
   threadsSettings: (projectId: string) => request<{ threads: ThreadsSettings }>(`/projects/${projectId}/threads`),
   saveThreads: (projectId: string, token: string) => request<{ threads: ThreadsSettings }>(`/projects/${projectId}/threads`, { method: "PUT", body: { token } }),
   facebookSettings: (projectId: string) => request<{ facebook: FacebookSettings }>(`/projects/${projectId}/facebook`),

@@ -44,6 +44,10 @@ const blank = () => ({
   preferences: AgentPreferences.parse({}) as AgentPreferences,
   // set on the Skills page; kept as is here
   skills: "all" as "all" | string[],
+  // TikTok-style agents: clip folder on the runner PC, and posting without approval
+  clip_folder: "",
+  auto_publish: false,
+  auto_publish_daily_max: 3,
 });
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 const form = reactive(blank());
@@ -92,6 +96,9 @@ function edit(a: Agent | null) {
       self_review: a.config.self_review ?? true,
       preferences: AgentPreferences.parse(a.config.preferences ?? {}),
       skills: a.config.skills ?? "all",
+      clip_folder: a.config.clip_folder ?? "",
+      auto_publish: a.config.auto_publish ?? false,
+      auto_publish_daily_max: a.config.auto_publish_daily_max ?? 3,
     });
   }
   editing.value = a?.id ?? "new";
@@ -101,10 +108,10 @@ async function save() {
   error.value = "";
   saving.value = true;
   try {
-    const { shell_allowlist, read_paths, http_allowlist, max_steps, runtime, self_review, preferences, skills, slug, ...rest } = form;
+    const { shell_allowlist, read_paths, http_allowlist, max_steps, runtime, self_review, preferences, skills, clip_folder, auto_publish, auto_publish_daily_max, slug, ...rest } = form;
     const body = {
       ...rest,
-      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, runtime, self_review, preferences, skills },
+      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, runtime, self_review, preferences, skills, clip_folder: clip_folder.trim(), auto_publish, auto_publish_daily_max },
     };
     if (editing.value === "new") await api.createAgent({ ...body, slug });
     else await api.updateAgent(editing.value!, body);
@@ -357,6 +364,26 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
                 <span class="text-xs font-medium text-fg">Learn after work</span>
               </label>
               <p class="text-[11px] text-faint">After a big job or every 5th chat message, the agent looks back and may save a note or propose a skill. Costs a few extra tokens.</p>
+            </div>
+          </div>
+
+          <!-- clip folder + posting without approval (TikTok agent); owner only -->
+          <div v-if="isOwner" class="space-y-3 border-t border-line pt-3">
+            <label class="block">
+              <span class="label">Clip folder (on the runner PC)</span>
+              <input v-model="form.clip_folder" class="input font-mono text-xs" placeholder="C:\MyOfis\tiktok-clips" />
+              <span class="text-[11px] text-faint">Videos the agent may use with the clip_library tool. A music\ folder inside holds royalty-free tracks.</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-xs font-medium text-fg">
+              <input v-model="form.auto_publish" type="checkbox" class="accent-accent size-4" />
+              Post without approval
+            </label>
+            <div v-if="form.auto_publish" class="space-y-1.5 rounded-md border border-signal/30 bg-signal-soft p-2.5 text-[11px] text-signal">
+              <p>Drafts this agent saves go out straight away (website / connected social accounts). You get a Telegram message after each post.</p>
+              <label class="flex items-center gap-2 text-fg">
+                Max posts a day
+                <input v-model.number="form.auto_publish_daily_max" type="number" min="1" max="15" class="input w-20 py-1 text-xs" />
+              </label>
             </div>
           </div>
         </fieldset>
