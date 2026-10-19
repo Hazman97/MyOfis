@@ -18,6 +18,7 @@ export const router = createRouter({
     { path: "/schedules", name: "schedules", component: () => import("./views/SchedulesView.vue") },
     { path: "/skills", name: "skills", component: () => import("./views/SkillsView.vue") },
     { path: "/projects", name: "projects", component: () => import("./views/ProjectsView.vue") },
+    { path: "/studio", name: "studio-home", component: () => import("./views/VideoStudioHomeView.vue") },
     { path: "/studio/:id", name: "studio", component: () => import("./views/VideoStudioView.vue"), props: true },
     { path: "/rooms", name: "rooms", component: () => import("./views/RoomsView.vue") },
     { path: "/members", name: "members", component: () => import("./views/MembersView.vue") },

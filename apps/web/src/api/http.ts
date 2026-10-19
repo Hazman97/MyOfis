@@ -5,6 +5,7 @@ import type {
   DocHit,
   DraftDecision,
   EditPlan,
+  EditSuggestions,
   LogEntry,
   ProjectDoc,
   FeatureNote,
@@ -20,6 +21,7 @@ import type {
   Run,
   Runner,
   Schedule,
+  Transcript,
   WebPost,
 } from "@agent-office/shared";
 
@@ -212,6 +214,19 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
   /** Videos the agent made for this message (Editor): open them in the Video Studio. */
   renders?: ChatAttachment[];
+  /** Editor's edit options for this message (tool suggest_edits), newest set; null when none. */
+  suggestions?: EditSuggestions | null;
+}
+
+/** GET /api/videos: the room's videos for the Video Studio home, newest first. */
+export interface VideoListItem {
+  id: string;
+  name: string;
+  size: number;
+  created_at: string;
+  /** set when Editor (or a re-render) made it; null = a video you sent */
+  run_id: string | null;
+  has_transcript: boolean;
 }
 
 /** GET /api/videos/:id: the Video Studio's view of one video. */
@@ -223,6 +238,12 @@ export interface VideoInfo {
   drafts: ContentDraft[];
   presets: Record<string, { label: string; width: number; height: number; max_seconds: number }>;
   last_render_job: { id: string; status: string; created_at: string; result_upload_id: string | null } | null;
+  /** Speech of each source file, keyed by upload id (render.attachments[].id); null = not transcribed yet. */
+  transcripts: Record<string, Transcript | null>;
+  /** The newest "Transcribe" job for this video (no AI, whisper on the runner PC). */
+  transcribe_job: { id: string; status: string } | null;
+  /** Editor's newest edit options for this video's source files, if any. */
+  suggestions: EditSuggestions | null;
 }
 
 export class ApiError extends Error {
@@ -320,6 +341,9 @@ export const api = {
   addLog: (body: Record<string, unknown>) => request<{ entry: LogEntry }>("/log", { body }),
   updateLog: (id: string, body: Record<string, unknown>) => request<{ entry: LogEntry }>(`/log/${id}`, { method: "PATCH", body }),
   video: (id: string) => request<VideoInfo>(`/videos/${encodeURIComponent(id)}`),
+  videos: () => request<{ videos: VideoListItem[] }>("/videos"),
+  /** Transcribe the video's source files with whisper on the runner PC (no AI tokens). */
+  transcribeVideo: (id: string) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/transcribe`, { method: "POST" }),
   renderVideo: (id: string, plan: EditPlan, draftId: string | null) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/render`, { body: { plan, draft_id: draftId } }),
   setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),
 

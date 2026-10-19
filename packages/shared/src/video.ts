@@ -51,6 +51,8 @@ export const Clip = z.object({
   speed: z.number().min(0.5).max(2).default(1).describe("0.5 = slow motion, 2 = twice as fast"),
 });
 
+export type Clip = z.infer<typeof Clip>;
+
 export const Caption = z.object({
   text: z.string().trim().min(1).max(200),
   start: z.number().min(0).describe("Seconds in the FINISHED video"),
@@ -58,12 +60,20 @@ export const Caption = z.object({
   position: z.enum(["bottom", "middle", "top"]).default("bottom"),
 });
 
+export const Subtitles = z.object({
+  style: z.enum(["pop", "line"]).default("pop").describe("pop = 2 words at a time (TikTok style); line = up to 6 words"),
+  uppercase: z.boolean().default(true),
+  position: z.enum(["bottom", "middle"]).default("bottom"),
+});
+export type Subtitles = z.infer<typeof Subtitles>;
+
 export const EditPlan = z.object({
-  clips: z.array(Clip).min(1).max(20).describe("Played one after another, in this order"),
+  clips: z.array(Clip).min(1).max(80).describe("Played one after another, in this order"),
   preset: VideoPresetId.default("tiktok_fhd"),
   fit: z.enum(["crop", "blur", "pad"]).default("crop").describe("crop = fill the frame (cuts the sides); blur = whole picture on a blurred copy; pad = whole picture on black"),
   fps: z.union([z.literal(24), z.literal(25), z.literal(30), z.literal(50), z.literal(60)]).default(30),
   captions: z.array(Caption).max(40).default([]).describe("Text burned into the picture"),
+  subtitles: Subtitles.nullable().default(null).describe("Burn in subtitles from the speech (needs video_transcribe first); null = none"),
   mute: z.boolean().default(false).describe("Drop the original sound"),
   normalize_audio: z.boolean().default(true).describe("Even loudness (about -14 LUFS, what TikTok/YouTube expect)"),
   name: z.string().trim().min(1).max(60).regex(/^[\w\- ]+$/).default("edit").describe("Output file name, no extension"),

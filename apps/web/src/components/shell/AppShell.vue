@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
+  Clapperboard,
   Bot,
   Building2,
   CalendarClock,
@@ -100,7 +101,7 @@ const allGroups: { sign: string; items: NavItem[] }[] = [
       { to: "/skills", label: "Skills", icon: Sparkles, badge: "skills" },
     ],
   },
-  { sign: "Work", items: [{ to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
+  { sign: "Work", items: [{ to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/studio", label: "Video Studio", icon: Clapperboard }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
   {
     sign: "System",
     items: [
@@ -118,6 +119,7 @@ const allMore: NavItem[] = [
   { to: "/replay", label: "Replay", icon: History },
   { to: "/skills", label: "Skills", icon: Sparkles, badge: "skills" },
   { to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" },
+  { to: "/studio", label: "Video Studio", icon: Clapperboard },
   { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/projects", label: "Projects", icon: FolderGit2 },
   { to: "/runners", label: "Runners", icon: Server, owner: true },
