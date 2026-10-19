@@ -37,5 +37,15 @@ export function screenFrame(kind: ScreenKind, timeMs: number, desk: number): str
   return `screen/${kind}`;
 }
 
+/**
+ * Extra offset (art pixels) for playful moments: a hop while `effect` is "jump", and a lifted
+ * wiggle while the owner carries the agent. Pure, so it is tested without Phaser.
+ */
+export function bodyOffset(c: CharacterSnapshot, timeMs: number): { x: number; y: number } {
+  if (c.held) return { x: Math.round(Math.sin(timeMs / 90) * 1.5), y: -10 };
+  if (c.effect === "jump") return { x: 0, y: -Math.round(Math.abs(Math.sin(timeMs / 110)) * 4) };
+  return { x: 0, y: 0 };
+}
+
 /** Top of the head above the feet, in art pixels (seated characters are shorter). */
 export const headTop = (c: CharacterSnapshot) => (c.seated ? 21 : 24);

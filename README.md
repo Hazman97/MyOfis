@@ -139,6 +139,20 @@ If a repo ships its own `opencode.json` or `.opencode/` folder (plugins could ru
 
 The dashboard opens on **Office**. Switch to **Board** (team cards + kanban) at any time; the choice is remembered in this browser. Both views read the same event stream, and the office never changes anything by itself.
 
+**Playing with the agents** (only in your browser; real work always wins):
+- **Tap** an agent: it hops with an emote (❗ ❤ ♪ 😄). Poke it four times and it gets angry 💢. An agent also hops with a heart when you approve its draft.
+- **Drag** an agent and drop it somewhere:
+  - pantry: coffee break;
+  - meeting room: sits in a meeting;
+  - another agent: the two chat;
+  - library: reads;
+  - whiteboard: opens **Drafts**;
+  - your desk: opens **Chat** with it.
+
+  After a few seconds it walks back to its work.
+- **Long-press** or **right-click** an agent: a ring menu with **Chat · New job · Pause · Memory · Poke**.
+- **Your character** (navy suit, "your name (you)") walks where you tap the floor, or with the **arrow keys / WASD**. Next to an agent, that agent turns to you and **💬 Chat with …** appears.
+
 | What you see | What it means |
 | --- | --- |
 | Walks to its desk and sits | a run started (a coffee bubble: the job is queued, waiting for a runner) |

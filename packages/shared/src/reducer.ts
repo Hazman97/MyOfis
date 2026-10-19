@@ -58,7 +58,7 @@ export type AgentActivity = "idle" | "working" | "waiting_approval" | "away";
  * can tell a new moment from one it has already shown.
  */
 export interface AgentMoment {
-  kind: "handoff" | "delivered" | "failed" | "pr_opened" | "draft_pinned" | "feature_pinned" | "skill_shelved";
+  kind: "handoff" | "delivered" | "failed" | "pr_opened" | "draft_pinned" | "feature_pinned" | "skill_shelved" | "praised";
   event_id: number;
   at: string;
   /** handoff: slug of the agent receiving the work. */
@@ -353,6 +353,8 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
     }
     case "draft.decided":
       delete s.pending_drafts[event.payload.draft_id];
+      // the owner liked it: the agent cheers in the office
+      if (event.agent_id && event.payload.status !== "rejected") agentView(s, event.agent_id).moment = momentOf(event, "praised");
       break;
     case "draft.updated": {
       const d = s.pending_drafts[event.payload.draft_id];

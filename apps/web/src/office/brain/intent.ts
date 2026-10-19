@@ -5,7 +5,25 @@ import type { AgentMoment, AgentView, OfficeState, ToolCategory } from "@agent-o
  * (OfficeState) and the agents' config. Pure functions, no clocks.
  */
 export type Pose = "stand" | "sit" | "type" | "hand";
-export type BubbleKind = "think" | "alert" | "browser" | "search" | "book" | "pr" | "chat" | "check" | "fail" | "zzz" | "coffee";
+export type BubbleKind =
+  | "think"
+  | "alert"
+  | "browser"
+  | "search"
+  | "book"
+  | "pr"
+  | "chat"
+  | "check"
+  | "fail"
+  | "zzz"
+  | "coffee"
+  // the owner playing with them (pokes, praise)
+  | "heart"
+  | "angry"
+  | "note"
+  | "smile"
+  | "exclaim";
+export type Effect = "dizzy" | "jump" | null;
 export type ScreenKind = "off" | "idle" | "code" | "browser" | "alert" | "done" | "failed";
 
 /** The bits of an agent's config the office cares about. */
@@ -20,7 +38,7 @@ export interface AgentInfo {
   desk_y: number;
 }
 
-export type Target = { place: string } | { zone: string } | { visit: string } | { here: true };
+export type Target = { place: string } | { zone: string } | { visit: string } | { here: true } | { tile: { tx: number; ty: number; facing: "up" | "down" | "left" | "right" } };
 
 /** One thing to do: go to `target`, then show `pose`/`bubble` there for `hold` ms (0 = until told otherwise). */
 export interface Step {
@@ -29,7 +47,7 @@ export interface Step {
   pose: Pose;
   bubble: BubbleKind | null;
   carrying: boolean;
-  effect: "dizzy" | null;
+  effect: Effect;
   hold: number;
   onArrive?: "drop_tray" | "pin_note" | "give_doc";
 }
@@ -118,6 +136,9 @@ export function momentSteps(m: AgentMoment, targetDesk: (slug: string) => string
       return [{ ...base, target: { zone: "library" }, carrying: true, bubble: "book", hold: 1200 }];
     case "draft_pinned":
       return [{ ...base, target: { zone: "whiteboard" }, carrying: true, bubble: "check", hold: 1000 }];
+    case "praised":
+      // the owner approved its draft: a happy hop where it stands
+      return [{ ...base, target: { here: true }, effect: "jump", bubble: "heart", hold: 1400 }];
     case "handoff": {
       const desk = m.to_agent ? targetDesk(m.to_agent) : null;
       if (!desk) return [];

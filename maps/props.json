@@ -20,9 +20,29 @@
     "h": 14
    }
   },
-  "bubble/book": {
+  "bubble/angry": {
    "frame": {
     "x": 204,
+    "y": 0,
+    "w": 16,
+    "h": 14
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 16,
+    "h": 14
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 14
+   }
+  },
+  "bubble/book": {
+   "frame": {
+    "x": 221,
     "y": 0,
     "w": 16,
     "h": 14
@@ -42,7 +62,7 @@
   },
   "bubble/browser": {
    "frame": {
-    "x": 221,
+    "x": 238,
     "y": 0,
     "w": 16,
     "h": 14
@@ -62,8 +82,8 @@
   },
   "bubble/chat1": {
    "frame": {
-    "x": 238,
-    "y": 0,
+    "x": 0,
+    "y": 33,
     "w": 16,
     "h": 14
    },
@@ -82,7 +102,7 @@
   },
   "bubble/chat2": {
    "frame": {
-    "x": 0,
+    "x": 17,
     "y": 33,
     "w": 16,
     "h": 14
@@ -102,7 +122,7 @@
   },
   "bubble/check": {
    "frame": {
-    "x": 17,
+    "x": 34,
     "y": 33,
     "w": 16,
     "h": 14
@@ -122,7 +142,7 @@
   },
   "bubble/code": {
    "frame": {
-    "x": 34,
+    "x": 51,
     "y": 33,
     "w": 16,
     "h": 14
@@ -142,26 +162,6 @@
   },
   "bubble/coffee": {
    "frame": {
-    "x": 51,
-    "y": 33,
-    "w": 16,
-    "h": 14
-   },
-   "rotated": false,
-   "trimmed": false,
-   "spriteSourceSize": {
-    "x": 0,
-    "y": 0,
-    "w": 16,
-    "h": 14
-   },
-   "sourceSize": {
-    "w": 16,
-    "h": 14
-   }
-  },
-  "bubble/fail": {
-   "frame": {
     "x": 68,
     "y": 33,
     "w": 16,
@@ -180,7 +180,7 @@
     "h": 14
    }
   },
-  "bubble/pr": {
+  "bubble/exclaim": {
    "frame": {
     "x": 85,
     "y": 33,
@@ -200,7 +200,7 @@
     "h": 14
    }
   },
-  "bubble/search": {
+  "bubble/fail": {
    "frame": {
     "x": 102,
     "y": 33,
@@ -220,7 +220,7 @@
     "h": 14
    }
   },
-  "bubble/think1": {
+  "bubble/heart": {
    "frame": {
     "x": 119,
     "y": 33,
@@ -240,7 +240,7 @@
     "h": 14
    }
   },
-  "bubble/think2": {
+  "bubble/note": {
    "frame": {
     "x": 136,
     "y": 33,
@@ -260,7 +260,7 @@
     "h": 14
    }
   },
-  "bubble/think3": {
+  "bubble/pr": {
    "frame": {
     "x": 153,
     "y": 33,
@@ -280,7 +280,7 @@
     "h": 14
    }
   },
-  "bubble/zzz": {
+  "bubble/search": {
    "frame": {
     "x": 170,
     "y": 33,
@@ -300,10 +300,110 @@
     "h": 14
    }
   },
-  "chair/arm": {
+  "bubble/smile": {
+   "frame": {
+    "x": 187,
+    "y": 33,
+    "w": 16,
+    "h": 14
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 16,
+    "h": 14
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 14
+   }
+  },
+  "bubble/think1": {
+   "frame": {
+    "x": 204,
+    "y": 33,
+    "w": 16,
+    "h": 14
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 16,
+    "h": 14
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 14
+   }
+  },
+  "bubble/think2": {
    "frame": {
     "x": 221,
     "y": 33,
+    "w": 16,
+    "h": 14
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 16,
+    "h": 14
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 14
+   }
+  },
+  "bubble/think3": {
+   "frame": {
+    "x": 238,
+    "y": 33,
+    "w": 16,
+    "h": 14
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 16,
+    "h": 14
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 14
+   }
+  },
+  "bubble/zzz": {
+   "frame": {
+    "x": 0,
+    "y": 48,
+    "w": 16,
+    "h": 14
+   },
+   "rotated": false,
+   "trimmed": false,
+   "spriteSourceSize": {
+    "x": 0,
+    "y": 0,
+    "w": 16,
+    "h": 14
+   },
+   "sourceSize": {
+    "w": 16,
+    "h": 14
+   }
+  },
+  "chair/arm": {
+   "frame": {
+    "x": 51,
+    "y": 48,
     "w": 16,
     "h": 11
    },
@@ -322,7 +422,7 @@
   },
   "chair/back": {
    "frame": {
-    "x": 0,
+    "x": 77,
     "y": 48,
     "w": 16,
     "h": 8
@@ -342,8 +442,8 @@
   },
   "chair/exec": {
    "frame": {
-    "x": 187,
-    "y": 33,
+    "x": 17,
+    "y": 48,
     "w": 16,
     "h": 13
    },
@@ -362,8 +462,8 @@
   },
   "chair/front": {
    "frame": {
-    "x": 204,
-    "y": 33,
+    "x": 34,
+    "y": 48,
     "w": 16,
     "h": 12
    },
@@ -382,7 +482,7 @@
   },
   "fx/dizzy1": {
    "frame": {
-    "x": 17,
+    "x": 94,
     "y": 48,
     "w": 16,
     "h": 8
@@ -402,7 +502,7 @@
   },
   "fx/dizzy2": {
    "frame": {
-    "x": 34,
+    "x": 111,
     "y": 48,
     "w": 16,
     "h": 8
@@ -422,8 +522,8 @@
   },
   "fx/doc": {
    "frame": {
-    "x": 238,
-    "y": 33,
+    "x": 68,
+    "y": 48,
     "w": 8,
     "h": 9
    },
@@ -442,7 +542,7 @@
   },
   "fx/shadow": {
    "frame": {
-    "x": 167,
+    "x": 244,
     "y": 48,
     "w": 12,
     "h": 4
@@ -522,7 +622,7 @@
   },
   "note/blue": {
    "frame": {
-    "x": 139,
+    "x": 216,
     "y": 48,
     "w": 6,
     "h": 6
@@ -542,7 +642,7 @@
   },
   "note/green": {
    "frame": {
-    "x": 146,
+    "x": 223,
     "y": 48,
     "w": 6,
     "h": 6
@@ -562,7 +662,7 @@
   },
   "note/pink": {
    "frame": {
-    "x": 153,
+    "x": 230,
     "y": 48,
     "w": 6,
     "h": 6
@@ -582,7 +682,7 @@
   },
   "note/yellow": {
    "frame": {
-    "x": 160,
+    "x": 237,
     "y": 48,
     "w": 6,
     "h": 6
@@ -682,7 +782,7 @@
   },
   "screen/alert": {
    "frame": {
-    "x": 51,
+    "x": 128,
     "y": 48,
     "w": 10,
     "h": 7
@@ -702,7 +802,7 @@
   },
   "screen/browser": {
    "frame": {
-    "x": 62,
+    "x": 139,
     "y": 48,
     "w": 10,
     "h": 7
@@ -722,7 +822,7 @@
   },
   "screen/code1": {
    "frame": {
-    "x": 73,
+    "x": 150,
     "y": 48,
     "w": 10,
     "h": 7
@@ -742,7 +842,7 @@
   },
   "screen/code2": {
    "frame": {
-    "x": 84,
+    "x": 161,
     "y": 48,
     "w": 10,
     "h": 7
@@ -762,7 +862,7 @@
   },
   "screen/done": {
    "frame": {
-    "x": 95,
+    "x": 172,
     "y": 48,
     "w": 10,
     "h": 7
@@ -782,7 +882,7 @@
   },
   "screen/failed": {
    "frame": {
-    "x": 106,
+    "x": 183,
     "y": 48,
     "w": 10,
     "h": 7
@@ -802,7 +902,7 @@
   },
   "screen/idle": {
    "frame": {
-    "x": 117,
+    "x": 194,
     "y": 48,
     "w": 10,
     "h": 7
@@ -822,7 +922,7 @@
   },
   "screen/off": {
    "frame": {
-    "x": 128,
+    "x": 205,
     "y": 48,
     "w": 10,
     "h": 7
@@ -925,7 +1025,7 @@
   "image": "props.png",
   "size": {
    "w": 256,
-   "h": 56
+   "h": 62
   },
   "scale": "1",
   "app": "agent-office build-office-assets",

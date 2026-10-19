@@ -250,6 +250,12 @@ function bubbles(): Record<string, Pixmap> {
       { r: "#d34a4a" },
     ),
     "bubble/zzz": bubble([".......OOO", "........O.", ".......OOO", "OOOO......", "...O......", "..O.......", ".O........", "OOOO......"], {}),
+    // the owner playing with the agents: pokes and praise
+    "bubble/heart": bubble([".rr...rr.", "rrrr.rrrr", "rwrrrrrrr", "rrrrrrrrr", ".rrrrrrr.", "..rrrrr..", "...rrr...", "....r...."], { r: "#e0457b", w: "#ffd0e0" }),
+    "bubble/angry": bubble(["rr.....rr", ".rr...rr.", "..r...r..", ".........", "..r...r..", ".rr...rr.", "rr.....rr"], { r: "#d34a4a" }, "#ffe1d6"),
+    "bubble/note": bubble(["....nnnnn", "....n...n", "....n...n", "....n...n", "..nnn.nnn", ".nnnn.nnn", "..nn...n."], { n: "#3d82d6" }),
+    "bubble/smile": bubble(["..yyyyy..", ".yyyyyyy.", "yyOyyyOyy", "yyyyyyyyy", "yOyyyyyOy", ".yyOOOyy.", "..yyyyy.."], { y: "#f0c640" }),
+    "bubble/exclaim": bubble(["oo", "oo", "oo", "oo", "..", "oo"], { o: "#d34a4a" }),
   };
 }
 

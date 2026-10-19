@@ -410,6 +410,19 @@ export const OUTFITS: Record<string, Outfit> = {
     pantsShade: "#2f3a31",
     shoes: "#202020",
   },
+  /** You, walking around your own office (not an agent look). */
+  boss: {
+    head: "short",
+    hair: "#1c1c22",
+    hairShade: "#121216",
+    skin: SKIN[2],
+    top: "#24324d",
+    topShade: "#1a253a",
+    pants: "#20283a",
+    pantsShade: "#171d2b",
+    shoes: "#111111",
+    accessories: ["badge"],
+  },
 };
 
 export const PERSON_OUTFITS = Object.keys(OUTFITS).filter((k) => k.startsWith("person-"));

@@ -203,6 +203,20 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - `briefingFacts()` (`apps/hub/src/briefing.ts`) collects, per room: yesterday's runs by agent, failures, pending drafts/approvals/skill proposals, cost, room limits and enabled schedules.
   - `#startRun` adds the facts to the assignment's `job.input.facts` (the stored job stays clean). The runner's `jobText` appends any `input.facts` as "Facts from the hub (use only these)".
   - Built-in schedules added after an agent was seeded are offered once (switched off), tracked by the `seeded.schedule.<slug>.<type>` settings keys.
+- **Playing in the office** (owner request, 2026-10-19). The logic is in the brain (`world.ts`), the scene only forwards input and draws.
+  - **Brain API:**
+    - `poke(id)`: a jump + emote; 4 pokes in 6 s = `angry`; 300 ms cooldown; ignored while the agent needs approval.
+    - `grab` / `holdAt` / `drop`: a held character is skipped by reconcile and tick. `drop` acts on `zoneAt()` (the smallest zone wins, since the whiteboard is inside the meeting room): pantry coffee, meeting room, library, another agent = both chat. It returns a `DropAction` (`{open:"drafts"}` for the whiteboard, `{open:"chat",agent}` for the owner's desk).
+    - `setMe` / `meWalkTo` / `meStep` / `nearMe()`: your own character, id `me`, look `boss`, never touched by reconcile. The nearest agent within 40 px turns to face it.
+  - **Rules:** every play action goes through `#act` = `#plan([...steps, intentStep(intent)])`, so a real event still re-plans (catch-up rule). The new `Target` kind `{tile}` is not claimed.
+  - **Snapshot fields:** `held`, `isMe`, `effect: "jump"`. New bubbles: `heart`, `angry`, `note`, `smile`, `exclaim` (art in `props.ts`, the `boss` outfit in `characters.ts`; regenerate `maps/`).
+  - **Reducer:** a `praised` moment on `draft.decided` (not rejected) → heart hop.
+  - **Scene input** (`game.ts`, only with `interactive: true`; Replay leaves it off):
+    - on an agent: a 6 px move = carry, 500 ms = menu, a right-click = menu, a tap = select + poke;
+    - on the floor: a 4 px move = pan, a tap = walk;
+    - arrow keys / WASD (not while typing).
+  - **Vue:** the menu is emitted in viewport coordinates → `AgentRadialMenu.vue` (fixed; the backdrop must `@contextmenu.prevent` or the opening right-click closes it). Dashboard handles drop actions and the "Chat with X" chip.
+  - Gemini 013 styles them.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

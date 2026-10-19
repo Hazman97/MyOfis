@@ -367,6 +367,7 @@ describe("reactions table", () => {
       "artifact.created": [working, (o) => o.emit({ type: "artifact.created", payload: { kind: "pr", title: "#1" } }, meta)],
       "feature.released": [working, (o) => o.emit({ type: "feature.released", payload: { project_id: "p1", feature_log_id: "f1" } }, meta)],
       "draft.created": [working, (o) => o.emit({ type: "draft.created", payload: { draft_id: "d1", project_id: "p1", platform: "instagram", kind: "caption" } }, meta)],
+      "draft.decided": [() => {}, (o) => o.emit({ type: "draft.decided", payload: { draft_id: "d1", status: "approved" } }, { agent_id: qa.id })],
       "skill.proposed": [working, (o) => o.emit({ type: "skill.proposed", payload: { proposal_id: "sp1", name: "x", action: "create" } }, meta)],
       "budget.exceeded": [() => {}, (o) => o.emit({ type: "budget.exceeded", payload: { agent_id: qa.id, used: 2, budget: 1 } })],
       "agent.idle": [working, (o) => o.emit({ type: "agent.idle", payload: { agent_id: qa.id } })],
@@ -377,5 +378,86 @@ describe("reactions table", () => {
       expect([type, !!c]).toEqual([type, true]);
       check(type, c![0], c![1]);
     }
+  });
+});
+
+describe("playing with the agents", () => {
+  const settle = () => {
+    const o = new Office([qa, dev]);
+    o.run(12_000);
+    return o;
+  };
+
+  test("a poke makes the agent hop with an emote, then it goes back; too many pokes make it angry", () => {
+    const o = settle();
+    const before = o.char(qa.id)!;
+    expect(o.world.poke(qa.id)).toBe(true);
+    o.run(100);
+    expect(o.char(qa.id)).toMatchObject({ effect: "jump", bubble: "exclaim" });
+    expect(o.world.poke(qa.id)).toBe(false); // cooldown
+    o.run(2000);
+    expect(o.char(qa.id)).toMatchObject({ effect: null, x: before.x, y: before.y });
+    for (let i = 0; i < 3; i++) {
+      o.world.poke(qa.id);
+      o.run(400);
+    }
+    expect(o.char(qa.id)!.bubble).toBe("angry");
+  });
+
+  test("a real event wins over a poke (catch-up rule)", () => {
+    const o = settle();
+    o.world.poke(qa.id);
+    o.run(100);
+    o.job(qa.id, "j1");
+    o.start(qa.id, "r1", "j1");
+    o.run(CATCH_UP_MS);
+    expect(o.char(qa.id)!.effect).toBeNull();
+    expect(o.place(qa.id)).toMatch(/^desk-/);
+  });
+
+  test("carry and drop: the agent follows the pointer, is left alone by events, and acts on where it lands", () => {
+    const o = settle();
+    expect(o.world.grab(qa.id)).toBe(true);
+    o.world.holdAt(qa.id, 100, 100);
+    o.job(qa.id, "j1"); // an event while held does not move it
+    o.run(500);
+    expect(o.char(qa.id)).toMatchObject({ held: true, x: 100, y: 100 });
+    const meet = layout.zones.meeting_room!;
+    expect(o.world.drop(qa.id, meet.x + meet.w / 2, meet.y + meet.h / 2)).toBeNull();
+    o.run(CATCH_UP_MS);
+    expect(o.place(qa.id)).toMatch(/^meeting-/);
+    expect(o.char(qa.id)!.bubble).toBe("chat");
+    // whiteboard and the owner's desk ask the app to open a page
+    o.world.grab(qa.id);
+    const wb = layout.zones.whiteboard!;
+    expect(o.world.drop(qa.id, wb.x + wb.w / 2, wb.y + wb.h / 2)).toEqual({ open: "drafts" });
+    o.world.grab(dev.id);
+    const desk = layout.zones.owner_desk!;
+    expect(o.world.drop(dev.id, desk.x + desk.w / 2, desk.y + desk.h / 2)).toEqual({ open: "chat", agent: dev.id });
+  });
+
+  test("dropping one agent on another makes them chat", () => {
+    const o = settle();
+    const other = o.char(dev.id)!;
+    o.world.grab(qa.id);
+    o.world.drop(qa.id, other.x, other.y);
+    o.run(CATCH_UP_MS);
+    expect(o.char(qa.id)!.bubble).toBe("chat");
+    expect(o.char(dev.id)!.bubble).toBe("chat");
+  });
+
+  test("your own character walks where you tap, and the agent next to you turns to you", () => {
+    const o = settle();
+    o.world.setMe("Hazman");
+    const me = o.char("me")!;
+    expect(me).toMatchObject({ isMe: true, look: "boss", name: "Hazman" });
+    const target = o.char(qa.id)!;
+    o.world.meWalkTo(target.x + 16, target.y);
+    o.run(15_000);
+    expect(o.world.nearMe()).toBe(qa.id);
+    expect(o.char(qa.id)!.facing).toBe("right");
+    o.world.meStep("right");
+    o.run(2000);
+    expect(o.char("me")!.x).toBeGreaterThan(target.x + 16);
   });
 });

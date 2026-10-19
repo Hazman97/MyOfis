@@ -26,7 +26,7 @@ export const REACTIONS: Record<EventType, string | null> = {
   "artifact.created": "a new PR is pinned on the notice board (other artifacts: nothing)",
   "feature.released": "the agent who wrote the release note pins it on the notice board",
   "draft.created": "Marketing carries the draft to the whiteboard and pins it there",
-  "draft.decided": null, // the owner's decision happens in the drafts inbox; nothing moves in the office
+  "draft.decided": "approved or edited: the agent hops with a heart where it stands (rejected: nothing)",
   "draft.updated": null, // e.g. a video rendered again from the studio; the inbox reloads, nobody walks
   "skill.proposed": "the agent walks to the library and shelves the new skill",
   "skill.decided": null, // the owner decides in the Skills inbox; nothing moves in the office

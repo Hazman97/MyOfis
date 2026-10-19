@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import type { OfficeLayout, TiledMap } from "../map/tmj.ts";
-import type { CharacterSnapshot, OfficeWorld } from "../brain/world.ts";
-import { bubbleFrame, characterFrame, headTop, screenFrame } from "./frames.ts";
+import type { CharacterSnapshot, DropAction, OfficeWorld } from "../brain/world.ts";
+import { bodyOffset, bubbleFrame, characterFrame, headTop, screenFrame } from "./frames.ts";
 
 /**
  * The office view. Phaser only draws: every decision comes from OfficeWorld,
@@ -17,10 +17,23 @@ export interface OfficeGameOptions {
   onSelect(agentId: string | null): void;
   onApproval(agentId: string): void;
   selected(): string | null;
+  /**
+   * Playing with the agents (the live office only; Replay leaves it off): tap = poke,
+   * drag = carry, long-press / right-click = menu, tap the floor or arrow keys = walk your character.
+   */
+  interactive?: boolean;
+  /** Long-press / right-click on an agent: screen position inside the canvas. */
+  onMenu?(agentId: string, x: number, y: number): void;
+  /** A drop that should open something (Drafts, Chat). */
+  onAction?(action: NonNullable<DropAction>): void;
+  /** The agent next to your character changed (null = nobody). */
+  onNear?(agentId: string | null): void;
 }
 
 export interface OfficeGame {
   zoomBy(step: number): void;
+  /** Make an agent hop with an emote (from the menu). */
+  poke(agentId: string): void;
   /** Back to the fitted zoom, centred on the office. */
   recenter(): void;
   destroy(): void;
@@ -29,6 +42,25 @@ export interface OfficeGame {
 const D = { furniture: 2, props: 4, overhead: 100_000, bubble: 150_000, ui: 200_000 };
 const BACKGROUND = "#1b2622";
 const BLUR_FPS = 30;
+/** Pointer travel (screen px) before a press on an agent becomes a carry, or on the floor a pan. */
+const DRAG_PX = 6;
+const PAN_PX = 4;
+const LONG_PRESS_MS = 500;
+const KEYS: Record<string, "up" | "down" | "left" | "right"> = {
+  ArrowUp: "up", KeyW: "up", ArrowDown: "down", KeyS: "down", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right",
+};
+
+/** One press of the pointer: on an agent (maybe becoming a carry or a menu) or on the floor (maybe a pan). */
+interface Press {
+  agent: string | null;
+  onBubble: boolean;
+  x0: number;
+  y0: number;
+  carrying: boolean;
+  panning: boolean;
+  menu: boolean;
+  timer: Phaser.Time.TimerEvent | null;
+}
 
 interface CharSprites {
   body: Phaser.GameObjects.Image;
@@ -55,6 +87,8 @@ class OfficeScene extends Phaser.Scene {
   #zoom = 0; // 0 = fit
   #fitted = false;
   #dragging = false;
+  #press: Press | null = null;
+  #near: string | null = null;
 
   constructor() {
     super("office");
@@ -103,20 +137,84 @@ class OfficeScene extends Phaser.Scene {
       .setDepth(D.ui)
       .setVisible(false);
 
-    // empty space: deselect; drag pans when the office is bigger than the view
-    this.input.on("pointerdown", (_p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+    // pointer: a press on an agent can become a poke (tap), a carry (drag) or a menu (long-press /
+    // right-click); a press on the floor deselects and walks your character there, or pans the view
+    const play = !!this.#o.interactive;
+    if (play) this.input.mouse?.disableContextMenu();
+    this.input.on("pointerdown", (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.#dragging = false;
-      if (!over.length) this.#o.onSelect(null);
+      const hit = over.find((o) => o.getData("agent"));
+      const agent = (hit?.getData("agent") as string | undefined) ?? null;
+      const press: Press = { agent, onBubble: !!hit?.getData("bubble"), x0: p.x, y0: p.y, carrying: false, panning: false, menu: false, timer: null };
+      this.#press = press;
+      if (!agent) {
+        if (!over.length) this.#o.onSelect(null);
+        return;
+      }
+      if (!play || press.onBubble) return;
+      if (p.rightButtonDown()) {
+        press.menu = true;
+        this.#o.onMenu?.(agent, p.x, p.y);
+        return;
+      }
+      press.timer = this.time.delayedCall(LONG_PRESS_MS, () => {
+        if (this.#press !== press || press.carrying) return;
+        press.menu = true;
+        this.#o.onMenu?.(agent, p.x, p.y);
+      });
     });
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
-      if (!p.isDown) return;
+      const press = this.#press;
+      if (!p.isDown || !press) return;
+      const moved = Math.hypot(p.x - press.x0, p.y - press.y0);
+      if (press.agent && play && !press.onBubble && !press.menu) {
+        if (!press.carrying && moved > DRAG_PX) {
+          press.timer?.remove();
+          press.carrying = this.#o.world.grab(press.agent);
+        }
+        if (press.carrying) {
+          const w = this.cameras.main.getWorldPoint(p.x, p.y);
+          this.#o.world.holdAt(press.agent, w.x, w.y + 10); // the feet hang under the pointer
+          this.#dragging = true;
+          return;
+        }
+        if (moved <= DRAG_PX) return;
+      }
+      if (!press.panning && moved <= PAN_PX) return;
+      press.panning = true;
+      this.#dragging = true;
+      press.timer?.remove();
       const cam = this.cameras.main;
-      const dx = p.x - p.prevPosition.x;
-      const dy = p.y - p.prevPosition.y;
-      if (Math.abs(dx) + Math.abs(dy) > 0) this.#dragging = true;
-      cam.scrollX -= dx / cam.zoom;
-      cam.scrollY -= dy / cam.zoom;
+      cam.scrollX -= (p.x - p.prevPosition.x) / cam.zoom;
+      cam.scrollY -= (p.y - p.prevPosition.y) / cam.zoom;
     });
+    this.input.on("pointerup", (p: Phaser.Input.Pointer) => {
+      const press = this.#press;
+      this.#press = null;
+      if (!press) return;
+      press.timer?.remove();
+      const w = this.cameras.main.getWorldPoint(p.x, p.y);
+      if (press.carrying && press.agent) {
+        const action = this.#o.world.drop(press.agent, w.x, w.y + 10);
+        if (action) this.#o.onAction?.(action);
+        return;
+      }
+      if (press.panning || press.menu || press.onBubble) return;
+      if (press.agent) {
+        this.#o.onSelect(press.agent);
+        if (play) this.#o.world.poke(press.agent);
+      } else if (play) this.#o.world.meWalkTo(w.x, w.y);
+    });
+    // arrow keys / WASD walk your character (not while typing in a field)
+    if (play) {
+      this.input.keyboard?.on("keydown", (e: KeyboardEvent) => {
+        const dir = KEYS[e.code];
+        const el = document.activeElement as HTMLElement | null;
+        if (!dir || (el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)))) return;
+        e.preventDefault();
+        this.#o.world.meStep(dir);
+      });
+    }
 
     this.#fit();
     this.scale.on("resize", () => this.#fit());
@@ -174,8 +272,8 @@ class OfficeScene extends Phaser.Scene {
       seen.add(c.id);
       const s = this.#chars.get(c.id) ?? this.#makeChar(c);
       this.#drawChar(s, c, time);
-      if (c.id === selected || c.id === this.#hover) {
-        this.#label.setText(c.name).setPosition(Math.round(c.x), Math.round(c.y - headTop(c) - (c.bubble ? 15 : 1))).setVisible(true);
+      if (c.id === selected || c.id === this.#hover || (c.isMe && !this.#hover && !selected)) {
+        this.#label.setText(c.isMe ? `${c.name} (you)` : c.name).setPosition(Math.round(c.x), Math.round(c.y - headTop(c) - (c.bubble ? 15 : 1))).setVisible(true);
       }
       if (c.id === selected) this.#ring.setPosition(Math.round(c.x), Math.round(c.y - 1)).setDepth(c.y - 0.7).setVisible(c.alpha > 0);
     }
@@ -186,7 +284,12 @@ class OfficeScene extends Phaser.Scene {
       if (this.#hover === id) this.#hover = null;
     }
     if (!selected || !seen.has(selected)) this.#ring.setVisible(false);
-    if (!(selected && seen.has(selected)) && !(this.#hover && seen.has(this.#hover))) this.#label.setVisible(false);
+    const near = world.nearMe();
+    if (near !== this.#near) {
+      this.#near = near;
+      this.#o.onNear?.(near);
+    }
+    if (!(selected && seen.has(selected)) && !(this.#hover && seen.has(this.#hover)) && !seen.has("me")) this.#label.setVisible(false);
 
     const screens = world.screens();
     for (const [desk, img] of this.#screens) img.setFrame(screenFrame(screens.get(desk) ?? "off", time, desk));
@@ -205,12 +308,13 @@ class OfficeScene extends Phaser.Scene {
 
   #makeChar(c: CharacterSnapshot): CharSprites {
     const body = this.add.image(c.x, c.y, "chars", characterFrame(c, 0)).setOrigin(0.5, 1);
-    body.setInteractive({ useHandCursor: true });
     body.on("pointerover", () => (this.#hover = c.id));
     body.on("pointerout", () => this.#hover === c.id && (this.#hover = null));
-    body.on("pointerup", () => !this.#dragging && this.#o.onSelect(c.id));
+    // agents: taps, carries and menus are handled by the scene's pointer handlers (data "agent")
+    if (!c.isMe) body.setInteractive({ useHandCursor: true }).setData("agent", c.id);
+    else body.setInteractive();
     const bubble = this.add.image(0, 0, "props", "bubble/think1").setOrigin(0.5, 1).setDepth(D.bubble).setVisible(false);
-    bubble.setInteractive({ useHandCursor: true });
+    bubble.setInteractive({ useHandCursor: true }).setData("agent", c.id).setData("bubble", true);
     bubble.on("pointerup", () => {
       if (this.#dragging) return;
       const last = this.#chars.get(c.id)?.last;
@@ -231,10 +335,13 @@ class OfficeScene extends Phaser.Scene {
 
   #drawChar(s: CharSprites, c: CharacterSnapshot, time: number) {
     s.last = c;
+    const off = bodyOffset(c, time);
     const x = Math.round(c.x);
-    const y = Math.round(c.y);
-    s.body.setFrame(characterFrame(c, time)).setPosition(x, y).setDepth(c.y).setAlpha(c.alpha);
-    s.shadow.setPosition(x, y - 1).setDepth(c.y - 0.6).setAlpha(c.alpha).setVisible(!c.seated);
+    const floorY = Math.round(c.y);
+    const y = floorY + off.y;
+    // carried agents float above everything; the shadow stays on the floor
+    s.body.setFrame(characterFrame(c, time)).setPosition(x + off.x, y).setDepth(c.held ? D.ui - 1 : c.y).setAlpha(c.alpha);
+    s.shadow.setPosition(x, floorY - 1).setDepth(c.y - 0.6).setAlpha(c.alpha * (c.held ? 0.6 : 1)).setVisible(!c.seated);
 
     const top = y - headTop(c);
     const bubble = bubbleFrame(c, time);
@@ -281,6 +388,9 @@ export function createOfficeGame(parent: HTMLElement, options: OfficeGameOptions
   return {
     zoomBy(step) {
       (game.scene.getScene("office") as OfficeScene | null)?.zoomBy(step);
+    },
+    poke(agentId) {
+      options.world.poke(agentId);
     },
     recenter() {
       (game.scene.getScene("office") as OfficeScene | null)?.recenter();

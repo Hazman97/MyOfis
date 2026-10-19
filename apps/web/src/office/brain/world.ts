@@ -10,6 +10,7 @@ import {
   whereKey,
   type AgentInfo,
   type BubbleKind,
+  type Effect,
   type Intent,
   type Pose,
   type ScreenKind,
@@ -34,6 +35,19 @@ const RECONCILE_MS = 250;
 const MEETING_DEBOUNCE_MS = 3000;
 const CHAT_EVERY_MS = 7000;
 const CHAT_FOR_MS = 2600;
+// playing with the agents (owner request, 2026-10-19)
+const POKE_COOLDOWN_MS = 300;
+const POKE_WINDOW_MS = 6000;
+const POKES_TO_ANGRY = 4;
+const POKE_EMOTES: BubbleKind[] = ["exclaim", "heart", "note", "smile"];
+/** Feet within this many px of another agent = dropped on them. */
+const DROP_ON_AGENT_PX = 14;
+/** "Near" your own character: about two and a half tiles (furniture often keeps you a tile away). */
+const NEAR_PX = 40;
+export const ME_ID = "me";
+
+/** What a drop asks the app to do (opening pages is not the brain's job). */
+export type DropAction = { open: "drafts" } | { open: "chat"; agent: string } | null;
 
 export interface CharacterSnapshot {
   id: string;
@@ -47,9 +61,13 @@ export interface CharacterSnapshot {
   pose: Pose;
   bubble: BubbleKind | null;
   carrying: boolean;
-  effect: "dizzy" | null;
+  effect: Effect;
   alpha: number;
   needsApproval: boolean;
+  /** Being carried by the owner's pointer (drawn lifted, shadow on the floor). */
+  held: boolean;
+  /** Your own character (id "me"). */
+  isMe: boolean;
 }
 
 export type RackState = "on" | "off" | "error";
@@ -79,6 +97,8 @@ interface Char {
   planAt: number;
   planStep: number;
   firstArrivedAt: number | null;
+  held: boolean;
+  pokes: number[];
 }
 
 const T = 16;
@@ -104,6 +124,8 @@ export class OfficeWorld {
   #notes = 0;
   #racks: RackState[] = [];
   #lamp: LampState = "warn";
+  /** Your own character, walking where you tap (not an agent: reconcile never touches it). */
+  #me: Char | null = null;
 
   constructor(layout: OfficeLayout, looks?: readonly string[]) {
     this.layout = layout;
@@ -136,33 +158,40 @@ export class OfficeWorld {
     this.#t += dtMs;
     if (this.#state && this.#t - this.#lastReconcile >= RECONCILE_MS) this.#reconcile(false);
     for (const ch of this.#chars.values()) this.#tick(ch, dtMs);
+    if (this.#me) this.#tick(this.#me, dtMs);
     for (const [id, ch] of this.#chars) if (ch.phase === "gone") this.#chars.delete(id);
   }
 
   characters(): CharacterSnapshot[] {
     const chatting = this.#chatters();
-    return [...this.#chars.values()].map((ch) => {
+    const near = this.nearMe();
+    const all = [...this.#chars.values(), ...(this.#me ? [this.#me] : [])];
+    return all.map((ch) => {
       const step = ch.step;
       const at = ch.arrived && step;
       const seated = !!(at && ch.place && ch.place.kind !== "spot");
       let pose: Pose = at ? step.pose : "stand";
       if (seated && pose === "stand") pose = "sit";
       if (!seated && pose !== "hand") pose = "stand";
+      // the agent next to you turns to look at you
+      const facing = near === ch.id && this.#me && !seated && ch.arrived ? faceTowards(ch, this.#me) : ch.facing;
       return {
         id: ch.id,
         name: ch.name,
         look: ch.look,
         x: ch.x,
         y: ch.y,
-        facing: ch.facing,
-        moving: !ch.arrived,
-        seated,
-        pose,
-        bubble: at ? (chatting.has(ch.id) && !step.bubble ? "chat" : step.bubble) : null,
+        facing,
+        moving: !ch.arrived && !ch.held,
+        seated: seated && !ch.held,
+        pose: ch.held ? "stand" : pose,
+        bubble: ch.held ? "exclaim" : at ? (chatting.has(ch.id) && !step.bubble ? "chat" : step.bubble) : null,
         carrying: !!step?.carrying && !ch.arrived,
-        effect: at ? step.effect : null,
+        effect: at && !ch.held ? step.effect : null,
         alpha: ch.alpha,
-        needsApproval: ch.intent.bubble === "alert",
+        needsApproval: ch.id !== ME_ID && ch.intent.bubble === "alert",
+        held: ch.held,
+        isMe: ch.id === ME_ID,
       };
     });
   }
@@ -213,6 +242,172 @@ export class OfficeWorld {
       planAt: ch.planAt,
       firstArrivedAt: ch.firstArrivedAt,
     };
+  }
+
+  // ------------------------------------------------------------------ playing with the agents
+
+  /**
+   * Tap an agent: it hops with an emote, then goes back to what it was doing. Poke it too often
+   * and it gets angry. A real event still wins (it re-plans, catch-up rule). False = ignored.
+   */
+  poke(id: string): boolean {
+    const ch = this.#chars.get(id);
+    if (!ch || ch.phase !== "in" || ch.held || ch.intent.bubble === "alert") return false;
+    if (ch.pokes.length && this.#t - ch.pokes[ch.pokes.length - 1]! < POKE_COOLDOWN_MS) return false;
+    ch.pokes = [...ch.pokes.filter((at) => this.#t - at < POKE_WINDOW_MS), this.#t];
+    const angry = ch.pokes.length >= POKES_TO_ANGRY;
+    const bubble = angry ? "angry" : POKE_EMOTES[(ch.pokes.length - 1) % POKE_EMOTES.length]!;
+    this.#act(ch, [{ kind: "moment", target: { here: true }, pose: "stand", bubble, carrying: false, effect: "jump", hold: angry ? 2000 : 1200 }]);
+    return true;
+  }
+
+  /** Pick an agent up (it stops where it is and dangles from the pointer). */
+  grab(id: string): boolean {
+    const ch = this.#chars.get(id);
+    if (!ch || ch.phase !== "in") return false;
+    ch.held = true;
+    ch.path = [];
+    ch.arrived = true;
+    return true;
+  }
+
+  holdAt(id: string, x: number, y: number): void {
+    const ch = this.#chars.get(id);
+    if (!ch?.held) return;
+    ch.x = Math.max(0, Math.min(this.layout.width * T, x));
+    ch.y = Math.max(T, Math.min(this.layout.height * T, y));
+  }
+
+  /**
+   * Put a held agent down. Where it lands decides what it does for a few seconds before walking
+   * back to its work: pantry = coffee, meeting room = meeting, library = reading, on another agent
+   * = the two chat. The whiteboard and your desk also ask the app to open Drafts / Chat.
+   */
+  drop(id: string, x: number, y: number): DropAction {
+    const ch = this.#chars.get(id);
+    if (!ch?.held) return null;
+    ch.held = false;
+    const free = this.#path.nearestFree(Math.floor(x / T), Math.floor((y - 1) / T));
+    if (free) {
+      ch.x = free.x * T + T / 2;
+      ch.y = (free.y + 1) * T;
+    }
+    const step = (target: Step["target"], bubble: BubbleKind, hold: number, pose: Pose = "stand"): Step => ({ kind: "moment", target, pose, bubble, carrying: false, effect: null, hold });
+    const other = [...this.#chars.values()].find((o) => o !== ch && o.phase === "in" && !o.held && Math.hypot(o.x - x, o.y - y) <= DROP_ON_AGENT_PX);
+    if (other) {
+      const spot = this.#path.nearestFree(Math.floor(other.x / T) + 1, Math.floor((other.y - 1) / T));
+      const tile = spot ? { tx: spot.x, ty: spot.y, facing: (spot.x * T + T / 2 >= other.x ? "left" : "right") as Facing } : null;
+      this.#act(ch, [step(tile ? { tile } : { here: true }, "chat", 5000)]);
+      if (other.intent.bubble !== "alert") this.#act(other, [step({ here: true }, "chat", 5000)]);
+      return null;
+    }
+    switch (zoneAt(this.layout, x, y)) {
+      case "pantry":
+        this.#act(ch, [step(this.#places.has("pantry-coffee") ? { place: "pantry-coffee" } : { zone: "pantry" }, "coffee", 8000)]);
+        return null;
+      case "meeting_room":
+        this.#act(ch, [step({ zone: "meeting_room" }, "chat", 8000, "sit")]);
+        return null;
+      case "library":
+        this.#act(ch, [step({ zone: "library" }, "book", 5000)]);
+        return null;
+      case "whiteboard":
+        this.#act(ch, [step({ zone: "whiteboard" }, "exclaim", 2500)]);
+        return { open: "drafts" };
+      case "owner_desk":
+        this.#act(ch, [step({ here: true }, "chat", 2500)]);
+        return { open: "chat", agent: id };
+      default:
+        this.#act(ch, [step({ here: true }, "exclaim", 4000)]);
+        return null;
+    }
+  }
+
+  /** Show (or hide, with null) your own character, named after you. It starts next to the owner's desk. */
+  setMe(name: string | null): void {
+    if (!name) {
+      this.#me = null;
+      return;
+    }
+    if (this.#me) {
+      this.#me.name = name;
+      return;
+    }
+    const desk = this.#byZone.get("owner_desk")?.[0] ?? this.#byZone.get("entrance")?.[0];
+    const spot = desk ? this.#path.nearestFree(desk.tx, desk.ty + 1) : null;
+    const x = spot ? spot.x * T + T / 2 : (desk?.x ?? 0);
+    const y = spot ? (spot.y + 1) * T : (desk?.y ?? 0);
+    const intent: Intent = { present: true, target: { here: true }, pose: "stand", bubble: null, screen: "off" };
+    this.#me = {
+      id: ME_ID,
+      name,
+      look: "boss",
+      x,
+      y,
+      facing: "down",
+      path: [],
+      speed: BASE_SPEED * 1.3,
+      step: intentStep(intent),
+      queue: [],
+      arrived: true,
+      holdLeft: 0,
+      place: null,
+      claimed: null,
+      alpha: 1,
+      phase: "in",
+      intent,
+      where: "",
+      momentId: 0,
+      planAt: this.#t,
+      planStep: 0,
+      firstArrivedAt: this.#t,
+      held: false,
+      pokes: [],
+    };
+  }
+
+  /** Walk your character to a point (the nearest walkable tile). */
+  meWalkTo(x: number, y: number): void {
+    const me = this.#me;
+    if (!me) return;
+    const free = this.#path.nearestFree(Math.floor(x / T), Math.floor((y - 1) / T));
+    if (!free) return;
+    me.queue = [];
+    me.step = { kind: "steady", target: { tile: { tx: free.x, ty: free.y, facing: me.facing } }, pose: "stand", bubble: null, carrying: false, effect: null, hold: 0 };
+    const place = this.#resolve(me, me.step);
+    me.place = null; // you never sit down
+    me.path = place ? this.#route(me, place) : [];
+    me.speed = BASE_SPEED * 1.3;
+    me.arrived = !me.path.length;
+  }
+
+  /** One tile in a direction (arrow keys / WASD). */
+  meStep(dir: Facing): void {
+    const me = this.#me;
+    if (!me || !me.arrived) return;
+    const t = tileOf(me.x, me.y);
+    const [dx, dy] = dir === "up" ? [0, -1] : dir === "down" ? [0, 1] : dir === "left" ? [-1, 0] : [1, 0];
+    me.facing = dir;
+    if (!this.#path.isFree(t.x + dx, t.y + dy)) return;
+    this.meWalkTo((t.x + dx) * T + T / 2, (t.y + dy + 1) * T);
+  }
+
+  /** The agent standing next to your character (to chat with), or null. */
+  nearMe(): string | null {
+    const me = this.#me;
+    if (!me || !me.arrived) return null;
+    let best: { id: string; d: number } | null = null;
+    for (const ch of this.#chars.values()) {
+      if (ch.phase !== "in" || ch.held || ch.alpha < 1) continue;
+      const d = Math.hypot(ch.x - me.x, ch.y - me.y);
+      if (d <= NEAR_PX && (!best || d < best.d)) best = { id: ch.id, d };
+    }
+    return best?.id ?? null;
+  }
+
+  /** Do `steps` now, then go back to the steady intent (a later real event re-plans as usual). */
+  #act(ch: Char, steps: Step[]): void {
+    this.#plan(ch, [...steps, intentStep(ch.intent)]);
   }
 
   // ------------------------------------------------------------------ planning
@@ -266,6 +461,13 @@ export class OfficeWorld {
       ch.look = look;
       const moment = view?.moment;
       const where = whereKey(intent);
+      if (ch.held) {
+        // in the owner's hand: remember what changed, act on it when dropped
+        ch.intent = intent;
+        ch.where = where;
+        if (moment) ch.momentId = Math.max(ch.momentId, moment.event_id);
+        continue;
+      }
       if (moment && moment.event_id > ch.momentId) {
         ch.momentId = moment.event_id;
         const steps = first ? [] : momentSteps(moment, (slug) => this.#desks.get(slugToId.get(slug) ?? "") ?? null);
@@ -317,6 +519,8 @@ export class OfficeWorld {
       planAt: this.#t,
       planStep: 0,
       firstArrivedAt: this.#t,
+      held: false,
+      pokes: [],
     };
     this.#chars.set(agent.id, ch);
     if (instant) {
@@ -366,9 +570,10 @@ export class OfficeWorld {
     if ("place" in t) place = this.#places.get(t.place) ?? null;
     else if ("zone" in t) place = this.#pick(ch, t.zone);
     else if ("visit" in t) place = this.#visitSpot(t.visit);
+    else if ("tile" in t) place = { id: `tile-${t.tile.tx}-${t.tile.ty}`, kind: "spot", zone: "", facing: t.tile.facing, chair: "none", x: t.tile.tx * T + T / 2, y: (t.tile.ty + 1) * T, tx: t.tile.tx, ty: t.tile.ty };
     // leaving frees the old spot; a short visit keeps it (they come back)
     if (step.kind === "leave") this.#release(ch);
-    else if (place && !("visit" in t)) this.#claim(ch, place);
+    else if (place && !("visit" in t) && !("tile" in t)) this.#claim(ch, place);
     return place;
   }
 
@@ -434,7 +639,7 @@ export class OfficeWorld {
       }
       return;
     }
-    if (!ch.step) return;
+    if (!ch.step || ch.held) return;
     if (!ch.arrived) {
       let budget = (ch.speed * dt) / 1000;
       while (budget > 0 && ch.path.length) {
@@ -523,4 +728,20 @@ export function assignDesks(agents: AgentInfo[], layout: OfficeLayout): Map<stri
     free.delete(d.id);
   }
   return out;
+}
+
+/** Which named zone a point is in, or null. Zones can nest (the whiteboard is in the meeting room): the smallest wins. */
+export function zoneAt(layout: OfficeLayout, x: number, y: number): string | null {
+  let best: { name: string; area: number } | null = null;
+  for (const [name, z] of Object.entries(layout.zones)) {
+    if (x < z.x || x > z.x + z.w || y < z.y || y > z.y + z.h) continue;
+    if (!best || z.w * z.h < best.area) best = { name, area: z.w * z.h };
+  }
+  return best?.name ?? null;
+}
+
+function faceTowards(from: { x: number; y: number }, to: { x: number; y: number }): Facing {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
 }

@@ -7,6 +7,7 @@ import AgentAvatar from "../components/AgentAvatar.vue";
 import PageHeader from "../components/PageHeader.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 import AgentPanel from "../components/office/AgentPanel.vue";
+import AgentRadialMenu from "../components/office/AgentRadialMenu.vue";
 import { api } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { boardJobs, isChatJob } from "../jobs.ts";
@@ -41,6 +42,24 @@ watch(view, (v) => {
 });
 /** Agent whose panel is open (clicked in the office). */
 const inspected = ref<string | null>(null);
+
+// playing with the agents: radial menu (long-press / right-click), drops that open pages, and the
+// agent standing next to your own character
+const canvas = ref<{ poke(id: string): void } | null>(null);
+const menu = ref<{ id: string; x: number; y: number } | null>(null);
+const nearAgent = ref<string | null>(null);
+const nearName = computed(() => (nearAgent.value ? office.agentById[nearAgent.value]?.name : null));
+function onDrop(action: { open: "drafts" } | { open: "chat"; agent: string }) {
+  if (action.open === "drafts") void router.push("/drafts");
+  else {
+    const slug = office.agentById[action.agent]?.slug;
+    if (slug) void router.push({ path: "/chat", query: { agent: slug } });
+  }
+}
+function chatNear() {
+  const slug = nearAgent.value ? office.agentById[nearAgent.value]?.slug : null;
+  if (slug) void router.push({ path: "/chat", query: { agent: slug } });
+}
 
 const columns: { key: string; title: string; statuses: JobStatus[]; empty: string }[] = [
   { key: "queued", title: "Queued", statuses: ["queued"], empty: "Nothing waiting" },
@@ -167,13 +186,38 @@ async function cancel(j: JobView) {
         </button>
       </div>
       <p v-if="view === 'office'" class="text-xs text-muted flex items-center gap-1.5 max-sm:hidden">
-        <span class="size-1.5 rounded-full bg-accent animate-pulse" /> Click an agent to view logs · <span class="font-pixel text-signal">!</span> requires your decision
+        <span class="size-1.5 rounded-full bg-accent animate-pulse" /> Tap an agent (poke) · drag to move · hold for menu · tap the floor to walk · <span class="font-pixel text-signal">!</span> needs you
       </p>
     </div>
 
     <!-- Office View -->
-    <section v-if="view === 'office'" aria-label="Office">
-      <OfficeCanvas :selected="inspected" @select="inspected = $event" @approval="inspected = $event" />
+    <section v-if="view === 'office'" aria-label="Office" class="relative">
+      <OfficeCanvas
+        ref="canvas"
+        :selected="inspected"
+        @select="inspected = $event"
+        @approval="inspected = $event"
+        @menu="(id, x, y) => (menu = { id, x, y })"
+        @action="onDrop"
+        @near="nearAgent = $event"
+      />
+      <AgentRadialMenu
+        v-if="menu"
+        :agent-id="menu.id"
+        :x="menu.x"
+        :y="menu.y"
+        @close="menu = null"
+        @memory="(id) => (inspected = id)"
+        @poke="(id) => canvas?.poke(id)"
+      />
+      <button
+        v-if="nearName"
+        type="button"
+        class="btn btn-primary btn-sm absolute bottom-3 left-1/2 z-10 -translate-x-1/2 shadow-card"
+        @click="chatNear"
+      >
+        💬 Chat with {{ nearName }}
+      </button>
     </section>
 
     <!-- Team (Board View) -->

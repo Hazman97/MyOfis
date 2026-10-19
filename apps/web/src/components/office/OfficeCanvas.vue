@@ -5,7 +5,8 @@ import type { OfficeState } from "@agent-office/shared";
 import { useOffice } from "../../stores/office.ts";
 import { OFFICE_ASSETS, type CharacterManifest } from "../../office/assets.ts";
 import { parseOfficeMap, type TiledMap } from "../../office/map/tmj.ts";
-import { OfficeWorld } from "../../office/brain/world.ts";
+import { OfficeWorld, type DropAction } from "../../office/brain/world.ts";
+import { me } from "../../me.ts";
 import type { AgentInfo } from "../../office/brain/intent.ts";
 import type { OfficeGame } from "../../office/scene/game.ts";
 
@@ -14,7 +15,16 @@ import type { OfficeGame } from "../../office/scene/game.ts";
  * to it: clicks are reported up as `select` / `approval`.
  */
 const props = defineProps<{ selected: string | null }>();
-const emit = defineEmits<{ select: [id: string | null]; approval: [id: string] }>();
+const emit = defineEmits<{
+  select: [id: string | null];
+  approval: [id: string];
+  /** Long-press / right-click on an agent; x, y on the screen (viewport). */
+  menu: [id: string, x: number, y: number];
+  /** A drop that opens something (whiteboard → Drafts, your desk → Chat). */
+  action: [action: NonNullable<DropAction>];
+  /** The agent next to your character (null = nobody). */
+  near: [id: string | null];
+}>();
 const office = useOffice();
 const host = ref<HTMLDivElement>();
 const status = ref<"loading" | "ready" | "error">("loading");
@@ -56,6 +66,8 @@ onMounted(async () => {
     const chars = await getJson<CharacterManifest>(layout.assets.characters);
     if (disposed || !host.value) return;
     world = new OfficeWorld(layout, chars.meta.outfits);
+    // your own character, named after you
+    world.setMe(me.value?.name || me.value?.email?.split("@")[0] || "You");
     sync();
     game = mod.createOfficeGame(host.value, {
       map,
@@ -65,6 +77,14 @@ onMounted(async () => {
       onSelect: (id) => emit("select", id),
       onApproval: (id) => emit("approval", id),
       selected: () => props.selected,
+      interactive: true,
+      // screen (viewport) position, so the menu can sit exactly under the pointer
+      onMenu: (id, x, y) => {
+        const r = host.value?.getBoundingClientRect();
+        emit("menu", id, (r?.left ?? 0) + x, (r?.top ?? 0) + y);
+      },
+      onAction: (a) => emit("action", a),
+      onNear: (id) => emit("near", id),
     });
     status.value = "ready";
   } catch (e) {
@@ -74,6 +94,9 @@ onMounted(async () => {
 });
 
 watch(() => [office.state.last_event_id, office.agents, office.ready] as const, sync);
+
+/** For the radial menu's "Poke". */
+defineExpose({ poke: (id: string) => game?.poke(id) });
 
 onBeforeUnmount(() => {
   disposed = true;
