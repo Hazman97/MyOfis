@@ -4,10 +4,13 @@ import { MemoryOp } from "@agent-office/shared";
 import PageHeader from "../components/PageHeader.vue";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import SkillCatalog from "../components/SkillCatalog.vue";
-import { api, type Proposal, type Skill } from "../api/http.ts";
+import SkillAgents from "../components/SkillAgents.vue";
+import AgentSkillsMatrix from "../components/AgentSkillsMatrix.vue";
+import { api, type Proposal, type Skill, type SkillAssignments } from "../api/http.ts";
 import { compactDiff, lineDiff } from "../diff.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtTime } from "../format.ts";
+import { isOwner } from "../me.ts";
 import { AlertTriangle, BookOpen, ChevronRight, Clock, Sparkles, Trash2, Upload } from "lucide-vue-next";
 
 /**
@@ -24,10 +27,20 @@ const busy = ref<string | null>(null);
 const open = ref<string | null>(null); // skill name shown in full
 const importText = ref("");
 const importOpen = ref(false);
+const assignments = ref<SkillAssignments | null>(null);
 
 const pending = computed(() => proposals.value.filter((p) => p.status === "pending"));
 const decided = computed(() => proposals.value.filter((p) => p.status !== "pending"));
 const agentName = (id: string) => office.agentById[id]?.name ?? "Agent";
+
+async function loadAssignments() {
+  if (!isOwner.value) return;
+  try {
+    assignments.value = await api.skillAssignments();
+  } catch (e) {
+    console.warn("Failed to load skill assignments", e);
+  }
+}
 
 async function load() {
   error.value = "";
@@ -36,6 +49,7 @@ async function load() {
     proposals.value = p.proposals;
     skills.value = s.skills;
     writeApproval.value = m.write_approval;
+    await loadAssignments();
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -311,64 +325,83 @@ const title = (p: Proposal) =>
     <SkillCatalog v-else-if="tab === 'browse'" :installed="skills.map((s) => s.name)" @installed="load" />
 
     <!-- Skills library -->
-    <div v-else class="space-y-2.5">
-      <article v-for="s in skills" :key="s.name" class="card p-4 transition-all">
-        <div class="flex items-start gap-3">
-          <button
-            class="min-w-0 flex-1 text-left flex items-start gap-2.5 group cursor-pointer"
-            :aria-expanded="open === s.name"
-            @click="open = open === s.name ? null : s.name"
-          >
-            <ChevronRight
-              :size="15"
-              class="shrink-0 text-faint transition-transform duration-200 mt-1"
-              :class="open === s.name ? 'rotate-90 text-accent' : 'group-hover:text-muted'"
+    <div v-else class="space-y-4">
+      <!-- Skills per agent matrix (collapsible) -->
+      <AgentSkillsMatrix
+        v-if="isOwner && assignments"
+        :assignments="assignments"
+        @updated="loadAssignments"
+      />
+
+      <div class="space-y-2.5">
+        <article v-for="s in skills" :key="s.name" class="card p-4 transition-all">
+          <div class="flex items-start gap-3">
+            <button
+              class="min-w-0 flex-1 text-left flex items-start gap-2.5 group cursor-pointer"
+              :aria-expanded="open === s.name"
+              @click="open = open === s.name ? null : s.name"
+            >
+              <ChevronRight
+                :size="15"
+                class="shrink-0 text-faint transition-transform duration-200 mt-1"
+                :class="open === s.name ? 'rotate-90 text-accent' : 'group-hover:text-muted'"
+              />
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-mono text-xs font-semibold text-fg tracking-tight group-hover:text-accent transition-colors">
+                    {{ s.name }}
+                  </span>
+                  <span
+                    v-if="s.usage?.stale"
+                    class="chip border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold text-[10px]"
+                    :title="s.usage.stale"
+                  >
+                    Stale
+                  </span>
+                  <span v-if="s.usage?.stale" class="text-[11px] text-amber-500 font-medium">
+                    {{ s.usage.stale }}
+                  </span>
+                </div>
+                <div class="text-xs text-muted mt-0.5 leading-relaxed">{{ s.description }}</div>
+                <div v-if="s.usage" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                  <span>Used in {{ s.usage.runs }} runs</span>
+                  <span v-if="s.usage.last_used_at">· last used {{ fmtTime(s.usage.last_used_at) }}</span>
+                  <span v-else>· never used</span>
+                  <span
+                    v-if="s.usage.bad_runs > 0"
+                    class="chip border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold text-[10px] py-0 px-1.5"
+                  >
+                    {{ s.usage.bad_runs }} went badly
+                  </span>
+                </div>
+              </div>
+            </button>
+            <button
+              class="btn btn-ghost btn-sm size-7 p-0 text-faint hover:text-danger hover:bg-danger-soft opacity-60 hover:opacity-100 transition-all shrink-0"
+              :disabled="busy === `skill:${s.name}`"
+              :aria-label="`Delete skill ${s.name}`"
+              title="Delete skill"
+              @click="removeSkill(s.name)"
+            >
+              <Trash2 :size="13" />
+            </button>
+          </div>
+
+          <!-- Per-skill agent assignment -->
+          <div v-if="isOwner && assignments" class="mt-3.5 pt-3 border-t border-line/60">
+            <SkillAgents
+              :skill-name="s.name"
+              :assignments="assignments"
+              @updated="loadAssignments"
             />
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="font-mono text-xs font-semibold text-fg tracking-tight group-hover:text-accent transition-colors">
-                  {{ s.name }}
-                </span>
-                <span
-                  v-if="s.usage?.stale"
-                  class="chip border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold text-[10px]"
-                  :title="s.usage.stale"
-                >
-                  Stale
-                </span>
-                <span v-if="s.usage?.stale" class="text-[11px] text-amber-500 font-medium">
-                  {{ s.usage.stale }}
-                </span>
-              </div>
-              <div class="text-xs text-muted mt-0.5 leading-relaxed">{{ s.description }}</div>
-              <div v-if="s.usage" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-                <span>Used in {{ s.usage.runs }} runs</span>
-                <span v-if="s.usage.last_used_at">· last used {{ fmtTime(s.usage.last_used_at) }}</span>
-                <span v-else>· never used</span>
-                <span
-                  v-if="s.usage.bad_runs > 0"
-                  class="chip border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold text-[10px] py-0 px-1.5"
-                >
-                  {{ s.usage.bad_runs }} went badly
-                </span>
-              </div>
-            </div>
-          </button>
-          <button
-            class="btn btn-ghost btn-sm size-7 p-0 text-faint hover:text-danger hover:bg-danger-soft opacity-60 hover:opacity-100 transition-all shrink-0"
-            :disabled="busy === `skill:${s.name}`"
-            :aria-label="`Delete skill ${s.name}`"
-            title="Delete skill"
-            @click="removeSkill(s.name)"
-          >
-            <Trash2 :size="13" />
-          </button>
-        </div>
-        <pre
-          v-if="open === s.name"
-          class="mt-3 max-h-112 overflow-auto whitespace-pre-wrap rounded-xl border border-line bg-sunken/80 p-3.5 font-mono text-xs leading-relaxed text-fg shadow-inner"
-        >{{ s.content }}</pre>
-      </article>
+          </div>
+
+          <pre
+            v-if="open === s.name"
+            class="mt-3 max-h-112 overflow-auto whitespace-pre-wrap rounded-xl border border-line bg-sunken/80 p-3.5 font-mono text-xs leading-relaxed text-fg shadow-inner"
+          >{{ s.content }}</pre>
+        </article>
+      </div>
 
       <!-- Empty state: Skills library -->
       <div v-if="!skills.length" class="card border-dashed p-12 text-center flex flex-col items-center justify-center">
