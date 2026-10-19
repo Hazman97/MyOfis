@@ -53,7 +53,7 @@ export class Members {
     const wsId = newId("ws");
     const userId = newId("usr");
     this.hub.db.transaction((tx) => {
-      tx.insert(workspaces).values({ id: wsId, name: name || email }).run();
+      tx.insert(workspaces).values({ id: wsId, name: name || email, kind: "personal" }).run();
       tx.insert(users).values({ id: userId, email, name, role: "member", workspace_id: wsId }).run();
     });
     return this.#view(this.#user(userId));

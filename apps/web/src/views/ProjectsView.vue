@@ -6,6 +6,8 @@ import BriefPanel from "../components/BriefPanel.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SidePanel from "../components/SidePanel.vue";
 import { api } from "../api/http.ts";
+import MoveToRoom from "../components/MoveToRoom.vue";
+import { isOwner } from "../me.ts";
 
 const projects = ref<Project[]>([]);
 const editing = ref<string | null>(null); // project id, "new", or null
@@ -70,6 +72,7 @@ const host = (u: string) => {
           </button>
         </div>
 
+        <div v-if="isOwner" class="mt-2"><MoveToRoom kind="project" :id="p.id" /></div>
         <dl class="mt-3.5 space-y-2 text-xs">
           <!-- Live site -->
           <div class="flex min-w-0 items-center gap-2 rounded-lg border border-line/60 bg-surface-2/40 px-2.5 py-1.5">

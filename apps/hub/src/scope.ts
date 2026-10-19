@@ -1,7 +1,7 @@
-import { and, eq, inArray } from "drizzle-orm";
-import { OWNER_WORKSPACE, type Agent } from "@agent-office/shared";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { OWNER_WORKSPACE, dayKey, type Agent } from "@agent-office/shared";
 import type { Db } from "./db/client.ts";
-import { agentShares, agents, approvals, contentDrafts, jobs, projects, providers, runs, schedules, uploads } from "./db/schema.ts";
+import { agentShares, agents, approvals, contentDrafts, jobs, projects, providers, roomMembers, runs, schedules, uploads, workspaces } from "./db/schema.ts";
 import { HttpError, toAgent } from "./repo.ts";
 
 /**
@@ -99,4 +99,43 @@ export function ownProvider(db: Db, id: string, ws: string) {
 /** A provider by slug inside one workspace (agents name their provider by slug). */
 export function providerBySlug(db: Db, slug: string, ws: string) {
   return db.select().from(providers).where(and(eq(providers.slug, slug), eq(providers.workspace_id, ws))).get() ?? null;
+}
+
+// ---------------------------------------------------------------- rooms (2026-10-19)
+
+/** "hq" (the owner's main room), "room" (made by the owner, maybe shared), "personal" (a member's own). */
+export function roomOf(db: Db, ws: string) {
+  return db.select().from(workspaces).where(eq(workspaces.id, ws)).get() ?? null;
+}
+
+/** Whose AI providers a room's agents use: rooms the owner made run on the owner's AI; HQ and personal rooms on their own. */
+export function aiWorkspace(db: Db, ws: string): string {
+  return roomOf(db, ws)?.kind === "room" ? OWNER_WORKSPACE : ws;
+}
+
+/**
+ * Agents here may only use the safe member tool set: a member's personal room, or a room with
+ * members (friends can edit its agents, and they run on the owner's PC). The owner's private rooms
+ * and HQ keep every tool.
+ */
+export function restrictedWorkspace(db: Db, ws: string): boolean {
+  if (isOwnerWs(ws)) return false;
+  const room = roomOf(db, ws);
+  if (!room || room.kind === "personal") return true;
+  return !!db.select({ u: roomMembers.user_id }).from(roomMembers).where(eq(roomMembers.workspace_id, ws)).get();
+}
+
+/** Tokens a room ("room" kind, on the owner's AI) may still use today; null when it has no limit of its own. */
+export function roomBudgetLeft(db: Db, ws: string): number | null {
+  const room = roomOf(db, ws);
+  if (!room || room.kind !== "room") return null;
+  const since = new Date(`${dayKey(new Date().toISOString())}T00:00:00+08:00`).toISOString();
+  const used =
+    db
+      .select({ n: sql<number>`coalesce(sum(${runs.tokens_in} + ${runs.tokens_out}), 0)` })
+      .from(runs)
+      .innerJoin(jobs, eq(jobs.id, runs.job_id))
+      .where(and(eq(jobs.workspace_id, ws), sql`${runs.started_at} >= ${since}`))
+      .get()?.n ?? 0;
+  return Math.max(0, room.daily_token_budget - used);
 }

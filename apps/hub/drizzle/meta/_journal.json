@@ -71,6 +71,13 @@
       "when": 1792397603186,
       "tag": "0009_members",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792399227443,
+      "tag": "0010_rooms",
+      "breakpoints": true
     }
   ]
 }

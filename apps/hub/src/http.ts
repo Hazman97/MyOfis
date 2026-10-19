@@ -36,9 +36,11 @@ import { searchWeb } from "./websearch.ts";
 import { fileResponse } from "./uploads.ts";
 import { systemInfo } from "./systemInfo.ts";
 import { Members } from "./members.ts";
+import { Rooms } from "./rooms.ts";
 import {
   MEMBER_TOOLS,
   OWNER_WORKSPACE,
+  aiWorkspace,
   assertMemberTools,
   ownAgent,
   ownApproval,
@@ -106,6 +108,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   const publicOrigin = new URL(config.publicBaseUrl).origin;
   const pairLimit = limiter(20, 60_000);
   const members = new Members(hub);
+  const rooms = new Rooms(hub);
   const loginLimit = limiter(20, 60_000);
 
   app.onError((err, c) => {
@@ -346,13 +349,30 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.use("*", requireUser(auth));
   const W = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").workspace_id;
   const memberOf = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").role !== "owner";
-  for (const path of ["/settings/pause", "/settings/integrations", "/settings/integrations/*", "/backups", "/skills/catalog", "/skills/catalog/*", "/proposals", "/proposals/*", "/system", "/runners", "/runners/*", "/opencut", "/members", "/members/*"]) {
+  for (const path of ["/settings/pause", "/settings/integrations", "/settings/integrations/*", "/backups", "/skills/catalog", "/skills/catalog/*", "/proposals", "/proposals/*", "/system", "/runners", "/runners/*", "/opencut", "/members", "/members/*", "/rooms/*", "/agents/:id/move", "/projects/:id/move"]) {
     api.use(path, ownerOnly);
   }
 
   api.get("/auth/me", (c) => {
     const me = c.get("me");
-    return c.json({ ok: true, mode: auth.mode, email: me.email, name: me.name, role: me.role, workspace_id: me.workspace_id });
+    return c.json({ ok: true, mode: auth.mode, email: me.email, name: me.name, role: me.role, workspace_id: me.workspace_id, home_workspace_id: me.home_workspace_id });
+  });
+
+  // rooms: HQ, the owner's rooms (shared with friends), members' personal rooms
+  api.get("/rooms", (c) => c.json({ rooms: rooms.list(c.get("me")) }));
+  api.post("/rooms", async (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
+    return c.json({ room: rooms.create(await c.req.json()) }, 201);
+  });
+  api.patch("/rooms/:id", async (c) => c.json({ room: rooms.update(c.req.param("id"), await c.req.json()) }));
+  api.put("/rooms/:id/members", async (c) => c.json({ room: rooms.setMembers(c.req.param("id"), await c.req.json()) }));
+  api.post("/agents/:id/move", async (c) => {
+    rooms.moveAgent(c.req.param("id"), z.object({ workspace_id: z.string() }).parse(await c.req.json()).workspace_id);
+    return c.json({ ok: true });
+  });
+  api.post("/projects/:id/move", async (c) => {
+    rooms.moveProject(c.req.param("id"), z.object({ workspace_id: z.string() }).parse(await c.req.json()).workspace_id);
+    return c.json({ ok: true });
   });
 
   api.get("/state", (c) => c.json({ state: store.stateFor(W(c)) }));
@@ -468,7 +488,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   }
 
   function assertAgentRefs(provider: string | undefined, runnerId: string | null | undefined, ws: string) {
-    if (provider !== undefined && !getProviderBySlug(db, provider, ws)) throw new HttpError(400, `unknown provider "${provider}"`);
+    // a room the owner made uses the owner's providers
+    if (provider !== undefined && !getProviderBySlug(db, provider, aiWorkspace(db, ws))) throw new HttpError(400, `unknown provider "${provider}"`);
     if (runnerId && !getRunner(db, runnerId)) throw new HttpError(400, "unknown runner");
   }
 
@@ -885,12 +906,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
 
   // providers (each workspace has its own; a member's own agents use the member's keys)
   api.get("/providers/presets", (c) => c.json({ presets: PROVIDER_PRESETS }));
-  api.get("/providers", (c) =>
-    c.json({ providers: db.select().from(providers).where(eq(providers.workspace_id, W(c))).orderBy(providers.created_at).all().map(toProviderPublic) }),
-  );
+  api.get("/providers", (c) => {
+    // a room the owner made shows the owner's providers (its agents run on them); keys never leave the hub
+    const ws = aiWorkspace(db, W(c));
+    return c.json({ providers: db.select().from(providers).where(eq(providers.workspace_id, ws)).orderBy(providers.created_at).all().map(toProviderPublic), read_only: ws !== W(c) });
+  });
   api.post("/providers", async (c) => {
     const data = ProviderInput.parse(await c.req.json());
     const ws = W(c);
+    if (aiWorkspace(db, ws) !== ws) throw new HttpError(400, "this room runs on the owner's AI: add providers in HQ");
     if (getProviderBySlug(db, data.slug, ws)) throw new HttpError(409, "slug already used");
     if (data.kind === "openai_compatible" && !data.base_url) throw new HttpError(400, "base_url is required for OpenAI-compatible providers");
     if (memberOf(c) && data.kind === "mock") throw new HttpError(400, "the mock provider is for tests");

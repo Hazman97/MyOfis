@@ -18,12 +18,34 @@ const bool = (name: string) => integer(name, { mode: "boolean" });
 /** Whose data a row is (members, 2026-10-19). The owner's workspace is the fixed id "owner". */
 const ws = () => text("workspace_id").notNull().default("owner");
 
-/** One per person: the owner's ("owner") and one per invited member. */
+/**
+ * Rooms (owner request, 2026-10-19): "HQ" (id "owner", everything from before), rooms the owner
+ * makes for a sub-business ("Sewa Baju") and shares with friends, and each member's personal room.
+ * Agents in the owner's rooms run on the owner's AI, within the room's daily token limit.
+ */
 export const workspaces = sqliteTable("workspaces", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  kind: text("kind", { enum: ["hq", "room", "personal"] }).notNull().default("room"),
+  /** Tokens per day the room may use on the owner's AI ("room" kind). */
+  daily_token_budget: integer("daily_token_budget").notNull().default(200000),
   created_at: text("created_at").notNull().default(now),
 });
+
+/** Who (besides the owner, who sees every room) may enter a shared room. */
+export const roomMembers = sqliteTable(
+  "room_members",
+  {
+    workspace_id: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    user_id: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    created_at: text("created_at").notNull().default(now),
+  },
+  (t) => [primaryKey({ columns: [t.workspace_id, t.user_id] })],
+);
 
 /** People who may log in (Cloudflare Access email). The owner is created from OWNER_EMAIL. */
 export const users = sqliteTable("users", {

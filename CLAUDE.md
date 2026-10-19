@@ -188,6 +188,17 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - **Members:** `Members` (`members.ts`) handles invite, disable, shares and usage; owner routes are `/api/members*`. Web: `/members`, `me.ts` hides owner-only menus, shared agents are read-only.
   - The owner must also add each member's email to the Cloudflare Access policy.
   - Test: `apps/hub/test/members.test.ts` (cf-access JWTs, IDOR checks).
+- **Rooms** (owner request, same day; migration 0010). A workspace *is* a room. `workspaces.kind`:
+  - `hq`: id `owner`, everything from before;
+  - `room`: made by the owner for a sub-business, shareable through `room_members`;
+  - `personal`: a member's own room.
+
+  Rules:
+  - **Current room** = the `ao_room` cookie, checked in `enterRoom()` (`auth.ts`). The owner (admin) may enter every room, a member only their personal room and the rooms they belong to. It is a cookie so `<img>`, `<video>` and the WebSocket follow it; the web sets it in `me.ts enterRoom()` and reloads. `Identity.home_workspace_id` is the default room.
+  - **AI:** agents in a `room` use the **owner's** providers (`aiWorkspace()`) within `workspaces.daily_token_budget` (`roomBudgetLeft`, checked at dispatch and folded into `budget_left_tokens`). Providers cannot be added inside such a room. Personal rooms use the member's own keys.
+  - **Tools:** agents in personal rooms or in rooms with members get only `MEMBER_TOOLS` (`restrictedWorkspace()`); the owner's private rooms keep every tool. Members in a room may use and edit its agents and projects.
+  - **API:** `Rooms` (`rooms.ts`) handles `GET /api/rooms` (rooms you may enter), and owner-only `POST/PATCH /api/rooms`, `PUT /api/rooms/:id/members`, `POST /api/agents/:id/move` (schedules go with the agent) and `POST /api/projects/:id/move` (brief folder and drafts go with it). Moving an agent does not carry its HQ memory notes.
+  - **Web:** `RoomSwitcher` (sidebar and phone bar), `/rooms` (`RoomsView`) and `MoveToRoom` on agent and project cards. Gemini 011 polishes them.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

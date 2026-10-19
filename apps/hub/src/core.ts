@@ -21,7 +21,7 @@ import type { Backups } from "./backup.ts";
 import type { Publisher } from "./publisher.ts";
 import type { UploadParts } from "./uploads.ts";
 import type { Studio } from "./studio.ts";
-import { MEMBER_TOOLS, OWNER_WORKSPACE, shareOf, visibleAgents } from "./scope.ts";
+import { MEMBER_TOOLS, OWNER_WORKSPACE, aiWorkspace, restrictedWorkspace, roomBudgetLeft, shareOf, visibleAgents } from "./scope.ts";
 import type { OpencutWatch } from "./opencutWatch.ts";
 import type { Social } from "./social.ts";
 import type { Learning } from "./learning.ts";
@@ -154,7 +154,7 @@ export class Hub {
     // a workspace gives work to its own agents, or to agents the owner shared with it
     if (!agent || (agent.workspace_id !== workspaceId && !shareOf(this.db, agent.id, workspaceId))) throw new HttpError(404, "agent not found");
     if (!agent.enabled) throw new HttpError(409, "agent is disabled");
-    if (!getProviderBySlug(this.db, agent.provider, agent.workspace_id)) {
+    if (!getProviderBySlug(this.db, agent.provider, aiWorkspace(this.db, agent.workspace_id))) {
       throw new HttpError(409, `agent's provider "${agent.provider}" is not configured`);
     }
     if (data.project_id && !this.db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, data.project_id), eq(projects.workspace_id, workspaceId))).get()) {
@@ -504,7 +504,7 @@ Error: ${r.error}` : ""}` });
     this.#assignedAt.delete(runId);
 
     const agent = getAgent(this.db, run.agent_id);
-    const provider = agent ? getProviderBySlug(this.db, agent.provider, agent.workspace_id) : undefined;
+    const provider = agent ? getProviderBySlug(this.db, agent.provider, aiWorkspace(this.db, agent.workspace_id)) : undefined;
     const { cost_usd, cost_unknown } = computeCost({
       kind: provider?.kind ?? "mock",
       base_url: provider?.base_url ?? null,
@@ -954,6 +954,8 @@ Error: ${r.error}` : ""}` });
         if (!render && !this.#checkBudget(agent)) continue;
         // a shared agent working for a member: that member's daily limit too
         if (!render && job.workspace_id !== agent.workspace_id && (this.#shareLeft(agent.id, job.workspace_id) ?? 1) <= 0) continue;
+        // a room on the owner's AI: the room's daily limit
+        if (!render && (roomBudgetLeft(this.db, job.workspace_id) ?? 1) <= 0) continue;
         const conn = this.#pickRunner(agent.runner_id, load, render ? "ffmpeg" : null);
         if (!conn) continue;
         load.set(conn.runnerId, (load.get(conn.runnerId) ?? 0) + 1);
@@ -982,7 +984,7 @@ Error: ${r.error}` : ""}` });
 
   #startRun(conn: RunnerConn, job: typeof jobs.$inferSelect, agent: typeof agents.$inferSelect): void {
     const runId = newId("run");
-    const provider = getProviderBySlug(this.db, agent.provider, agent.workspace_id);
+    const provider = getProviderBySlug(this.db, agent.provider, aiWorkspace(this.db, agent.workspace_id));
     const meta = { run_id: runId, agent_id: agent.id };
     this.store.transact((tx, emit) => {
       tx.insert(runs)
@@ -998,7 +1000,8 @@ Error: ${r.error}` : ""}` });
     // the provider and key from the agent's (a shared agent runs on the owner's AI)
     const ws = job.workspace_id;
     const forMember = ws !== OWNER_WORKSPACE;
-    const memberAgent = agent.workspace_id !== OWNER_WORKSPACE;
+    // agents in a member's room or a shared room run with the safe tool set (they are on the owner's PC)
+    const memberAgent = restrictedWorkspace(this.db, agent.workspace_id);
     if (!render && (!provider || !provider.enabled)) {
       this.finishRun(runId, { status: "failed", error: `provider "${agent.provider}" is missing or disabled`, tokens_in: 0, tokens_out: 0 });
       return;
@@ -1050,7 +1053,7 @@ Error: ${r.error}` : ""}` });
       provider: provider ? { slug: provider.slug, kind: provider.kind, base_url: provider.base_url, api_key: apiKey } : { slug: "none", kind: "mock", base_url: null, api_key: null },
       gitea: tools.some((t) => NEEDS_GITEA.has(t)) || (config.runtime === "opencode" && !featureNote) ? this.#giteaForRun() : null,
       project_context: projectContext,
-      budget_left_tokens: forMember && agent.workspace_id !== ws ? this.#shareLeft(agent.id, ws) : this.#budgetLeft(agent),
+      budget_left_tokens: minLeft(forMember && agent.workspace_id !== ws ? this.#shareLeft(agent.id, ws) : this.#budgetLeft(agent), roomBudgetLeft(this.db, ws)),
       memory: { memory: this.learning.entries("memory", agent.id, ws), user: this.learning.entries("user", agent.id, ws) },
       memory_write_approval: forMember ? false : this.learning.writeApproval,
       skills: tools.some((t) => t.startsWith("skill")) ? this.learning.skills() : [],
@@ -1109,4 +1112,11 @@ Error: ${r.error}` : ""}` });
       }
     }
   }
+}
+
+/** The smaller of two optional limits (null = no limit). */
+function minLeft(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
 }

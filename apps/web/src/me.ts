@@ -5,7 +5,15 @@ export interface Me {
   email: string;
   name: string;
   role: "owner" | "member";
+  /** The room you are in now. */
   workspace_id: string;
+  home_workspace_id: string;
+}
+
+/** Enter another room: the choice lives in a cookie (so photos, videos and the live feed follow it), then reload. */
+export function enterRoom(id: string): void {
+  document.cookie = `ao_room=${encodeURIComponent(id)}; path=/; max-age=31536000; SameSite=Strict`;
+  location.assign("/");
 }
 
 export const me = ref<Me | null>(null);

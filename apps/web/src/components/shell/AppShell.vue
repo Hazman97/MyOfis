@@ -24,8 +24,10 @@ import {
   BookOpen,
   Cpu,
   Users,
+  DoorOpen,
 } from "lucide-vue-next";
 import BrandMark from "./BrandMark.vue";
+import RoomSwitcher from "../RoomSwitcher.vue";
 import { api } from "../../api/http.ts";
 import { resetAuthCheck } from "../../router.ts";
 import { useOffice } from "../../stores/office.ts";
@@ -103,6 +105,7 @@ const allGroups: { sign: string; items: NavItem[] }[] = [
     sign: "System",
     items: [
       { to: "/runners", label: "Runners", icon: Server, owner: true },
+      { to: "/rooms", label: "Rooms", icon: DoorOpen, owner: true },
       { to: "/members", label: "Members", icon: Users, owner: true },
       { to: "/settings", label: "Settings", icon: Settings2 },
       { to: "/system", label: "System", icon: Cpu, owner: true },
@@ -118,6 +121,7 @@ const allMore: NavItem[] = [
   { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/projects", label: "Projects", icon: FolderGit2 },
   { to: "/runners", label: "Runners", icon: Server, owner: true },
+  { to: "/rooms", label: "Rooms", icon: DoorOpen, owner: true },
   { to: "/members", label: "Members", icon: Users, owner: true },
   { to: "/settings", label: "Settings", icon: Settings2 },
   { to: "/system", label: "System", icon: Cpu, owner: true },
@@ -167,6 +171,7 @@ async function logout() {
           <component :is="isDark ? Sun : Moon" :size="15" />
         </button>
       </div>
+      <div class="px-3 pb-2"><RoomSwitcher /></div>
 
       <nav class="flex-1 space-y-5 overflow-y-auto px-3 py-2" aria-label="Main">
         <div v-for="g in groups" :key="g.sign">
@@ -218,7 +223,8 @@ async function logout() {
     <header
       class="sticky top-[env(safe-area-inset-top,0px)] z-20 flex items-center gap-2.5 border-b border-line bg-surface/95 px-4 py-2.5 backdrop-blur-md lg:hidden"
     >
-      <RouterLink to="/" class="flex items-center gap-2"><BrandMark :size="24" /><span class="font-semibold tracking-tight text-sm">Agent Office</span></RouterLink>
+      <RouterLink to="/" class="flex items-center gap-2"><BrandMark :size="24" /><span class="font-semibold tracking-tight text-sm max-sm:hidden">Agent Office</span></RouterLink>
+      <RoomSwitcher compact />
       <button
         class="btn btn-ghost btn-sm size-8 p-0 text-muted hover:text-fg ml-auto"
         :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"

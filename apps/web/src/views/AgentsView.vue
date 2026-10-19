@@ -10,6 +10,7 @@ import { api, type ToolInfo } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtTokens } from "../format.ts";
 import { isOwner } from "../me.ts";
+import MoveToRoom from "../components/MoveToRoom.vue";
 
 const office = useOffice();
 const providers = ref<ProviderPublic[]>([]);
@@ -193,6 +194,7 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
           </template>
           <span v-else class="chip text-[11px] text-info" title="The owner shared this agent with you: it runs on the owner's AI, within your daily limit">Shared with you</span>
         </div>
+        <div v-if="isOwner && !a.shared" class="mt-2"><MoveToRoom kind="agent" :id="a.id" /></div>
       </article>
 
       <!-- Empty state -->

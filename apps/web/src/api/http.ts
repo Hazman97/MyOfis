@@ -26,6 +26,19 @@ export interface ToolInfo {
   category: string;
 }
 
+/** HQ, a room the owner made (maybe shared with friends), or a member's personal room. */
+export interface Room {
+  id: string;
+  name: string;
+  kind: "hq" | "room" | "personal";
+  daily_token_budget: number;
+  left_today: number | null;
+  members: { id: string; email: string; name: string }[];
+  agents: number;
+  projects: number;
+  current: boolean;
+}
+
 /** A friend with their own workspace on the owner's MyOfis (Settings → Members). */
 export interface Member {
   id: string;
@@ -248,7 +261,13 @@ export const api = {
     return r;
   },
   authMode: () => request<{ mode: "local" | "cf-access" }>("/auth/mode"),
-  me: () => request<{ ok: true; mode: string; email: string; name: string; role: "owner" | "member"; workspace_id: string }>("/auth/me"),
+  me: () => request<{ ok: true; mode: string; email: string; name: string; role: "owner" | "member"; workspace_id: string; home_workspace_id: string }>("/auth/me"),
+  rooms: () => request<{ rooms: Room[] }>("/rooms"),
+  createRoom: (body: { name: string; daily_token_budget: number }) => request<{ room: Room }>("/rooms", { body }),
+  updateRoom: (id: string, body: { name?: string; daily_token_budget?: number }) => request<{ room: Room }>(`/rooms/${id}`, { method: "PATCH", body }),
+  setRoomMembers: (id: string, userIds: string[]) => request<{ room: Room }>(`/rooms/${id}/members`, { method: "PUT", body: { user_ids: userIds } }),
+  moveAgent: (id: string, workspaceId: string) => request<{ ok: true }>(`/agents/${id}/move`, { body: { workspace_id: workspaceId } }),
+  moveProject: (id: string, workspaceId: string) => request<{ ok: true }>(`/projects/${id}/move`, { body: { workspace_id: workspaceId } }),
   members: () => request<{ members: Member[] }>("/members"),
   inviteMember: (body: { email: string; name: string }) => request<{ member: Member }>("/members", { body }),
   updateMember: (id: string, body: { name?: string; disabled?: boolean }) => request<{ member: Member }>(`/members/${id}`, { method: "PATCH", body }),

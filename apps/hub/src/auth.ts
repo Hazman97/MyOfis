@@ -1,22 +1,42 @@
 import type { Context, MiddlewareHandler } from "hono";
-import { eq } from "drizzle-orm";
 import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
 import { OWNER_WORKSPACE, freshFetch } from "@agent-office/shared";
 import type { HubConfig } from "./env.ts";
 import { safeEqual, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
-import { users } from "./db/schema.ts";
+import { and, eq } from "drizzle-orm";
+import { roomMembers, users, workspaces } from "./db/schema.ts";
 
-/** Who is calling (members, 2026-10-19). The owner is always workspace "owner". */
+/** Who is calling (members, 2026-10-19), and which room they are in right now. */
 export interface Identity {
   user_id: string;
   email: string;
   name: string;
   role: "owner" | "member";
+  /** The room this request works in (cookie `ao_room`, checked); everything is scoped to it. */
   workspace_id: string;
+  /** Where they land by default: HQ for the owner, the personal room for a member. */
+  home_workspace_id: string;
 }
 
-const ownerIdentity = (email: string): Identity => ({ user_id: "owner", email, name: "Owner", role: "owner", workspace_id: OWNER_WORKSPACE });
+/** The web app remembers the chosen room in this cookie (also sent by <img>/<video> and the WebSocket). */
+export const ROOM_COOKIE = "ao_room";
+
+const ownerIdentity = (email: string): Identity => ({ user_id: "owner", email, name: "Owner", role: "owner", workspace_id: OWNER_WORKSPACE, home_workspace_id: OWNER_WORKSPACE });
+
+/**
+ * Enter the room named by the cookie when allowed: the owner (admin) may enter every room;
+ * a member their personal room and the rooms they were added to. Otherwise: their home room.
+ */
+export function enterRoom(db: Db, me: Identity, req: Request): Identity {
+  const wanted = readCookie(req.headers.get("cookie"), ROOM_COOKIE);
+  if (!wanted || wanted === me.home_workspace_id) return me;
+  const room = db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, wanted)).get();
+  if (!room) return me;
+  if (me.role === "owner") return { ...me, workspace_id: room.id };
+  const member = db.select().from(roomMembers).where(and(eq(roomMembers.workspace_id, room.id), eq(roomMembers.user_id, me.user_id))).get();
+  return member ? { ...me, workspace_id: room.id } : me;
+}
 
 export const SESSION_COOKIE = "ao_session";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -54,7 +74,7 @@ export function createAuthenticator(config: HubConfig, secrets: Secrets, db: Db)
     mode: "local",
     isOwner,
     async identify(req) {
-      return (await isOwner(req)) ? ownerIdentity(config.cfAccess.ownerEmail || "owner@local") : null;
+      return (await isOwner(req)) ? enterRoom(db, ownerIdentity(config.cfAccess.ownerEmail || "owner@local"), req) : null;
     },
     login(token) {
       if (!safeEqual(token, config.localAuthToken)) return null;
@@ -88,11 +108,11 @@ function cfAccessAuthenticator(config: HubConfig, db: Db): Authenticator {
     } catch {
       return null;
     }
-    if (email === owner) return ownerIdentity(email);
+    if (email === owner) return enterRoom(db, ownerIdentity(email), req);
     // a member the owner invited (Settings → Members); passing Cloudflare Access alone is not enough
     const u = db.select().from(users).where(eq(users.email, email)).get();
     if (!u || u.disabled || u.role !== "member") return null;
-    return { user_id: u.id, email: u.email, name: u.name, role: "member", workspace_id: u.workspace_id };
+    return enterRoom(db, { user_id: u.id, email: u.email, name: u.name, role: "member", workspace_id: u.workspace_id, home_workspace_id: u.workspace_id }, req);
   };
   return {
     mode: "cf-access",
