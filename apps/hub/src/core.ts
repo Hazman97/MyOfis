@@ -10,6 +10,7 @@ import {
   DIRECT_JOBS,
   type HubToRunner,
   type ContentDraft,
+  type Agent,
   type Job,
   type RunAssignment,
   type RunnerCapabilities,
@@ -68,6 +69,8 @@ export const TIMINGS = {
 const TERMINAL = new Set(["done", "failed", "cancelled"]);
 /** Tester -> Coder -> ... stops after this many hops (prevents ping-pong loops). */
 export const MAX_HANDOFF_DEPTH = 5;
+/** owner_feedback on drafts an agent posted without approval (counts toward its daily limit). */
+export const AUTO_PUBLISHED = "auto-published";
 /** A run that tries to save more drafts than this is stopped from flooding the inbox. */
 export const MAX_DRAFTS_PER_RUN = 30;
 /** Earlier chat messages sent along with a new one. */
@@ -799,14 +802,14 @@ Error: ${r.error}` : ""}` });
     const video = msg.meta?.video_upload_id ? this.publisher.upload(msg.meta.video_upload_id) : null;
     const attached = Array.isArray(job?.input.attachments) && (job.input.attachments as { id?: unknown }[]).some((a) => a.id === video?.id);
     const videoOk = !!video && (video.run_id === run.id || attached);
-    this.store.transact((tx, emit) => {
+    const saved = this.store.transact((tx, emit) => {
       tx.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
       if (refusal) {
         emit({ type: "agent.thinking", payload: { summary: `Draft not saved: ${refusal}` } }, meta);
-        return;
+        return null;
       }
       const featureId = typeof job?.input.feature_id === "string" ? job.input.feature_id : null;
-      this.content.insertDraft(tx, emit, {
+      return this.content.insertDraft(tx, emit, {
         project_id: msg.project_id,
         agent_id: run.agent_id,
         run_id: run.id,
@@ -819,6 +822,34 @@ Error: ${r.error}` : ""}` });
         feature_id: featureId,
       });
     });
+    // "Post without approval" (owner's switch per agent): approve and post it now
+    const agent = getAgent(this.db, run.agent_id);
+    if (saved && agent && toAgent(agent).config.auto_publish && job?.workspace_id === agent.workspace_id) void this.#autoPublish(saved.id, toAgent(agent), meta);
+  }
+
+  /** Set by the server: tells the owner (Telegram) how an auto-published draft went. */
+  onAutoPublish: ((draft: ContentDraft, agentName: string) => void) | null = null;
+
+  async #autoPublish(draftId: string, agent: Agent, meta: { run_id: string; agent_id: string }): Promise<void> {
+    const d = this.content.draft(draftId);
+    if (!d || !this.canPublish(d)) return;
+    const since = new Date(Date.now() - 86_400_000).toISOString();
+    const done = this.db
+      .select({ n: sql<number>`count(*)` })
+      .from(contentDrafts)
+      .where(and(eq(contentDrafts.agent_id, agent.id), eq(contentDrafts.owner_feedback, AUTO_PUBLISHED), sql`${contentDrafts.decided_at} >= ${since}`))
+      .get()?.n ?? 0;
+    if (done >= agent.config.auto_publish_daily_max) {
+      this.store.transact((_tx, emit) => emit({ type: "agent.thinking", payload: { summary: `Auto-post limit reached (${agent.config.auto_publish_daily_max} a day): this draft waits for approval` } }, meta));
+      return;
+    }
+    let out: ContentDraft;
+    try {
+      out = await this.afterApprove(this.content.decideDraft(draftId, { decision: "approve", feedback: AUTO_PUBLISHED }));
+    } catch (err) {
+      out = { ...(this.content.draft(draftId) ?? d), publish_error: (err as Error).message };
+    }
+    this.onAutoPublish?.(out, agent.name);
   }
 
   #featureNote(run: typeof runs.$inferSelect, msg: Extract<RunnerToHub, { type: "run.feature_note" }>): void {

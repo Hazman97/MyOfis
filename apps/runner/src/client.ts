@@ -297,6 +297,14 @@ export class RunnerClient {
 
   /** Send a finished video to the hub in parts (Cloudflare refuses bodies over 100 MB). */
   async #uploadVideo(runId: string, path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }> {
+    const body = await this.#putParts(runId, path, name, "video/mp4", {});
+    // how it was made, for the studio; a failure here only loses the "edit again" data
+    if (render) await this.#saveRender(runId, body.upload.id, render).catch((err) => this.#log(`render info not saved: ${(err as Error).message}`));
+    return { id: body.upload.id, size: body.upload.size };
+  }
+
+  /** Send a file to the hub in parts (Cloudflare refuses bodies over 100 MB). */
+  async #putParts(runId: string, path: string, name: string, type: string, extra: Record<string, string>) {
     const file = Bun.file(path);
     const total = file.size;
     const key = randomUUID().replace(/-/g, "");
@@ -304,22 +312,42 @@ export class RunnerClient {
     for (;;) {
       const part = new Uint8Array(await file.slice(offset, offset + UPLOAD_PART_BYTES).arrayBuffer());
       const url = new URL(`/api/runner/uploads/parts/${key}`, this.#opts.hubUrl);
-      for (const [k, v] of Object.entries({ run_id: runId, name, total: String(total), offset: String(offset) })) url.searchParams.set(k, v);
+      for (const [k, v] of Object.entries({ run_id: runId, name, total: String(total), offset: String(offset), ...extra })) url.searchParams.set(k, v);
       const res = await freshFetch(url, {
         method: "PUT",
         timeoutMs: 10 * 60_000,
-        headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "video/mp4" },
+        headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": type },
         body: part,
       });
-      const body = (await res.json().catch(() => ({}))) as { received?: number; upload?: { id: string; size: number }; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        received?: number;
+        upload?: { id: string; size: number };
+        attachment?: { id: string; name: string; content_type: string; number: number };
+        error?: string;
+      };
       if (!res.ok) throw new Error(`video upload failed (${res.status}): ${body.error ?? ""}`);
-      if (body.upload) {
-        // how it was made, for the studio; a failure here only loses the "edit again" data
-        if (render) await this.#saveRender(runId, body.upload.id, render).catch((err) => this.#log(`render info not saved: ${(err as Error).message}`));
-        return { id: body.upload.id, size: body.upload.size };
-      }
+      if (body.upload) return body as typeof body & { upload: { id: string; size: number } };
       offset = body.received ?? offset + part.length;
     }
+  }
+
+  /** A clip from the agent's clip folder: attach the copy the hub already has, else upload it once. */
+  async #clipAttach(runId: string, path: string, name: string, type: string, uploadId?: string | null) {
+    if (uploadId) {
+      const res = await freshFetch(new URL("/api/runner/clips/attach", this.#opts.hubUrl), {
+        method: "POST",
+        timeoutMs: 30_000,
+        headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ run_id: runId, upload_id: uploadId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { attachment?: { id: string; name: string; content_type: string; number: number }; error?: string };
+      if (res.ok && body.attachment) return body.attachment;
+      if (res.status !== 404) throw new Error(`clip attach failed (${res.status}): ${body.error ?? ""}`);
+      // the hub no longer has it (deleted, other room): upload again
+    }
+    const body = await this.#putParts(runId, path, name, type, { attach: "1" });
+    if (!body.attachment) throw new Error("the hub did not attach the clip");
+    return body.attachment;
   }
 
   async #saveRender(runId: string, uploadId: string, render: RenderInfo): Promise<void> {
@@ -439,6 +467,7 @@ export class RunnerClient {
         uploadVideo: (path, name, render) => this.#uploadVideo(a.run_id, path, name, render),
         projectData: (action, params) => this.#projectData(a.run_id, action, params),
         videoData: (action, params) => this.#videoData(a.run_id, action, params),
+        clipAttach: (path, name, type, uploadId) => this.#clipAttach(a.run_id, path, name, type, uploadId),
         siteData: (projectId, resource, params) => this.#siteData(a.run_id, projectId, resource, params),
         webPost: (action, draftId, edits) => this.#webPost(a.run_id, action, draftId, edits),
         consult: (toAgent, question, timeoutMs) => this.#consult(a.run_id, toAgent, question, timeoutMs, run.abort.signal),

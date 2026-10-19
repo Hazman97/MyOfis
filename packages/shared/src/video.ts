@@ -81,6 +81,14 @@ export const EditPlan = z.object({
   captions: z.array(Caption).max(40).default([]).describe("Text burned into the picture"),
   subtitles: Subtitles.nullable().default(null).describe("Burn in subtitles from the speech (needs video_transcribe first); null = none"),
   mute: z.boolean().default(false).describe("Drop the original sound"),
+  music: z
+    .object({
+      track: z.string().trim().min(1).max(200).regex(/^[^\\/:*?"<>|]+$/).describe("A file name from the clip folder's music list (clip_library)"),
+      volume_db: z.number().min(-40).max(6).default(-12).describe("Music loudness against the clip sound; with mute it is the only sound"),
+    })
+    .nullable()
+    .default(null)
+    .describe("Background music from the agent's music folder; null = none"),
   normalize_audio: z.boolean().default(true).describe("Even loudness (about -14 LUFS, what TikTok/YouTube expect)"),
   name: z.string().trim().min(1).max(60).regex(/^[\w\- ]+$/).default("edit").describe("Output file name, no extension"),
 });

@@ -32,6 +32,7 @@ const EnvSchema = z
     /** Tests point Facebook posting at a fake Graph API. */
     FACEBOOK_GRAPH_BASE: z.string().default("https://graph.facebook.com/v21.0"),
     THREADS_GRAPH_BASE: z.string().default("https://graph.threads.net/v1.0"),
+    ZERNIO_API_BASE: z.string().default("https://zernio.com/api/v1"),
     /** Tests point the OpenCut watcher at a fake GitHub API. */
     OPENCUT_API_BASE: z.string().default("https://api.github.com"),
     BACKUP_DIR: z.string().default("./data/backups"),
@@ -98,6 +99,7 @@ export interface HubConfig {
   webSearchApiBase: string;
   facebookGraphBase: string;
   threadsGraphBase: string;
+  zernioApiBase: string;
   telegramApiBase: string;
   seed: {
     anthropicApiKey: string;
@@ -143,6 +145,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     webSearchApiBase: e.WEB_SEARCH_API_BASE.replace(/\/$/, ""),
     facebookGraphBase: e.FACEBOOK_GRAPH_BASE.replace(/\/$/, ""),
     threadsGraphBase: e.THREADS_GRAPH_BASE.replace(/\/$/, ""),
+    zernioApiBase: e.ZERNIO_API_BASE.replace(/\/$/, ""),
     telegramApiBase: e.TELEGRAM_API_BASE.replace(/\/$/, ""),
     seed: {
       anthropicApiKey: e.ANTHROPIC_API_KEY,

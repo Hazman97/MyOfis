@@ -248,6 +248,25 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
     - `PUT /api/skills/:name/agents {agent_ids}`: exactly these agents. An agent on "all" that is left out gets a list without the skill; an agent with no skill tools counts as having none. Assigned agents get `skills_list` + `skill_view`.
     - `PUT /api/agents/:id/skills {skills}`.
   - **Saving:** an agent PATCH whose config lacks `skills` keeps the old value (the Agents form). Gemini 016 builds the UI on /skills.
+- **TikTok agent** (owner request, 2026-10-19; plan in `~/.claude/plans/pasted-content-id-923a-agent-mellow-parrot.md`).
+  - **Clip folder:** `AgentConfig.clip_folder` (absolute path on the runner PC, owner only). Tool `clip_library` (`packages/tools/src/clips.ts`): list / pick / use, with an index file `.myofis-clips.json` in the folder.
+  - **Clip descriptions:** three ffmpeg thumbnails → `ToolContext.describeImages` (runner `runtimes/vision.ts`, the run's own provider; tokens added to the run; mock → "").
+  - **Picked clips are attached to the running job:**
+    - `PUT /api/runner/uploads/parts/:key?attach=1` (owner clip, `run_id` null) or `POST /api/runner/clips/attach` (already uploaded);
+    - the hub appends them to `job.input.attachments`;
+    - the runner pushes them into `ctx.attachments`, so they are "video N".
+  - **Music:** `EditPlan.music {track, volume_db}` from `<clip_folder>/music`, looped + trimmed + faded and `amix`ed under the clip sound in `buildEditArgs`.
+  - **save_draft:** `video: "last"` = the newest render.
+  - **Bypass approval:** `AgentConfig.auto_publish` + `auto_publish_daily_max` (owner only).
+    - `#draft` → `#autoPublish`: decide approve with feedback `AUTO_PUBLISHED`, then `afterApprove`; counts use a rolling 24 h.
+    - `hub.onAutoPublish` → Telegram "📤". Over the limit, the draft stays pending as usual.
+  - **Zernio** (`Social`, `social.tiktok.<project>` = key_enc + account):
+    - posting: `GET /accounts?platform=tiktok`, presign → PUT → `POST /posts publishNow` with `tiktokSettings` (privacy from creator-info; consent flags true);
+    - **207 = failed**;
+    - the link comes later via `resolveTikTokLinks()` (pending in `settings` `tiktok.pending.<draft>`, run by the 1-minute timer, for up to 30 min);
+    - `checkTokens` warns when the account needs reconnecting;
+    - `ZERNIO_API_BASE` is for tests.
+  - **Agent and schedule:** agent `tiktok` (seeded **disabled**, skills `tiktok-captions-bm` + `short-video-editing`), schedule `tiktok_post` 20:00 (off). Built-in skill `tiktok-captions-bm`. Guide: docs/tiktok-agent.md. Gemini 017 builds the TikTok card + the Agents block.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

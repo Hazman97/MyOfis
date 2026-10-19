@@ -8,6 +8,7 @@ const TOOL_PROGRAMS: Record<string, string> = {
   video_probe: "ffmpeg",
   video_transcribe: "whisper",
   video_edit: "ffmpeg",
+  clip_library: "ffmpeg",
   git_clone: "git",
   git_status: "git",
   git_branch: "git",

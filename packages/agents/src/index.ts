@@ -6,6 +6,7 @@ import { researcherAgent } from "./researcher.ts";
 import { publisherAgent } from "./publisher.ts";
 import { SHORT_VIDEO_EDITING_SKILL, editorAgent, editorUpgrade } from "./editor.ts";
 import { ketuaAgent, ketuaSchedule } from "./ketua.ts";
+import { TIKTOK_CAPTIONS_SKILL, tiktokAgent, tiktokSchedule } from "./tiktok.ts";
 import { projectAssistantAgent, projectAssistantSchedule } from "./projectAssistant.ts";
 import { keraniAgent, keraniSchedule } from "./kerani.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
@@ -24,6 +25,7 @@ export { editorAgent, EDITOR_PROMPT, SHORT_VIDEO_EDITING_SKILL } from "./editor.
 export { ketuaAgent, ketuaSchedule, KETUA_PROMPT } from "./ketua.ts";
 export { projectAssistantAgent, projectAssistantSchedule, PROJECT_ASSISTANT_PROMPT } from "./projectAssistant.ts";
 export { keraniAgent, keraniSchedule, KERANI_PROMPT } from "./kerani.ts";
+export { tiktokAgent, tiktokSchedule, TIKTOK_PROMPT, TIKTOK_CAPTIONS_SKILL } from "./tiktok.ts";
 
 export interface BuiltinAgent {
   agent: AgentInput;
@@ -37,7 +39,10 @@ export interface BuiltinAgent {
 }
 
 /** SKILL.md files seeded once into the skills folder (the owner may edit or delete them). */
-export const BUILTIN_SKILLS: { name: string; content: string }[] = [{ name: "short-video-editing", content: SHORT_VIDEO_EDITING_SKILL }];
+export const BUILTIN_SKILLS: { name: string; content: string }[] = [
+  { name: "short-video-editing", content: SHORT_VIDEO_EDITING_SKILL },
+  { name: "tiktok-captions-bm", content: TIKTOK_CAPTIONS_SKILL },
+];
 
 /** Seeded on first boot by slug; never overwrites owner edits. */
 export const BUILTIN_AGENTS: BuiltinAgent[] = [
@@ -53,4 +58,5 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: editorAgent, needsLlm: true, upgrade: editorUpgrade },
   { agent: ketuaAgent, needsLlm: true, schedules: (id) => [ketuaSchedule(id)] },
   { agent: projectAssistantAgent, needsLlm: true, schedules: (id) => [projectAssistantSchedule(id)] },
+  { agent: tiktokAgent, needsLlm: true, schedules: (id) => [tiktokSchedule(id)] },
 ];

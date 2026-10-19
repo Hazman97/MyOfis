@@ -1,9 +1,12 @@
 import type { ToolContext } from "@agent-office/tools";
+import { describeImages } from "./vision.ts";
 import type { RunContext } from "./types.ts";
 
 /** The ToolContext our own tools run with, built from a run. Shared by every runtime. */
 export function makeToolContext(ctx: RunContext): ToolContext {
   const { agent } = ctx.assignment;
+  // clip_library adds files to this list while the run works
+  const attachments = attachmentsOf(ctx.assignment.job.input);
   return {
     workspace: ctx.workspace,
     config: agent.config,
@@ -30,7 +33,13 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     searchSessions: (q, all) => ctx.searchSessions(q, all),
     webSearch: (q, n) => ctx.webSearch(q, n),
     consult: (to, q, ms) => ctx.consult(to, q, ms),
-    attachments: attachmentsOf(ctx.assignment.job.input),
+    attachments,
+    clipAttach: async (path, name, type, uploadId) => {
+      const a = await ctx.clipAttach(path, name, type, uploadId);
+      if (!attachments.some((x) => x.id === a.id)) attachments.push({ id: a.id, name: a.name, content_type: a.content_type });
+      return { ...a, number: attachments.findIndex((x) => x.id === a.id) + 1 };
+    },
+    describeImages: (paths, prompt) => describeImages(ctx, paths, prompt),
     downloadAttachment: (id, dest) => ctx.downloadUpload(id, dest),
     uploadVideo: (path, name, render) => ctx.uploadVideo(path, name, render),
     renders: [],

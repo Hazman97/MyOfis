@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VIDEO_PRESETS } from "@agent-office/shared";
-import { EditPlan, TOOL_REGISTRY, buildEditArgs, captionsAss, parseProbe, parseSilences, parseWhisperJson, runTool } from "../src/index.ts";
+import { EditPlan, TOOL_REGISTRY, chooseClips, type ClipEntry, buildEditArgs, captionsAss, parseProbe, parseSilences, parseWhisperJson, runTool } from "../src/index.ts";
 import { makeCtx } from "./helpers.ts";
 
 const probe = { duration: 10, width: 1920, height: 1080, fps: 30, has_audio: true, video_codec: "h264", size_bytes: 1 };
@@ -147,4 +147,37 @@ test("silencedetect log becomes quiet stretches; an open one runs to the end", (
     { s: 0, e: 0.4 },
     { s: 10.79, e: 11.5 },
   ]);
+});
+
+describe("clip library and music", () => {
+  const clip = (file: string, extra: Partial<ClipEntry> = {}): ClipEntry => ({ file, size: 1, mtime: 1, seconds: 5, width: 1080, height: 1920, has_audio: false, description: "", upload_id: null, uses: 0, last_used: null, ...extra });
+  test("pick: fresh first, then theme words, then least used", () => {
+    const now = Date.parse("2026-10-19T12:00:00Z");
+    const list = [
+      clip("a.mp4", { description: "pantai waktu senja", uses: 3, last_used: "2026-10-18T10:00:00Z" }), // used yesterday
+      clip("b.mp4", { description: "jalan kampung pagi", uses: 2 }),
+      clip("c.mp4", { description: "pantai berombak", uses: 5 }),
+      clip("d.mp4", { description: "kota malam", uses: 0 }),
+    ];
+    const pick = (count: number, theme = "") => chooseClips(list, count, { theme, now, random: () => 0.5 }).map((c) => c.file);
+    expect(pick(1, "pantai tenang")).toEqual(["c.mp4"]); // a.mp4 matches too but was used yesterday
+    expect(pick(2)).toEqual(["d.mp4", "b.mp4"]);
+    expect(pick(4, "pantai")).toEqual(["c.mp4", "d.mp4", "b.mp4", "a.mp4"]);
+  });
+
+  test("music is looped, trimmed to the video, faded and mixed under the clip sound", () => {
+    const plan = EditPlan.parse({ clips: [{ video: 1, end: 4 }], music: { track: "calm.m4a", volume_db: -10 } });
+    const args = buildEditArgs(plan, [{ file: "in-1.mp4", probe }], "x264", "out.mp4", null, "C:/clips/music/calm.m4a");
+    expect(args.join(" ")).toContain("-stream_loop -1 -i C:/clips/music/calm.m4a");
+    const fc = args[args.indexOf("-filter_complex") + 1]!;
+    expect(fc).toContain("[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=duration=4,volume=-10dB,afade=t=out:st=2.5:d=1.5[mus]");
+    expect(fc).toContain("[ac][mus]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[am];[am]loudnorm");
+    // muted clip + music: the music is the sound, still evened
+    const muted = buildEditArgs(EditPlan.parse({ ...plan, mute: true }), [{ file: "in-1.mp4", probe }], "x264", "out.mp4", null, "m.m4a");
+    expect(muted[muted.indexOf("-filter_complex") + 1]).toContain("[am]loudnorm");
+    // a track name cannot leave the music folder
+    const backslash = String.fromCharCode(92);
+    expect(EditPlan.safeParse({ clips: [{ video: 1 }], music: { track: `..${backslash}secret.txt` } }).success).toBe(false);
+    expect(EditPlan.safeParse({ clips: [{ video: 1 }], music: { track: "../secret.txt" } }).success).toBe(false);
+  });
 });

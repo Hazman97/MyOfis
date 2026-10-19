@@ -94,6 +94,13 @@ export interface ToolContext {
   renders: { id: string; name: string; content_type: string }[];
   /** Project documents and log, through the hub (scoped to this job's room). */
   projectData(action: "search" | "read" | "summary" | "log_add" | "log_list" | "log_update", params: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Put a clip from the agent's clip folder on this job (clip_library): uploads it once (or reuses
+   * `uploadId` from an earlier day) and adds it to `attachments`; video tools then call it video `number`.
+   */
+  clipAttach(path: string, name: string, contentType: string, uploadId?: string | null): Promise<{ id: string; name: string; content_type: string; number: number }>;
+  /** Ask the run's own model what some pictures show (thumbnails of a clip). "" when the model cannot see. */
+  describeImages(paths: string[], prompt: string): Promise<string>;
   /** Video Studio data through the hub: a source video's transcript, and Editor's edit options. */
   videoData(action: "transcript_get" | "transcript_put" | "suggestions", params: Record<string, unknown>): Promise<unknown>;
   /** Data a project's website shares with Agent Office (Kerani: bookings). */

@@ -73,7 +73,7 @@ export function startHub(
   hub.uploadParts = new UploadParts(hub.publisher, config.filesDir);
   hub.studio = new Studio(hub);
   hub.docs = new Docs(db, hub.publisher);
-  hub.social = new Social(db, store, secrets, hub.publisher, config.facebookGraphBase, config.threadsGraphBase);
+  hub.social = new Social(db, store, secrets, hub.publisher, config.facebookGraphBase, config.threadsGraphBase, undefined, config.zernioApiBase);
   hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir, filesDir: config.filesDir });
   hub.boot();
   hub.backfillIndex();
@@ -230,11 +230,20 @@ export function startHub(
     telegram.notify(text).catch(() => {});
   }, opts.remindCheckMs ?? 15 * 60_000);
 
+  // drafts posted without approval ("Post without approval" agents): tell the owner how it went
+  hub.onAutoPublish = (d, agentName) => {
+    const head = d.publish_error ? `⚠️ ${agentName} could not post to ${d.platform}` : `📤 ${agentName} posted to ${d.platform}`;
+    const link = d.published_url?.startsWith("http") ? `\n${d.published_url}` : d.publish_error ? "" : "\n(the link arrives in a few minutes: Agent Office → Drafts)";
+    const text = `${head}: ${d.title}${link}\n\n${d.body.slice(0, 800)}${d.publish_error ? `\n\n${d.publish_error}\nPublish again from Agent Office → Drafts.` : ""}`;
+    telegram.notify(text).catch(() => {});
+  };
+
   // scheduled posts: approved drafts with a publish time go out when it comes (the owner hears how it went)
   let publishing = false;
   const publishTimer = setInterval(() => {
     if (publishing) return;
     publishing = true;
+    hub.social.resolveTikTokLinks().catch(() => {});
     hub
       .publishDue()
       .then((done) =>

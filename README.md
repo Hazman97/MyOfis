@@ -346,6 +346,16 @@ For heavier edits, **Edit fully in OpenCut**:
 
 The hub checks OpenCut's GitHub once a day and tells you on Telegram when it releases something new or its API plans change.
 
+## TikTok agent: your clips, posted every day
+
+Drop your own clips (scenery, walking, static shots) into a folder on the runner PC. The **TikTok** agent then:
+1. picks clips for a theme;
+2. cuts a 7–15 s vertical video with a hook text (and music from `music\`);
+3. writes a Bahasa Malaysia caption;
+4. posts it through **Zernio**. Connect it in Projects → Brief → TikTok.
+
+With **Post without approval** (Agents → TikTok, daily limit 1–15), it posts straight away and tells you on Telegram. Otherwise it waits in Drafts. A daily 20:00 schedule is ready, switched off. Guide: [docs/tiktok-agent.md](docs/tiktok-agent.md).
+
 ## Telegram as your office phone
 
 Message the bot like a colleague:

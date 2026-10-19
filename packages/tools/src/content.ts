@@ -118,7 +118,7 @@ export const saveDraftTool = defineTool({
     body: z.string().min(1).max(20_000).describe("The full draft, ready to paste"),
     self_check: SelfCheck,
     cover_photo: z.number().int().min(1).max(10).optional().describe("A photo the owner sent (1 = first file) to post with this caption, e.g. on Facebook"),
-    video: z.string().max(64).optional().describe("A video to post with this caption: a video_id from video_edit, or the id of a video the owner sent"),
+    video: z.string().max(64).optional().describe('A video to post with this caption: a video_id from video_edit, "last" (the newest video_edit render), or the id of a video the owner sent'),
   }),
   risk: () => "safe",
   describe: (i) => `save a ${i.platform} ${i.kind} draft: ${i.title}`,
@@ -141,7 +141,7 @@ export const saveDraftTool = defineTool({
     }
     let video: string | null = null;
     if (i.video) {
-      const v = [...ctx.renders, ...ctx.attachments].find((f) => f.id === i.video && f.content_type.startsWith("video/"));
+      const v = i.video === "last" ? ctx.renders.at(-1) : [...ctx.renders, ...ctx.attachments].find((f) => f.id === i.video && f.content_type.startsWith("video/"));
       if (!v) throw new ToolDenied(`unknown video "${i.video}": use the video_id that video_edit returned`);
       video = v.id;
     }

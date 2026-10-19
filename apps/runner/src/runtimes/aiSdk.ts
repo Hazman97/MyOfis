@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogle } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { visionUsage } from "./vision.ts";
 import { generateText, isStepCount, streamText, tool, type LanguageModel, type StopCondition, type ToolSet } from "ai";
 import { MARKETING_JOB_TYPES, MEMORY_LIMITS, freshFetchImpl, memoryPromptSection, preferencesPrompt, type ProviderRuntimeConfig } from "@agent-office/shared";
 import { TOOL_REGISTRY, runTool } from "@agent-office/tools";
@@ -230,7 +231,8 @@ export const aiSdkRuntime: AgentRuntime = {
     if (left !== null && (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) >= left) {
       ctx.emit({ type: "agent.thinking", payload: { summary: "Stopped early: today's token budget is used up." } });
     }
-    return { tokens_in: (usage.inputTokens ?? 0) + extraIn, tokens_out: (usage.outputTokens ?? 0) + extraOut };
+    const seen = visionUsage.get(ctx) ?? { in: 0, out: 0 };
+    return { tokens_in: (usage.inputTokens ?? 0) + extraIn + seen.in, tokens_out: (usage.outputTokens ?? 0) + extraOut + seen.out };
   },
 };
 

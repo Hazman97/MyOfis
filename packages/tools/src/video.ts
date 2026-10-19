@@ -81,7 +81,7 @@ export function clipLengths(plan: EditPlan, inputs: ClipInput[]): number[] {
 }
 
 /** The ffmpeg argv for an edit plan. `inputs[i]` is the file for `plan.clips[i]`. Runs with cwd = the media folder. */
-export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Encoder, out: string, captionsFile: string | null): string[] {
+export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Encoder, out: string, captionsFile: string | null, musicFile: string | null = null): string[] {
   const preset: VideoPreset = VIDEO_PRESETS[plan.preset];
   const { width: W, height: H } = preset;
   const lengths = clipLengths(plan, inputs);
@@ -89,6 +89,9 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
   plan.clips.forEach((c, i) => {
     args.push("-ss", String(c.start), "-t", String(round2(lengths[i]! * c.speed)), "-i", inputs[i]!.file);
   });
+  // background music: looped to cover the whole video (it is the input after the clips)
+  const music = musicFile && plan.music ? plan.music : null;
+  if (music) args.push("-stream_loop", "-1", "-i", musicFile!);
   const parts: string[] = [];
   const frame = (src: string, dst: string) => {
     if (plan.fit === "crop") return `${src}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${dst}`;
@@ -108,7 +111,16 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
   const n = plan.clips.length;
   parts.push(`${plan.clips.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${n}:v=1:a=1[vc][ac]`);
   parts.push(captionsFile ? `[vc]ass=${captionsFile}[vo]` : "[vc]null[vo]");
-  parts.push(plan.normalize_audio && !plan.mute ? "[ac]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[ao]" : "[ac]anull[ao]");
+  let sound = "[ac]";
+  if (music) {
+    const total = round2(lengths.reduce((a, b) => a + b, 0));
+    parts.push(
+      `[${n}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=duration=${total},volume=${music.volume_db}dB,afade=t=out:st=${Math.max(0, round2(total - 1.5))}:d=1.5[mus]`,
+    );
+    parts.push("[ac][mus]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[am]");
+    sound = "[am]";
+  }
+  parts.push(plan.normalize_audio && (!plan.mute || music) ? `${sound}loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[ao]` : `${sound}anull[ao]`);
   args.push("-filter_complex", parts.join(";"), "-map", "[vo]", "-map", "[ao]");
   const max = preset.max_mbps;
   const gop = String(plan.fps * 2);
@@ -170,7 +182,7 @@ interface Proc {
   log: string;
 }
 
-async function spawn(argv: string[], cwd: string, signal: AbortSignal, onStdout?: (chunk: string) => void, timeoutMs = 60 * 60_000): Promise<Proc> {
+export async function spawn(argv: string[], cwd: string, signal: AbortSignal, onStdout?: (chunk: string) => void, timeoutMs = 60 * 60_000): Promise<Proc> {
   let proc: ReturnType<typeof Bun.spawn>;
   try {
     proc = Bun.spawn(argv, { cwd, env: scrubbedEnv(), stdin: "ignore", stdout: "pipe", stderr: "pipe" });
@@ -199,7 +211,7 @@ async function spawn(argv: string[], cwd: string, signal: AbortSignal, onStdout?
   }
 }
 
-const ffmpegBin = () => Bun.which("ffmpeg");
+export const ffmpegBin = () => Bun.which("ffmpeg");
 const ffprobeBin = () => Bun.which("ffprobe");
 
 let nvencOk: boolean | null = null;
@@ -216,13 +228,13 @@ async function attachmentFile(ctx: ToolContext, n: number): Promise<{ file: stri
   return { file, name: a.name };
 }
 
-function mediaDir(ctx: ToolContext): string {
+export function mediaDir(ctx: ToolContext): string {
   const dir = join(ctx.workspace, "media");
   mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-async function probe(ctx: ToolContext, file: string): Promise<VideoProbe> {
+export async function probe(ctx: ToolContext, file: string): Promise<VideoProbe> {
   const bin = ffprobeBin();
   if (!bin) throw new ToolDenied("ffprobe is not installed on the runner PC (it comes with ffmpeg: ffmpeg.org). Tell the owner.");
   const r = await spawn([bin, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], mediaDir(ctx), ctx.signal, undefined, 60_000);
@@ -311,7 +323,13 @@ export const videoEditTool = defineTool({
         ctx.emit({ type: "agent.thinking", payload: { summary: `Rendering ${plan.preset}: ${last}%` } });
       }
     };
-    const render = (enc: Encoder) => spawn([bin, ...buildEditArgs(plan, inputs, enc, out, captionsFile)], dir, ctx.signal, onProgress);
+    let musicFile: string | null = null;
+    if (plan.music) {
+      const folder = ctx.config.clip_folder?.trim();
+      musicFile = folder ? join(folder, "music", plan.music.track) : null;
+      if (!musicFile || !existsSync(musicFile)) throw new ToolDenied(`no music track "${plan.music.track}": use a name from clip_library's music list, or music: null`);
+    }
+    const render = (enc: Encoder) => spawn([bin, ...buildEditArgs(plan, inputs, enc, out, captionsFile, musicFile)], dir, ctx.signal, onProgress);
     if (nvencOk === null) nvencOk = (await spawn([bin, "-hide_banner", "-encoders"], dir, ctx.signal, undefined, 30_000)).stdout.includes("h264_nvenc");
     let encoder: Encoder = nvencOk ? "nvenc" : "x264";
     let r = await render(encoder);

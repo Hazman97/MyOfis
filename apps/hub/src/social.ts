@@ -15,9 +15,11 @@ import type { Publisher } from "./publisher.ts";
  * - Instagram (Business/Creator account linked to that Page): uses the same Page token. Instagram
  *   only takes a photo by public URL, so the photo goes to the website's storage first.
  * - Threads: its own user token (Threads API). Text post, or photo by public URL.
+ * - TikTok: through Zernio (zernio.com, formerly getlate.dev), where the owner connects the TikTok
+ *   account; we keep its API key and which account to post to. Video posts only.
  * Tokens never reach the browser or runners.
  */
-export type SocialPlatform = "facebook" | "instagram" | "threads";
+export type SocialPlatform = "facebook" | "instagram" | "threads" | "tiktok";
 
 export const FacebookSettingsInput = z.object({
   page_id: z.string().regex(/^\d{5,30}$/).or(z.literal("")),
@@ -25,6 +27,27 @@ export const FacebookSettingsInput = z.object({
   token: z.string().max(1000).optional(),
 });
 export const ThreadsSettingsInput = z.object({ token: z.string().max(1000) });
+export const TikTokSettingsInput = z.object({
+  /** Write-only. Omit to keep, "" to remove. */
+  api_key: z.string().max(400).optional(),
+  account_id: z.string().max(100).nullable().optional(),
+});
+
+export interface TikTokAccount {
+  id: string;
+  username: string;
+  display_name: string;
+  followers: number | null;
+  needs_reconnection: boolean;
+}
+export interface TikTokPublic {
+  has_key: boolean;
+  key_hint: string | null;
+  account_id: string | null;
+  username: string | null;
+  display_name: string | null;
+  accounts: TikTokAccount[];
+}
 
 export interface FacebookPublic {
   page_id: string;
@@ -58,6 +81,24 @@ interface StoredIg {
   ig_user_id: string | null;
   username: string | null;
 }
+interface StoredTikTok {
+  key_enc: string | null;
+  key_hint: string | null;
+  account_id: string | null;
+  username: string | null;
+  display_name: string | null;
+  accounts: TikTokAccount[];
+}
+/** A TikTok post whose link is not known yet (TikTok gives the video id a few minutes later). */
+interface PendingTikTok {
+  draft_id: string;
+  project_id: string;
+  post_id: string;
+  since: string;
+}
+const TIKTOK_PENDING = "tiktok.pending.";
+const TIKTOK_RESOLVE_MS = 30 * 60_000;
+
 interface StoredThreads {
   token_enc: string | null;
   token_hint: string | null;
@@ -83,6 +124,7 @@ export class Social {
     private readonly graphBase = "https://graph.facebook.com/v21.0",
     private readonly threadsBase = "https://graph.threads.net/v1.0",
     private readonly readyDelayMs = 2000,
+    private readonly zernioBase = "https://zernio.com/api/v1",
   ) {}
 
   #read<T>(platform: SocialPlatform, projectId: string): T | null {
@@ -200,6 +242,86 @@ export class Social {
     return s?.token_enc && s.user_id ? { userId: s.user_id, token: this.secrets.decrypt(s.token_enc) } : null;
   }
 
+  // ---------------------------------------------------------------- TikTok (Zernio)
+
+  tiktok(projectId: string): TikTokPublic {
+    this.#project(projectId);
+    const s = this.#read<StoredTikTok>("tiktok", projectId);
+    return {
+      has_key: !!s?.key_enc,
+      key_hint: s?.key_hint ?? null,
+      account_id: s?.account_id ?? null,
+      username: s?.username ?? null,
+      display_name: s?.display_name ?? null,
+      accounts: s?.accounts ?? [],
+    };
+  }
+
+  /** Save the Zernio key ("" removes it) and/or pick the account; a new key lists the accounts at once. */
+  async setTikTok(projectId: string, input: z.input<typeof TikTokSettingsInput>): Promise<TikTokPublic> {
+    const data = TikTokSettingsInput.parse(input);
+    this.#project(projectId);
+    const prev = this.#read<StoredTikTok>("tiktok", projectId);
+    if (data.api_key === "") {
+      this.#write("tiktok", projectId, { key_enc: null, key_hint: null, account_id: null, username: null, display_name: null, accounts: [] } satisfies StoredTikTok);
+      return this.tiktok(projectId);
+    }
+    let s: StoredTikTok = prev ?? { key_enc: null, key_hint: null, account_id: null, username: null, display_name: null, accounts: [] };
+    if (data.api_key) {
+      const accounts = await this.#tiktokAccounts(data.api_key);
+      s = { ...s, key_enc: this.secrets.encrypt(data.api_key), key_hint: keyHint(data.api_key), accounts };
+      // keep the chosen account if it is still there; one account = choose it
+      if (!accounts.some((a) => a.id === s.account_id)) s.account_id = accounts.length === 1 ? accounts[0]!.id : null;
+    }
+    if (data.account_id !== undefined) {
+      if (data.account_id && !s.accounts.some((a) => a.id === data.account_id)) throw new HttpError(400, "that TikTok account is not connected in Zernio");
+      s.account_id = data.account_id;
+    }
+    const chosen = s.accounts.find((a) => a.id === s.account_id);
+    s.username = chosen?.username ?? null;
+    s.display_name = chosen?.display_name ?? null;
+    this.#write("tiktok", projectId, s);
+    return this.tiktok(projectId);
+  }
+
+  /** Ask Zernio again for the connected accounts (and whether they need reconnecting). */
+  async testTikTok(projectId: string): Promise<TikTokPublic> {
+    const s = this.#read<StoredTikTok>("tiktok", projectId);
+    if (!s?.key_enc) throw new HttpError(400, "paste the Zernio API key first");
+    const accounts = await this.#tiktokAccounts(this.secrets.decrypt(s.key_enc));
+    const chosen = accounts.find((a) => a.id === s.account_id);
+    this.#write("tiktok", projectId, { ...s, accounts, username: chosen?.username ?? null, display_name: chosen?.display_name ?? null, account_id: chosen ? s.account_id : accounts.length === 1 ? accounts[0]!.id : null });
+    return this.tiktok(projectId);
+  }
+
+  async #zernio<T>(apiKey: string, path: string, init: { method?: string; body?: unknown } = {}): Promise<{ status: number; body: T }> {
+    const res = await freshFetch(`${this.zernioBase}${path}`, {
+      timeoutMs: 60_000,
+      method: init.method ?? "GET",
+      headers: { authorization: `Bearer ${apiKey}`, ...(init.body !== undefined ? { "content-type": "application/json" } : {}) },
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    });
+    const body = (await res.json().catch(() => null)) as (T & { error?: string | { message?: string }; message?: string }) | null;
+    if (!res.ok) {
+      const e = body?.error;
+      throw new HttpError(res.status === 429 ? 429 : 400, `Zernio: ${(typeof e === "string" ? e : e?.message) ?? body?.message ?? `HTTP ${res.status}`}`);
+    }
+    return { status: res.status, body: body as T };
+  }
+
+  async #tiktokAccounts(apiKey: string): Promise<TikTokAccount[]> {
+    type Acc = { _id: string; platform: string; username?: string; displayName?: string; followersCount?: number; needsReconnection?: boolean; isActive?: boolean };
+    const { body } = await this.#zernio<{ accounts?: Acc[] }>(apiKey, "/accounts?platform=tiktok&limit=100");
+    return (body.accounts ?? [])
+      .filter((a) => a.platform === "tiktok")
+      .map((a) => ({ id: a._id, username: a.username ?? "", display_name: a.displayName ?? a.username ?? "", followers: a.followersCount ?? null, needs_reconnection: !!a.needsReconnection || a.isActive === false }));
+  }
+
+  #tt(projectId: string): { apiKey: string; accountId: string } | null {
+    const s = this.#read<StoredTikTok>("tiktok", projectId);
+    return s?.key_enc && s.account_id ? { apiKey: this.secrets.decrypt(s.key_enc), accountId: s.account_id } : null;
+  }
+
   // ---------------------------------------------------------------- token health
 
   /**
@@ -239,6 +361,16 @@ export class Social {
             `${name}: the Threads token could not be renewed (${(err as Error).message})${left !== null ? `; it stops working in ${Math.max(0, left)} day(s)` : ""}. Paste a new long-lived token in Projects → ${name} → Website → Instagram & Threads.`,
           );
         }
+      } else if (platform === "tiktok") {
+        const cfg = this.#tt(projectId);
+        if (!cfg) continue;
+        try {
+          const acc = (await this.#tiktokAccounts(cfg.apiKey)).find((a) => a.id === cfg.accountId);
+          if (!acc) problems.push(`${name}: the TikTok account is no longer connected in Zernio. Connect it again in Zernio, then press Test in Projects → ${name} → TikTok.`);
+          else if (acc.needs_reconnection) problems.push(`${name}: TikTok @${acc.username} needs reconnecting in Zernio, so TikTok posts will fail until you do.`);
+        } catch (err) {
+          problems.push(`${name}: could not reach Zernio for TikTok (${(err as Error).message}).`);
+        }
       } else if (platform === "facebook") {
         const cfg = this.#fb(projectId);
         if (!cfg) continue;
@@ -261,12 +393,13 @@ export class Social {
       return !!(ig?.enabled && ig.ig_user_id && this.#fb(projectId));
     }
     if (platform === "threads") return !!this.#threads(projectId);
+    if (platform === "tiktok") return !!this.#tt(projectId);
     return false;
   }
 
   /** Which platforms approving a caption posts to, for this project (agents see this list). */
   connected(projectId: string): SocialPlatform[] {
-    return (["facebook", "instagram", "threads"] as const).filter((p) => this.configured(p, projectId));
+    return (["facebook", "instagram", "threads", "tiktok"] as const).filter((p) => this.configured(p, projectId));
   }
 
   // ---------------------------------------------------------------- posting
@@ -302,6 +435,7 @@ export class Social {
     if (row.platform === "facebook") return this.postToFacebook(draftId);
     if (row.platform === "instagram") return this.postToInstagram(draftId);
     if (row.platform === "threads") return this.postToThreads(draftId);
+    if (row.platform === "tiktok") return this.postToTikTok(draftId);
     throw new HttpError(400, `${row.platform} is not connected for posting`);
   }
 
@@ -363,6 +497,91 @@ export class Social {
     } catch (err) {
       return this.#finish(draftId, row.agent_id, null, `Instagram: ${(err as Error).message}`);
     }
+  }
+
+  /** TikTok via Zernio: presign → upload the video → create the post (publish now). The link comes later. */
+  async postToTikTok(draftId: string) {
+    const row = this.#draft(draftId, "tiktok");
+    try {
+      const cfg = this.#tt(row.project_id);
+      if (!cfg) throw new Error("TikTok is not connected for this project (Projects → TikTok: Zernio key + account)");
+      const videoId = (row.meta as { video_upload_id?: string } | null)?.video_upload_id;
+      const f = videoId ? this.publisher.uploadFile(videoId) : null;
+      if (!f) throw new Error("TikTok posts need a video: this draft has none");
+      const size = Bun.file(f.file).size;
+      const { body: pre } = await this.#zernio<{ uploadUrl: string; publicUrl: string }>(cfg.apiKey, "/media/presign", {
+        method: "POST",
+        body: { filename: f.row.name.replace(/[^\w.\- ]+/g, "_") || "video.mp4", contentType: f.row.content_type, size },
+      });
+      const put = await freshFetch(pre.uploadUrl, { method: "PUT", timeoutMs: 30 * 60_000, headers: { "content-type": f.row.content_type }, body: Bun.file(f.file) });
+      if (!put.ok) throw new Error(`video upload to Zernio failed (HTTP ${put.status})`);
+      // privacy: public when TikTok allows it for this creator, else the first level it offers
+      const info = await this.#zernio<{ privacyLevels?: { value: string }[] }>(cfg.apiKey, `/accounts/${encodeURIComponent(cfg.accountId)}/tiktok/creator-info`).catch(() => null);
+      const levels = info?.body.privacyLevels?.map((l) => l.value) ?? [];
+      const privacy = !levels.length || levels.includes("PUBLIC_TO_EVERYONE") ? "PUBLIC_TO_EVERYONE" : levels[0]!;
+      type PostOut = { post?: { _id?: string; status?: string; platforms?: { status?: string; platformPostUrl?: string | null; errorMessage?: string }[] } };
+      const { status, body } = await this.#zernio<PostOut>(cfg.apiKey, "/posts", {
+        method: "POST",
+        body: {
+          content: row.body.slice(0, 2200),
+          mediaItems: [{ type: "video", url: pre.publicUrl }],
+          platforms: [{ platform: "tiktok", accountId: cfg.accountId }],
+          publishNow: true,
+          tiktokSettings: {
+            privacy_level: privacy,
+            allow_comment: true,
+            allow_duet: true,
+            allow_stitch: true,
+            content_preview_confirmed: true,
+            express_consent_given: true,
+            video_cover_timestamp_ms: 1000,
+          },
+        },
+      });
+      const plat = body.post?.platforms?.[0];
+      // 207 = Zernio accepted the request but the post failed
+      if (status === 207 || body.post?.status === "failed" || plat?.status === "failed") throw new Error(plat?.errorMessage ?? "TikTok refused the post");
+      if (body.post?._id && !plat?.platformPostUrl) {
+        const pending: PendingTikTok = { draft_id: draftId, project_id: row.project_id, post_id: body.post._id, since: new Date().toISOString() };
+        this.db.insert(settings).values({ key: `${TIKTOK_PENDING}${draftId}`, value: pending }).onConflictDoUpdate({ target: settings.key, set: { value: pending } }).run();
+      }
+      return this.#finish(draftId, row.agent_id, plat?.platformPostUrl ?? "posted", null);
+    } catch (err) {
+      return this.#finish(draftId, row.agent_id, null, `TikTok: ${(err as Error).message}`);
+    }
+  }
+
+  /** Fill in TikTok links that were not known at posting time (run every minute; gives up after 30 min). */
+  async resolveTikTokLinks(now = new Date()): Promise<{ draft_id: string; url: string }[]> {
+    const done: { draft_id: string; url: string }[] = [];
+    for (const row of this.db.select().from(settings).all().filter((r) => r.key.startsWith(TIKTOK_PENDING))) {
+      const p = row.value as PendingTikTok;
+      const drop = () => this.db.delete(settings).where(eq(settings.key, row.key)).run();
+      if (now.getTime() - Date.parse(p.since) > TIKTOK_RESOLVE_MS) {
+        drop();
+        continue;
+      }
+      const cfg = this.#tt(p.project_id);
+      if (!cfg) {
+        drop();
+        continue;
+      }
+      try {
+        const { body } = await this.#zernio<{ post?: { platforms?: { platformPostUrl?: string | null; status?: string; errorMessage?: string }[] } }>(cfg.apiKey, `/posts/${encodeURIComponent(p.post_id)}`);
+        const plat = body.post?.platforms?.[0];
+        if (plat?.status === "failed") {
+          this.db.update(contentDrafts).set({ status: "approved", published_url: null, publish_error: `TikTok: ${plat.errorMessage ?? "the post failed"}`.slice(0, 500) }).where(eq(contentDrafts.id, p.draft_id)).run();
+          drop();
+        } else if (plat?.platformPostUrl) {
+          this.db.update(contentDrafts).set({ published_url: plat.platformPostUrl }).where(eq(contentDrafts.id, p.draft_id)).run();
+          done.push({ draft_id: p.draft_id, url: plat.platformPostUrl });
+          drop();
+        }
+      } catch {
+        /* try again next minute */
+      }
+    }
+    return done;
   }
 
   async postToThreads(draftId: string) {

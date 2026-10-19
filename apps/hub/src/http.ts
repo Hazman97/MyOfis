@@ -328,12 +328,45 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const q = partQuery.parse(c.req.query());
     const run = getRun(db, q.run_id ?? "");
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
-    if (!getAgent(db, run.agent_id)?.tools.includes("video_edit")) throw new HttpError(403, "this agent may not upload videos");
+    const tools = getAgent(db, run.agent_id)?.tools ?? [];
+    if (!tools.includes(q.attach ? "clip_library" : "video_edit")) throw new HttpError(403, "this agent may not upload videos");
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
     const ws = getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
-    const r = hub.uploadParts.put(`run:${run.id}`, c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c), run.id, ws);
-    return c.json({ received: r.received, total: r.total, ...(r.upload ? { upload: publicUpload(r.upload) } : {}) }, r.upload ? 201 : 200);
+    // a library clip is the owner's own video (no run_id); a render belongs to the run that made it
+    const r = hub.uploadParts.put(`run:${run.id}`, c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c), q.attach ? null : run.id, ws);
+    const attachment = r.upload && q.attach ? attachToJob(run.job_id, r.upload) : undefined;
+    return c.json({ received: r.received, total: r.total, ...(r.upload ? { upload: publicUpload(r.upload) } : {}), ...(attachment ? { attachment } : {}) }, r.upload ? 201 : 200);
   });
+
+  /** A library clip that is already on the hub (uploaded on an earlier day): attach it to this job. */
+  app.post("/api/runner/clips/attach", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const body = z.object({ run_id: z.string(), upload_id: z.string().max(64) }).parse(await c.req.json());
+    const run = getRun(db, body.run_id);
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+    if (!getAgent(db, run.agent_id)?.tools.includes("clip_library")) throw new HttpError(403, "this agent has no clip library");
+    const job = getJob(db, run.job_id);
+    const up = hub.publisher.upload(body.upload_id);
+    // only the owner's own videos of the same room (never another run's render or a photo)
+    if (!up || up.run_id || up.workspace_id !== (job?.workspace_id ?? OWNER_WORKSPACE) || !up.content_type.startsWith("video/") || !hub.publisher.uploadFile(up.id)) throw new HttpError(404, "upload not found");
+    return c.json({ attachment: attachToJob(run.job_id, up) });
+  });
+
+  /** Add a file to a running job's attachments (clip library): video tools refer to it as the next number. */
+  function attachToJob(jobId: string, up: { id: string; name: string; content_type: string }) {
+    const job = getJob(db, jobId);
+    if (!job) throw new HttpError(404, "job not found");
+    const files = (Array.isArray(job.input.attachments) ? job.input.attachments : []) as { id: string; name: string; content_type: string }[];
+    const have = files.findIndex((a) => a.id === up.id);
+    if (have >= 0) return { ...files[have]!, number: have + 1 };
+    if (files.length >= 10) throw new HttpError(400, "a job can use at most 10 files");
+    const attachment = { id: up.id, name: up.name, content_type: up.content_type };
+    db.update(jobs).set({ input: { ...job.input, attachments: [...files, attachment] } }).where(eq(jobs.id, jobId)).run();
+    return { ...attachment, number: files.length + 1 };
+  }
 
   /** Runner changes or takes down a live post (update_web_post / take_down_web_post, after the owner's approval). */
   app.post("/api/runner/web-post", async (c) => {
@@ -555,9 +588,12 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   }
 
   /** Members' agents run on the owner's PC: safe tools only, the AI SDK runtime, no pinned runner. */
-  function assertMemberAgent(tools: string[], config: { runtime?: string } | undefined, runnerId: string | null | undefined) {
+  function assertMemberAgent(tools: string[], config: { runtime?: string; auto_publish?: boolean; clip_folder?: string } | undefined, runnerId: string | null | undefined) {
     assertMemberTools(tools);
     if (config?.runtime === "opencode") throw new HttpError(400, "the OpenCode runtime is for the owner's agents only");
+    // posting without approval and folders on the owner's PC are the owner's to switch on
+    if (config?.auto_publish) throw new HttpError(400, "only the owner can let an agent post without approval");
+    if (config?.clip_folder) throw new HttpError(400, "clip folders are on the owner's PC: owner only");
     if (runnerId) throw new HttpError(400, "members cannot pick a runner");
   }
 
@@ -723,12 +759,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     // "Publish now / again": a website post goes to its site, a Facebook caption to the Page
     if (hub.content.draft(c.req.param("id"))?.publish_at) hub.content.clearSchedule(c.req.param("id"));
     const d = hub.content.draft(c.req.param("id"));
-    if (d && d.kind !== "web_post" && ["facebook", "instagram", "threads"].includes(d.platform)) return c.json({ draft: await hub.social.post(d.id) });
+    if (d && d.kind !== "web_post" && ["facebook", "instagram", "threads", "tiktok"].includes(d.platform)) return c.json({ draft: await hub.social.post(d.id) });
     return c.json({ draft: await hub.publisher.publish(c.req.param("id")) });
   });
   api.get("/projects/:id/facebook", (c) => c.json({ facebook: hub.social.facebook(c.req.param("id")) }));
   api.put("/projects/:id/facebook", async (c) => c.json({ facebook: hub.social.setFacebook(c.req.param("id"), await c.req.json()) }));
   api.post("/projects/:id/facebook/test", async (c) => c.json({ facebook: await hub.social.testFacebook(c.req.param("id")) }));
+  api.get("/projects/:id/tiktok", (c) => c.json({ tiktok: hub.social.tiktok(c.req.param("id")) }));
+  api.put("/projects/:id/tiktok", async (c) => c.json({ tiktok: await hub.social.setTikTok(c.req.param("id"), await c.req.json()) }));
+  api.post("/projects/:id/tiktok/test", async (c) => c.json({ tiktok: await hub.social.testTikTok(c.req.param("id")) }));
   api.get("/projects/:id/instagram", (c) => c.json({ instagram: hub.social.instagram(c.req.param("id")) }));
   api.post("/projects/:id/instagram/connect", async (c) => c.json({ instagram: await hub.social.connectInstagram(c.req.param("id")) }));
   api.put("/projects/:id/instagram", async (c) => {
@@ -1146,6 +1185,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
 
 const partQuery = z.object({
   run_id: z.string().optional(),
+  /** "1": a clip from the agent's clip folder (the owner's own video): attached to the job, not a render. */
+  attach: z.literal("1").optional(),
   name: z.string().max(200).default("video.mp4"),
   total: z.coerce.number().int().positive(),
   offset: z.coerce.number().int().min(0),

@@ -58,6 +58,12 @@ export function makeCtx(
     renders: [],
     projectData: async () => ({}),
     videoData: async () => ({ transcript: null }),
+    clipAttach: async (_p, name, content_type) => {
+      const a = { id: `upl_clip${ctx.attachments.length + 1}`, name, content_type };
+      ctx.attachments.push(a);
+      return { ...a, number: ctx.attachments.length };
+    },
+    describeImages: async () => "",
     siteData: async () => ({}),
     webPost: async () => ({}),
   };
