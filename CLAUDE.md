@@ -267,6 +267,11 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
     - `checkTokens` warns when the account needs reconnecting;
     - `ZERNIO_API_BASE` is for tests.
   - **Agent and schedule:** agent `tiktok` (seeded **disabled**, skills `tiktok-captions-bm` + `short-video-editing`), schedule `tiktok_post` 20:00 (off). Built-in skill `tiktok-captions-bm`. Guide: docs/tiktok-agent.md. Gemini 017 builds the TikTok card + the Agents block.
+- **Motion in renders** (owner: "less static, still automatic").
+  - **Ken Burns zoom:** `Clip.zoom` in/out = 12 % zoom with `scale=…:eval=frame,crop`.
+  - **Transitions:** `EditPlan.transition {type, seconds}` = xfade (fade/dissolve/slideleft/zoomin) + acrossfade. Each cut overlaps, so use `finishedSeconds` / `transitionSeconds` (shared); `subtitleCues` accounts for the overlap.
+  - **Caption animation:** `Caption.animation` = fade/pop as ASS tags (`ad`, `	` scale).
+  - Tested with a real render. Prompt upgrades: Editor V2 and TikTok V1 are replaced when unedited. Gemini 018 adds the studio controls.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

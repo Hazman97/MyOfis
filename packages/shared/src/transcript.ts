@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EditPlan, type Clip } from "./video.ts";
+import { EditPlan, transitionSeconds, type Clip } from "./video.ts";
 
 /**
  * Speech in a video, word by word (whisper.cpp on the runner PC). Editor reads it to suggest
@@ -123,7 +123,7 @@ export interface SubtitleCue {
  * the clip lands and its speed. `transcripts[n]` is the transcript of file n (1-based), when known.
  */
 export function subtitleCues(
-  plan: Pick<EditPlan, "clips" | "subtitles">,
+  plan: Pick<EditPlan, "clips" | "subtitles"> & Partial<Pick<EditPlan, "transition">>,
   transcripts: Record<number, Transcript | undefined>,
   durations: Record<number, number> = {},
 ): SubtitleCue[] {
@@ -131,6 +131,9 @@ export function subtitleCues(
   if (!sub) return [];
   const per = sub.style === "pop" ? 2 : 6;
   const cues: SubtitleCue[] = [];
+  // with transitions every cut overlaps the clips, so later clips start earlier
+  const lengths = plan.clips.map((c) => Math.max(0, (c.end ?? durations[c.video] ?? transcripts[c.video]?.duration ?? c.start) - c.start) / c.speed);
+  const overlap = plan.transition ? transitionSeconds({ transition: plan.transition }, lengths) : 0;
   let offset = 0;
   for (const c of plan.clips) {
     const t = transcripts[c.video];
@@ -151,7 +154,7 @@ export function subtitleCues(
       cue.push({ ...x, s: Math.max(x.s, c.start), e: Math.min(x.e, end) });
     }
     push();
-    offset += Math.max(0, end - c.start) / c.speed;
+    offset += Math.max(0, end - c.start) / c.speed - overlap;
   }
   return cues;
 }

@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { z } from "zod";
 import {
   EditPlan,
+  finishedSeconds,
+  transitionSeconds,
   EditSuggestionsInput,
   Transcript,
   VIDEO_PRESETS,
@@ -101,7 +103,13 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
   };
   plan.clips.forEach((c, i) => {
     parts.push(frame(`[${i}:v]setpts=(PTS-STARTPTS)/${c.speed},`, `[f${i}]`));
-    parts.push(`[f${i}]setsar=1,fps=${plan.fps},format=yuv420p[v${i}]`);
+    if (c.zoom === "none") parts.push(`[f${i}]setsar=1,fps=${plan.fps},format=yuv420p[v${i}]`);
+    else {
+      // Ken Burns: grow (or shrink) the picture by 12 % over the clip, centred, frame by frame
+      const L = Math.max(0.1, lengths[i]!);
+      const grow = c.zoom === "in" ? `t/${L}` : `(1-t/${L})`;
+      parts.push(`[f${i}]fps=${plan.fps},scale=w='trunc(${W}*(1+${ZOOM}*${grow})/2)*2':h=-2:eval=frame,crop=${W}:${H},setsar=1,format=yuv420p[v${i}]`);
+    }
     if (inputs[i]!.probe.has_audio && !plan.mute) {
       parts.push(`[${i}:a]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo${c.speed !== 1 ? `,atempo=${c.speed}` : ""}[a${i}]`);
     } else {
@@ -109,11 +117,25 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
     }
   });
   const n = plan.clips.length;
-  parts.push(`${plan.clips.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${n}:v=1:a=1[vc][ac]`);
+  const T = round2(transitionSeconds(plan, lengths));
+  if (T > 0) {
+    // transitions: each cut overlaps the clips by T (video xfade, sound crossfade)
+    let v = "[v0]";
+    let a = "[a0]";
+    let at = 0;
+    for (let i = 1; i < n; i++) {
+      at = round2(at + lengths[i - 1]! - T);
+      const last = i === n - 1;
+      parts.push(`${v}[v${i}]xfade=transition=${XFADE[plan.transition.type]}:duration=${T}:offset=${at}${last ? "[vc]" : `[x${i}]`}`);
+      parts.push(`${a}[a${i}]acrossfade=d=${T}:c1=tri:c2=tri${last ? "[ac]" : `[y${i}]`}`);
+      v = `[x${i}]`;
+      a = `[y${i}]`;
+    }
+  } else parts.push(`${plan.clips.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${n}:v=1:a=1[vc][ac]`);
   parts.push(captionsFile ? `[vc]ass=${captionsFile}[vo]` : "[vc]null[vo]");
   let sound = "[ac]";
   if (music) {
-    const total = round2(lengths.reduce((a, b) => a + b, 0));
+    const total = finishedSeconds(plan, lengths);
     parts.push(
       `[${n}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=duration=${total},volume=${music.volume_db}dB,afade=t=out:st=${Math.max(0, round2(total - 1.5))}:d=1.5[mus]`,
     );
@@ -134,8 +156,20 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
   return args;
 }
 
+/** How far a Ken Burns zoom goes (12 %). */
+const ZOOM = 0.12;
+/** Our transition names → ffmpeg xfade transitions. */
+const XFADE: Record<EditPlan["transition"]["type"], string> = { none: "fade", fade: "fade", dissolve: "dissolve", slide: "slideleft", zoom: "zoomin" };
+/** ASS tags for caption animations (inside the line's {…} block). */
+const ANIMATION: Record<EditPlan["captions"][number]["animation"], string> = {
+  none: "",
+  fade: "\\fad(250,250)",
+  pop: "\\fad(80,250)\\fscx70\\fscy70\\t(0,160,\\fscx100\\fscy100)",
+};
+
 /** ASS subtitles for burned-in captions: big white bold text with a black outline, clear of TikTok's buttons. */
-export function captionsAss(captions: EditPlan["captions"], preset: VideoPreset, popCount = 0): string {
+type AssCaption = Omit<EditPlan["captions"][number], "animation"> & { animation?: EditPlan["captions"][number]["animation"] };
+export function captionsAss(captions: AssCaption[], preset: VideoPreset, popCount = 0): string {
   const { width: W, height: H } = preset;
   const size = Math.round(Math.min(W, H) * 0.075);
   const margin = Math.round(W * 0.08);
@@ -166,7 +200,7 @@ export function captionsAss(captions: EditPlan["captions"], preset: VideoPreset,
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     // the last `popCount` entries are pop subtitles
-    ...captions.map((c, i) => `Dialogue: 0,${ts(c.start)},${ts(Math.max(c.end, c.start + 0.3))},${i >= captions.length - popCount ? "Pop" : "Default"},,0,0,0,,{\\an${align[c.position]}}${clean(c.text)}`),
+    ...captions.map((c, i) => `Dialogue: 0,${ts(c.start)},${ts(Math.max(c.end, c.start + 0.3))},${i >= captions.length - popCount ? "Pop" : "Default"},,0,0,0,,{\\an${align[c.position]}${ANIMATION[c.animation ?? "none"]}}${clean(c.text)}`),
     "",
   ].join("\n");
 }
@@ -291,7 +325,7 @@ export const videoEditTool = defineTool({
       }
       inputs.push(probes.get(c.video)!);
     }
-    const total = round2(clipLengths(plan, inputs).reduce((a, b) => a + b, 0));
+    const total = finishedSeconds(plan, clipLengths(plan, inputs));
     if (total > preset.max_seconds) throw new ToolDenied(`the edit is ${total}s; ${plan.preset} takes at most ${preset.max_seconds}s. Cut it shorter.`);
     for (const c of plan.captions) if (c.start >= total) throw new ToolDenied(`caption "${c.text.slice(0, 30)}" starts at ${c.start}s but the video is only ${total}s`);
     const dir = mediaDir(ctx);
@@ -306,7 +340,7 @@ export const videoEditTool = defineTool({
         transcripts[n] = t;
         durations[n] = input.probe.duration;
       }
-      for (const c of subtitleCues(plan, transcripts, durations)) cues.push({ text: c.text, start: c.start, end: c.end, position: plan.subtitles.position });
+      for (const c of subtitleCues(plan, transcripts, durations)) cues.push({ text: c.text, start: c.start, end: c.end, position: plan.subtitles.position, animation: "none" });
     }
     const allCaptions = [...plan.captions, ...cues];
     const captionsFile = allCaptions.length ? `${plan.name.replace(/\s+/g, "_")}.ass` : null;

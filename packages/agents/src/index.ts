@@ -6,7 +6,7 @@ import { researcherAgent } from "./researcher.ts";
 import { publisherAgent } from "./publisher.ts";
 import { SHORT_VIDEO_EDITING_SKILL, editorAgent, editorUpgrade } from "./editor.ts";
 import { ketuaAgent, ketuaSchedule } from "./ketua.ts";
-import { TIKTOK_CAPTIONS_SKILL, tiktokAgent, tiktokSchedule } from "./tiktok.ts";
+import { TIKTOK_CAPTIONS_SKILL, tiktokAgent, tiktokSchedule, tiktokUpgrade } from "./tiktok.ts";
 import { projectAssistantAgent, projectAssistantSchedule } from "./projectAssistant.ts";
 import { keraniAgent, keraniSchedule } from "./kerani.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
@@ -58,5 +58,5 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: editorAgent, needsLlm: true, upgrade: editorUpgrade },
   { agent: ketuaAgent, needsLlm: true, schedules: (id) => [ketuaSchedule(id)] },
   { agent: projectAssistantAgent, needsLlm: true, schedules: (id) => [projectAssistantSchedule(id)] },
-  { agent: tiktokAgent, needsLlm: true, schedules: (id) => [tiktokSchedule(id)] },
+  { agent: tiktokAgent, needsLlm: true, schedules: (id) => [tiktokSchedule(id)], upgrade: tiktokUpgrade },
 ];

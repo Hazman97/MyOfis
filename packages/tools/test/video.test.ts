@@ -89,6 +89,35 @@ describe.skipIf(!ffmpeg || !ffprobe)("video tools with real ffmpeg", () => {
     expect(events.some((e) => e.type === "agent.tool_call")).toBe(true);
     if (process.env.SHOW_ENCODER) console.log((r.output as { encoder: string }).encoder, sent);
   }, 180_000);
+
+  test("motion: Ken Burns zoom, a crossfade between clips and an animated caption render for real", async () => {
+    const ws = join(dir, "ws-motion");
+    const { ctx } = makeCtx(ws);
+    ctx.attachments = [
+      { id: "upl_wide", name: "wide.mp4", content_type: "video/mp4" },
+      { id: "upl_tall", name: "tall.mp4", content_type: "video/mp4" },
+    ];
+    ctx.downloadAttachment = async (id, dest) => copyFileSync(join(dir, id === "upl_wide" ? "wide.mp4" : "tall.mp4"), dest);
+    let sent = "";
+    ctx.uploadVideo = async (path) => {
+      sent = path;
+      return { id: "upl_motion", size: readFileSync(path).length };
+    };
+    const plan = {
+      clips: [{ video: 1, zoom: "in" }, { video: 2, zoom: "out" }],
+      transition: { type: "slide", seconds: 0.5 },
+      captions: [{ text: "Untuk kau yang penat", start: 0, end: 4, position: "middle", animation: "pop" }],
+      name: "motion",
+    };
+    const r = await runTool(TOOL_REGISTRY.video_edit!, plan, ctx);
+    expect(r.ok).toBe(true);
+    // 3 s + 2 s, overlapping by 0.5 s at the cut
+    expect(r.output).toMatchObject({ seconds: 4.5 });
+    const info = parseProbe(JSON.parse(Bun.spawnSync([ffprobe!, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", sent]).stdout.toString()));
+    expect(info).toMatchObject({ width: 1080, height: 1920, has_audio: true });
+    expect(Math.abs(info.duration - 4.5)).toBeLessThan(0.25);
+    expect(readFileSync(join(ws, "media", "motion.ass"), "utf8")).toContain("{\\an5\\fad(80,250)\\fscx70\\fscy70\\t(0,160,\\fscx100\\fscy100)}Untuk kau yang penat");
+  }, 180_000);
 });
 
 describe("speech (whisper.cpp)", () => {
