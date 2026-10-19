@@ -167,6 +167,27 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
     - "Use my own edit" uploads the export → `PATCH /api/drafts/:id/video`;
     - `OpencutWatch` (`apps/hub/src/opencutWatch.ts`, `OPENCUT_API_BASE`) checks GitHub releases and the README's Editor API/MCP/headless lines once a day and sends changes to Telegram (`GET /api/opencut`). It never changes code.
   - Gemini 010 polishes the studio UI.
+- **Members and workspaces** (Stage 3, 2026-10-19). Migration 0009.
+  - **Tables:** `workspaces`, `users` (email, role, workspace_id, disabled), `agent_shares` (agent, workspace, daily_token_budget).
+  - **`workspace_id`** (default `owner`) is on agents, providers, projects, jobs, schedules, uploads, proposals, content_drafts and events. Events with `null` are seen by everyone (runner.*, system.paused).
+  - **Slugs** are unique per workspace. The FTS `search_index` was rebuilt with a `workspace_id` column.
+  - **Auth** (`auth.ts`): `identify()` returns an `Identity`.
+    - cf-access: the owner by `OWNER_EMAIL`, else an enabled member in `users`.
+    - local mode: always the owner.
+    - `requireUser` sets `c.get("me")`; `ownerOnly` guards runners, integrations, pause, backups, skills catalog/import/proposals, system, members and opencut.
+  - **`scope.ts`**:
+    - `own*()` / `usableAgent()` answer 404 across workspaces;
+    - `visibleAgents()` = own agents + shared ones (`shared: true`);
+    - `MEMBER_TOOLS` = no files/shell/git/browser/health/skill_manage, because members' agents run on the owner's PC; no OpenCode, no pinned runner.
+  - **Events:** each event gets a workspace (from the run → job, payload ids, or agent; `workspaceOf` in `events.ts`). `EventStore.stateFor(ws)` keeps a per-workspace office. The web WebSocket, `/api/state` and `/api/events` are filtered. Telegram handles only the owner's workspace.
+  - **Runs** (`#startRun`):
+    - the provider and key come from the **agent's** workspace (a shared agent uses the owner's AI);
+    - projects, context, memory (`memory.user.<ws>`, `memory.agent.<id>.<ws>`), colleagues and search come from the **job's** workspace;
+    - member jobs never get skill_manage or write approval.
+  - **Budgets:** a shared agent is checked against the member's daily limit (`#shareLeft`).
+  - **Members:** `Members` (`members.ts`) handles invite, disable, shares and usage; owner routes are `/api/members*`. Web: `/members`, `me.ts` hides owner-only menus, shared agents are read-only.
+  - The owner must also add each member's email to the Cloudflare Access policy.
+  - Test: `apps/hub/test/members.test.ts` (cf-access JWTs, IDOR checks).
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

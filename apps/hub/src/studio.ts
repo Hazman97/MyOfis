@@ -3,6 +3,7 @@ import { EditPlan, RenderInfo, VIDEO_PRESETS, type Job } from "@agent-office/sha
 import type { Hub } from "./core.ts";
 import { agents, contentDrafts, events, jobs, runs, uploads } from "./db/schema.ts";
 import { HttpError, getRun } from "./repo.ts";
+import { visibleAgents } from "./scope.ts";
 import { toDraft } from "./content.ts";
 
 /**
@@ -16,15 +17,15 @@ export const VIDEO_RENDER_JOB = "video_render";
 export class Studio {
   constructor(private readonly hub: Hub) {}
 
-  /** Everything the studio page needs about one video upload. */
-  info(uploadId: string) {
+  /** Everything the studio page needs about one video upload (of this workspace). */
+  info(uploadId: string, ws = "owner") {
     const up = this.hub.publisher.upload(uploadId);
-    if (!up || !up.content_type.startsWith("video/")) throw new HttpError(404, "video not found");
+    if (!up || up.workspace_id !== ws || !up.content_type.startsWith("video/")) throw new HttpError(404, "video not found");
     const render = up.render ?? this.#renderFromEvents(up) ?? this.#fresh(up);
     const drafts = this.hub.db
       .select()
       .from(contentDrafts)
-      .where(sql`json_extract(${contentDrafts.meta}, '$.video_upload_id') = ${up.id}`)
+      .where(and(eq(contentDrafts.workspace_id, ws), sql`json_extract(${contentDrafts.meta}, '$.video_upload_id') = ${up.id}`))
       .orderBy(desc(contentDrafts.created_at))
       .all()
       .map(toDraft);
@@ -41,8 +42,8 @@ export class Studio {
   }
 
   /** Queue a re-render with the owner's plan. Returns the job. */
-  render(uploadId: string, input: { plan: unknown; draft_id?: string | null }): Job {
-    const info = this.info(uploadId);
+  render(uploadId: string, input: { plan: unknown; draft_id?: string | null }, ws = "owner"): Job {
+    const info = this.info(uploadId, ws);
     const plan = EditPlan.parse(input.plan);
     const files = info.render.attachments;
     for (const [i, c] of plan.clips.entries()) {
@@ -53,15 +54,18 @@ export class Studio {
     for (const cap of plan.captions) if (cap.end <= cap.start) throw new HttpError(400, `caption "${cap.text.slice(0, 30)}": end must be after start`);
     const draft = input.draft_id ? info.drafts.find((d) => d.id === input.draft_id) : null;
     if (input.draft_id && !draft) throw new HttpError(400, "that draft does not use this video");
-    const agent = this.#editor(info.upload.run_id);
-    return this.hub.createJob({
+    const agent = this.#editor(info.upload.run_id, ws);
+    return this.hub.createJob(
+      {
       agent_id: agent.id,
       project_id: draft?.project_id ?? null,
       type: VIDEO_RENDER_JOB,
       title: `Render again: ${plan.name} (${plan.preset})`,
       input: { text: `Render "${plan.name}" again from the Video Studio`, plan, attachments: files, draft_id: draft?.id ?? null, source_upload_id: info.upload.id },
       trigger: "manual",
-    });
+      },
+      ws,
+    );
   }
 
   /** The video a render job made (newest), if it is done. */
@@ -85,9 +89,9 @@ export class Studio {
   }
 
   /** The agent that renders: the one that made the video, else any enabled agent with video_edit (Editor first). */
-  #editor(runId: string | null) {
+  #editor(runId: string | null, ws: string) {
     const from = runId ? getRun(this.hub.db, runId)?.agent_id : null;
-    const all = this.hub.db.select().from(agents).all().filter((a) => a.enabled && a.tools.includes("video_edit"));
+    const all = visibleAgents(this.hub.db, ws).filter((a) => a.enabled && a.tools.includes("video_edit"));
     const agent = all.find((a) => a.id === from) ?? all.find((a) => a.slug === "editor") ?? all[0];
     if (!agent) throw new HttpError(409, "no enabled agent has the video_edit tool (turn on Editor)");
     return agent;

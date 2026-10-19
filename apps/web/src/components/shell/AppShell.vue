@@ -23,11 +23,13 @@ import {
   X,
   BookOpen,
   Cpu,
+  Users,
 } from "lucide-vue-next";
 import BrandMark from "./BrandMark.vue";
 import { api } from "../../api/http.ts";
 import { resetAuthCheck } from "../../router.ts";
 import { useOffice } from "../../stores/office.ts";
+import { isOwner, me } from "../../me.ts";
 import { fmtUsd } from "../../format.ts";
 
 const office = useOffice();
@@ -75,8 +77,10 @@ interface NavItem {
   icon: typeof Bot;
   exact?: boolean;
   badge?: "approvals" | "drafts" | "skills";
+  /** Hidden for members (the owner's machinery). */
+  owner?: boolean;
 }
-const groups: { sign: string; items: NavItem[] }[] = [
+const allGroups: { sign: string; items: NavItem[] }[] = [
   {
     sign: "Office",
     items: [
@@ -95,20 +99,32 @@ const groups: { sign: string; items: NavItem[] }[] = [
     ],
   },
   { sign: "Work", items: [{ to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
-  { sign: "System", items: [{ to: "/runners", label: "Runners", icon: Server }, { to: "/settings", label: "Settings", icon: Settings2 }, { to: "/system", label: "System", icon: Cpu }, { to: "/manual", label: "Manual", icon: BookOpen }] },
+  {
+    sign: "System",
+    items: [
+      { to: "/runners", label: "Runners", icon: Server, owner: true },
+      { to: "/members", label: "Members", icon: Users, owner: true },
+      { to: "/settings", label: "Settings", icon: Settings2 },
+      { to: "/system", label: "System", icon: Cpu, owner: true },
+      { to: "/manual", label: "Manual", icon: BookOpen },
+    ],
+  },
 ];
-const moreItems: NavItem[] = [
+const allMore: NavItem[] = [
   { to: "/chat", label: "Chat", icon: MessagesSquare },
   { to: "/replay", label: "Replay", icon: History },
   { to: "/skills", label: "Skills", icon: Sparkles, badge: "skills" },
   { to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" },
   { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/projects", label: "Projects", icon: FolderGit2 },
-  { to: "/runners", label: "Runners", icon: Server },
+  { to: "/runners", label: "Runners", icon: Server, owner: true },
+  { to: "/members", label: "Members", icon: Users, owner: true },
   { to: "/settings", label: "Settings", icon: Settings2 },
-  { to: "/system", label: "System", icon: Cpu },
+  { to: "/system", label: "System", icon: Cpu, owner: true },
   { to: "/manual", label: "Manual", icon: BookOpen },
 ];
+const groups = computed(() => allGroups.map((g) => ({ ...g, items: g.items.filter((i) => isOwner.value || !i.owner) })));
+const moreItems = computed(() => allMore.filter((i) => isOwner.value || !i.owner));
 
 const isActive = (to: string, exact = false) =>
   exact ? route.path === to || route.path.startsWith("/runs") || route.path.startsWith("/jobs/") && route.path !== "/jobs/new" : route.path.startsWith(to);
@@ -176,14 +192,15 @@ async function logout() {
             <dt class="sign text-[9px]">Today</dt>
             <dd class="mt-0.5 font-mono text-sm font-semibold tabular-nums text-fg">{{ fmtUsd(office.costToday) }}</dd>
           </div>
-          <RouterLink to="/runners" class="rounded-xl border border-line bg-surface-2/60 px-2.5 py-2 hover:bg-surface-2 transition-colors">
+          <RouterLink v-if="isOwner" to="/runners" class="rounded-xl border border-line bg-surface-2/60 px-2.5 py-2 hover:bg-surface-2 transition-colors">
             <dt class="sign text-[9px]">Runners</dt>
             <dd class="mt-0.5 flex items-center gap-1.5 font-mono text-sm font-semibold tabular-nums text-fg">
               <span class="size-2 rounded-full" :class="runnersOnline ? 'bg-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-danger'" />{{ runnersOnline }}/{{ runners.length }}
             </dd>
           </RouterLink>
         </dl>
-        <button class="btn w-full" :class="office.state.paused ? 'btn-primary' : confirmPause ? 'btn-signal' : 'btn-danger'" @click="togglePause">
+        <p v-if="!isOwner" class="truncate text-xs text-muted" :title="me?.email">Signed in as {{ me?.name || me?.email }} (member)</p>
+        <button v-if="isOwner" class="btn w-full" :class="office.state.paused ? 'btn-primary' : confirmPause ? 'btn-signal' : 'btn-danger'" @click="togglePause">
           <component :is="office.state.paused ? Play : Pause" :size="14" />
           {{ office.state.paused ? "Resume all agents" : confirmPause ? "Click again to pause" : "Pause all agents" }}
         </button>
@@ -215,6 +232,7 @@ async function logout() {
       </span>
       <span class="font-mono text-xs text-muted tabular-nums">{{ fmtUsd(office.costToday) }}</span>
       <button
+        v-if="isOwner"
         class="btn btn-sm"
         :class="office.state.paused ? 'btn-primary' : confirmPause ? 'btn-signal' : 'btn-danger'"
         :aria-label="office.state.paused ? 'Resume all agents' : 'Pause all agents'"

@@ -9,6 +9,7 @@ import StatusBadge from "../components/StatusBadge.vue";
 import { api, type ToolInfo } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtTokens } from "../format.ts";
+import { isOwner } from "../me.ts";
 
 const office = useOffice();
 const providers = ref<ProviderPublic[]>([]);
@@ -55,7 +56,8 @@ const toolsByCategory = computed(() => {
 onMounted(async () => {
   [providers.value, runners.value, toolCatalog.value] = await Promise.all([
     api.providers().then((r) => r.providers),
-    api.runners().then((r) => r.runners),
+    // runners are the owner's; members' agents never pin one
+    isOwner.value ? api.runners().then((r) => r.runners) : Promise.resolve([]),
     api.tools().then((r) => r.tools),
   ]);
   const hash = location.hash.slice(1);
@@ -183,10 +185,13 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
 
         <!-- Card Footer -->
         <div class="mt-auto flex items-center gap-2 border-t border-line pt-3">
-          <button class="btn btn-sm" @click="toggle(a)">
-            <component :is="a.enabled ? Pause : Play" :size="13" /> {{ a.enabled ? "Pause" : "Enable" }}
-          </button>
-          <button class="btn btn-sm ml-auto" @click="edit(a)"><Pencil :size="13" /> Edit</button>
+          <template v-if="!a.shared">
+            <button class="btn btn-sm" @click="toggle(a)">
+              <component :is="a.enabled ? Pause : Play" :size="13" /> {{ a.enabled ? "Pause" : "Enable" }}
+            </button>
+            <button class="btn btn-sm ml-auto" @click="edit(a)"><Pencil :size="13" /> Edit</button>
+          </template>
+          <span v-else class="chip text-[11px] text-info" title="The owner shared this agent with you: it runs on the owner's AI, within your daily limit">Shared with you</span>
         </div>
       </article>
 

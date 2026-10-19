@@ -16,11 +16,12 @@ import type { Content } from "./content.ts";
 import type { HubConfig } from "./env.ts";
 import type { Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
-import { agents, approvals, contentDrafts, featureLog, jobs, projects, runners, runs } from "./db/schema.ts";
+import { agentShares, agents, approvals, contentDrafts, featureLog, jobs, projects, runners, runs } from "./db/schema.ts";
 import type { Backups } from "./backup.ts";
 import type { Publisher } from "./publisher.ts";
 import type { UploadParts } from "./uploads.ts";
 import type { Studio } from "./studio.ts";
+import { MEMBER_TOOLS, OWNER_WORKSPACE, shareOf, visibleAgents } from "./scope.ts";
 import type { OpencutWatch } from "./opencutWatch.ts";
 import type { Social } from "./social.ts";
 import type { Learning } from "./learning.ts";
@@ -139,33 +140,35 @@ export class Hub {
 
   // ---------------------------------------------------------------- jobs
 
-  createJob(input: JobInput): Job {
+  /** Queue work for an agent, on behalf of a workspace (the owner's unless a member asked). */
+  createJob(input: JobInput, workspaceId: string = OWNER_WORKSPACE): Job {
     const data = JobInput.parse(input);
-    this.#assertJobRefs(data);
-    const row = this.store.transact((tx, emit) => this.#insertJob(tx, emit, data));
+    this.#assertJobRefs(data, workspaceId);
+    const row = this.store.transact((tx, emit) => this.#insertJob(tx, emit, data, workspaceId));
     this.dispatch();
     return toJob(row);
   }
 
-  #assertJobRefs(data: z.infer<typeof JobInput>): void {
+  #assertJobRefs(data: z.infer<typeof JobInput>, workspaceId: string): void {
     const agent = getAgent(this.db, data.agent_id);
-    if (!agent) throw new HttpError(404, "agent not found");
+    // a workspace gives work to its own agents, or to agents the owner shared with it
+    if (!agent || (agent.workspace_id !== workspaceId && !shareOf(this.db, agent.id, workspaceId))) throw new HttpError(404, "agent not found");
     if (!agent.enabled) throw new HttpError(409, "agent is disabled");
-    if (!getProviderBySlug(this.db, agent.provider)) {
+    if (!getProviderBySlug(this.db, agent.provider, agent.workspace_id)) {
       throw new HttpError(409, `agent's provider "${agent.provider}" is not configured`);
     }
-    if (data.project_id && !this.db.select({ id: projects.id }).from(projects).where(eq(projects.id, data.project_id)).get()) {
+    if (data.project_id && !this.db.select({ id: projects.id }).from(projects).where(and(eq(projects.id, data.project_id), eq(projects.workspace_id, workspaceId))).get()) {
       throw new HttpError(400, "unknown project");
     }
   }
 
   /** Insert a queued job and its events inside an existing transaction. */
-  #insertJob(tx: Db, emit: Emit, data: z.infer<typeof JobInput>) {
+  #insertJob(tx: Db, emit: Emit, data: z.infer<typeof JobInput>, workspaceId: string) {
     const id = newId("job");
     {
       const row = tx
         .insert(jobs)
-        .values({ ...data, id, status: "queued" })
+        .values({ ...data, id, workspace_id: workspaceId, status: "queued" })
         .returning()
         .get();
       const meta = { agent_id: data.agent_id };
@@ -257,7 +260,7 @@ export class Hub {
       const job = r ? getJob(this.db, r.job_id) : undefined;
       if (!r || !job) return;
       const task = typeof job.input.text === "string" ? job.input.text : "";
-      this.learning.index({ run_id: r.id, agent_id: r.agent_id, job_type: job.type, ts: r.ended_at ?? r.started_at, title: job.title, body: `${task}
+      this.learning.index({ run_id: r.id, agent_id: r.agent_id, job_type: job.type, ts: r.ended_at ?? r.started_at, title: job.title, workspace_id: job.workspace_id, body: `${task}
 
 ${r.output}${r.error ? `
 
@@ -290,9 +293,13 @@ Error: ${r.error}` : ""}` });
     return draft;
   }
 
-  chat(input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[]; source?: "telegram" }): { job: Job; thread_id: string } {
+  chat(
+    input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[]; source?: "telegram" },
+    workspaceId: string = OWNER_WORKSPACE,
+  ): { job: Job; thread_id: string } {
     const threadId = input.thread_id || newId("cht");
-    const prior = this.chatJobs(threadId);
+    const prior = this.chatJobs(threadId).filter((j) => j.workspace_id === workspaceId);
+    if (input.thread_id && !prior.length && this.chatJobs(threadId).length) throw new HttpError(404, "chat thread not found");
     if (prior.length && prior[0]!.agent_id !== input.agent_id) throw new HttpError(409, "this chat thread belongs to another agent");
     const history = prior.slice(-CHAT_HISTORY).flatMap((j) => {
       const reply = this.chatReply(j);
@@ -304,7 +311,7 @@ Error: ${r.error}` : ""}` });
     // photos and videos sent with this message (uploaded first with POST /api/uploads)
     let attachments = (input.attachments ?? []).slice(0, MAX_CHAT_ATTACHMENTS).map((id) => {
       const u = this.publisher.upload(id);
-      if (!u) throw new HttpError(400, `unknown upload ${id}`);
+      if (!u || u.workspace_id !== workspaceId) throw new HttpError(400, `unknown upload ${id}`);
       return { id: u.id, name: u.name, content_type: u.content_type };
     });
     // A reply without files keeps the thread's last files: the agent asked a question about them
@@ -318,7 +325,7 @@ Error: ${r.error}` : ""}` });
       title: input.text.trim().replace(/\s+/g, " ").slice(0, 80) || "Chat",
       input: { text: input.text, thread_id: threadId, history, ...(attachments.length ? { attachments } : {}), ...(carried ? { attachments_carried: true } : {}), ...(input.source ? { source: input.source } : {}) },
       trigger: "manual",
-    });
+    }, workspaceId);
     return { job, thread_id: threadId };
   }
 
@@ -419,7 +426,7 @@ Error: ${r.error}` : ""}` });
 
   /** The built-in agent by slug if enabled, else the first enabled agent that fits. */
   #pickAgent(slug: string, fits: (a: AgentRow) => boolean): AgentRow | undefined {
-    const all = this.db.select().from(agents).where(eq(agents.enabled, true)).orderBy(asc(agents.created_at)).all();
+    const all = this.db.select().from(agents).where(and(eq(agents.enabled, true), eq(agents.workspace_id, OWNER_WORKSPACE))).orderBy(asc(agents.created_at)).all();
     return all.find((a) => a.slug === slug && fits(a)) ?? all.find(fits);
   }
 
@@ -433,6 +440,33 @@ Error: ${r.error}` : ""}` });
   }
 
   /** Over budget: tell the office once a day (the agent goes home) and keep its jobs queued. */
+  /** A colleague by slug, as seen from a workspace: its own agents first, then agents shared with it. */
+  #colleague(slug: string, workspaceId: string): AgentRow | undefined {
+    const own = this.db.select().from(agents).where(and(eq(agents.slug, slug), eq(agents.workspace_id, workspaceId))).get();
+    if (own) return own;
+    return this.db
+      .select({ a: agents })
+      .from(agents)
+      .innerJoin(agentShares, and(eq(agentShares.agent_id, agents.id), eq(agentShares.workspace_id, workspaceId)))
+      .where(eq(agents.slug, slug))
+      .get()?.a;
+  }
+
+  /** Tokens a member may still use today on an agent the owner shared with them (null = not shared). */
+  #shareLeft(agentId: string, workspaceId: string): number | null {
+    const share = shareOf(this.db, agentId, workspaceId);
+    if (!share) return null;
+    const since = new Date(`${dayKey(new Date().toISOString())}T00:00:00+08:00`).toISOString();
+    const used =
+      this.db
+        .select({ n: sql<number>`coalesce(sum(${runs.tokens_in} + ${runs.tokens_out}), 0)` })
+        .from(runs)
+        .innerJoin(jobs, eq(jobs.id, runs.job_id))
+        .where(and(eq(runs.agent_id, agentId), eq(jobs.workspace_id, workspaceId), sql`${runs.started_at} >= ${since}`))
+        .get()?.n ?? 0;
+    return Math.max(0, share.daily_token_budget - used);
+  }
+
   #checkBudget(agent: AgentRow): boolean {
     const left = this.#budgetLeft(agent);
     if (left === null || left > 0) return true;
@@ -470,7 +504,7 @@ Error: ${r.error}` : ""}` });
     this.#assignedAt.delete(runId);
 
     const agent = getAgent(this.db, run.agent_id);
-    const provider = agent ? getProviderBySlug(this.db, agent.provider) : undefined;
+    const provider = agent ? getProviderBySlug(this.db, agent.provider, agent.workspace_id) : undefined;
     const { cost_usd, cost_unknown } = computeCost({
       kind: provider?.kind ?? "mock",
       base_url: provider?.base_url ?? null,
@@ -681,10 +715,13 @@ Error: ${r.error}` : ""}` });
       this.db.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
       const meta = { run_id: run.id, agent_id: run.agent_id };
       // the runner already checked these against its copy; re-check here (another run may have changed the store)
+      const ws = getJob(this.db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
       const r =
         msg.type === "run.memory"
-          ? this.learning.memoryOps(run.agent_id, run.id, msg.target, msg.ops)
-          : this.learning.proposeSkill(run.agent_id, run.id, { name: msg.name, action: msg.action, content: msg.content, reason: msg.reason });
+          ? this.learning.memoryOps(run.agent_id, run.id, msg.target, msg.ops, "", ws)
+          : ws !== OWNER_WORKSPACE
+            ? { ok: false, error: "skills are the owner's library: members' work cannot propose skills" }
+            : this.learning.proposeSkill(run.agent_id, run.id, { name: msg.name, action: msg.action, content: msg.content, reason: msg.reason });
       if ("error" in r && r.error) this.store.emit({ type: "agent.thinking", payload: { summary: `Not saved: ${r.error}`.slice(0, 500) } }, meta);
     } else if (msg.type === "run.event") {
       this.store.transact((tx, emit) => {
@@ -770,8 +807,9 @@ Error: ${r.error}` : ""}` });
    */
   #consult(conn: RunnerConn, run: typeof runs.$inferSelect, msg: Extract<RunnerToHub, { type: "run.consult" }>): void {
     const from = getAgent(this.db, run.agent_id);
-    const target = this.db.select().from(agents).where(eq(agents.slug, msg.to_agent)).get();
     const parentJob = getJob(this.db, run.job_id);
+    const ws = parentJob?.workspace_id ?? OWNER_WORKSPACE;
+    const target = this.#colleague(msg.to_agent, ws);
     const refuse = (error: string) => {
       this.db.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
       conn.send({ type: "consult.answer", run_id: run.id, consult_id: msg.consult_id, ok: false, answer: "", error });
@@ -793,7 +831,7 @@ Error: ${r.error}` : ""}` });
     });
     this.store.transact((tx, emit) => {
       tx.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
-      this.#insertJob(tx, emit, data);
+      this.#insertJob(tx, emit, data, ws);
       emit({ type: "agent.thinking", payload: { summary: `Asked ${target.name}; waiting for the answer` } }, { run_id: run.id, agent_id: run.agent_id });
     });
     this.dispatch();
@@ -842,7 +880,8 @@ Error: ${r.error}` : ""}` });
 
   #handoff(run: typeof runs.$inferSelect, msg: Extract<RunnerToHub, { type: "run.handoff" }>): void {
     const from = getAgent(this.db, run.agent_id);
-    const target = this.db.select().from(agents).where(eq(agents.slug, msg.to_agent)).get();
+    const ws = getJob(this.db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
+    const target = this.#colleague(msg.to_agent, ws);
     const meta = { run_id: run.id, agent_id: run.agent_id };
     let refusal: string | null = null;
     if (!target || !target.enabled) refusal = `agent "${msg.to_agent}" is unknown or disabled`;
@@ -859,14 +898,14 @@ Error: ${r.error}` : ""}` });
         parent_job_id: run.job_id,
       });
       try {
-        this.#assertJobRefs(data);
+        this.#assertJobRefs(data, ws);
       } catch (err) {
         refusal = (err as Error).message;
       }
       if (!refusal) {
         this.store.transact((tx, emit) => {
           tx.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
-          const job = this.#insertJob(tx, emit, data);
+          const job = this.#insertJob(tx, emit, data, ws);
           emit(
             { type: "agent.handoff", payload: { from_agent: from?.slug ?? run.agent_id, to_agent: target!.slug, new_job_id: job.id, reason: msg.reason } },
             meta,
@@ -913,6 +952,8 @@ Error: ${r.error}` : ""}` });
         const render = job.type === "video_render";
         // over today's token budget: the job waits (for tomorrow, or for a higher budget); a re-render uses no tokens
         if (!render && !this.#checkBudget(agent)) continue;
+        // a shared agent working for a member: that member's daily limit too
+        if (!render && job.workspace_id !== agent.workspace_id && (this.#shareLeft(agent.id, job.workspace_id) ?? 1) <= 0) continue;
         const conn = this.#pickRunner(agent.runner_id, load, render ? "ffmpeg" : null);
         if (!conn) continue;
         load.set(conn.runnerId, (load.get(conn.runnerId) ?? 0) + 1);
@@ -941,7 +982,7 @@ Error: ${r.error}` : ""}` });
 
   #startRun(conn: RunnerConn, job: typeof jobs.$inferSelect, agent: typeof agents.$inferSelect): void {
     const runId = newId("run");
-    const provider = getProviderBySlug(this.db, agent.provider);
+    const provider = getProviderBySlug(this.db, agent.provider, agent.workspace_id);
     const meta = { run_id: runId, agent_id: agent.id };
     this.store.transact((tx, emit) => {
       tx.insert(runs)
@@ -953,6 +994,11 @@ Error: ${r.error}` : ""}` });
 
     // a re-render from the Video Studio runs the video_edit tool directly: no LLM, no key, no tokens
     const render = job.type === "video_render";
+    // whose work it is: projects, files, memory and colleagues come from the job's workspace;
+    // the provider and key from the agent's (a shared agent runs on the owner's AI)
+    const ws = job.workspace_id;
+    const forMember = ws !== OWNER_WORKSPACE;
+    const memberAgent = agent.workspace_id !== OWNER_WORKSPACE;
     if (!render && (!provider || !provider.enabled)) {
       this.finishRun(runId, { status: "failed", error: `provider "${agent.provider}" is missing or disabled`, tokens_in: 0, tokens_out: 0 });
       return;
@@ -967,17 +1013,23 @@ Error: ${r.error}` : ""}` });
     // A release note is a fixed, small job: its own prompt and two safe tools, whatever the agent normally has.
     const featureNote = job.type === "feature_note";
     // a consult answer is one level deep: no asking or handing off from there
-    const tools = render
-      ? ["video_edit"]
-      : featureNote
-        ? FEATURE_NOTE_TOOLS
-        : job.type === "consult"
-          ? agent.tools.filter((t) => t !== "consult_agent" && t !== "consult_team" && t !== "handoff")
-          : agent.tools;
+    const tools = (
+      render
+        ? ["video_edit"]
+        : featureNote
+          ? FEATURE_NOTE_TOOLS
+          : job.type === "consult"
+            ? agent.tools.filter((t) => t !== "consult_agent" && t !== "consult_team" && t !== "handoff")
+            : agent.tools
+    )
+      // members' own agents run on the owner's PC: only the safe tool set (checked on save too)
+      .filter((t) => !memberAgent || MEMBER_TOOLS.has(t))
+      // the skills library is the owner's: members' work reads skills but never proposes changes
+      .filter((t) => !forMember || t !== "skill_manage");
     const config = toAgent(agent).config;
     let projectContext: RunAssignment["project_context"] = null;
     try {
-      projectContext = !render && tools.some((t) => NEEDS_PROJECT_CONTEXT.has(t)) ? this.content.context(job.project_id ? [job.project_id] : "all") : null;
+      projectContext = !render && tools.some((t) => NEEDS_PROJECT_CONTEXT.has(t)) ? this.content.context(job.project_id ? [job.project_id] : "all", ws) : null;
       for (const p of projectContext?.projects ?? []) p.social = this.social.connected(p.id);
     } catch (err) {
       console.error(`[hub] project context for ${runId} failed: ${(err as Error).message}`);
@@ -998,20 +1050,18 @@ Error: ${r.error}` : ""}` });
       provider: provider ? { slug: provider.slug, kind: provider.kind, base_url: provider.base_url, api_key: apiKey } : { slug: "none", kind: "mock", base_url: null, api_key: null },
       gitea: tools.some((t) => NEEDS_GITEA.has(t)) || (config.runtime === "opencode" && !featureNote) ? this.#giteaForRun() : null,
       project_context: projectContext,
-      budget_left_tokens: this.#budgetLeft(agent),
-      memory: { memory: this.learning.entries("memory", agent.id), user: this.learning.entries("user", agent.id) },
-      memory_write_approval: this.learning.writeApproval,
+      budget_left_tokens: forMember && agent.workspace_id !== ws ? this.#shareLeft(agent.id, ws) : this.#budgetLeft(agent),
+      memory: { memory: this.learning.entries("memory", agent.id, ws), user: this.learning.entries("user", agent.id, ws) },
+      memory_write_approval: forMember ? false : this.learning.writeApproval,
       skills: tools.some((t) => t.startsWith("skill")) ? this.learning.skills() : [],
       projects: this.db
         .select({ id: projects.id, slug: projects.slug, name: projects.name, live_url: projects.live_url, repo_url: projects.repo_url })
         .from(projects)
-        .where(eq(projects.enabled, true))
+        .where(and(eq(projects.enabled, true), eq(projects.workspace_id, ws)))
         .all(),
-      handoff_targets: this.db
-        .select({ slug: agents.slug, name: agents.name, role: agents.role })
-        .from(agents)
-        .where(and(eq(agents.enabled, true), ne(agents.id, agent.id)))
-        .all(),
+      handoff_targets: visibleAgents(this.db, ws)
+        .filter((a) => a.enabled && a.id !== agent.id)
+        .map((a) => ({ slug: a.slug, name: a.name, role: a.role })),
     };
     this.#assignedAt.set(runId, Date.now());
     conn.send({ type: "run.assign", assignment });

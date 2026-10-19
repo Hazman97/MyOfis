@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { RouterLink } from "vue-router";
+import { isOwner } from "../me.ts";
 
-const tabs = [
+// members keep their own AI providers; integrations (Telegram, Gitea, search, backups) are the owner's
+const tabs = computed(() => [
   { to: "/settings/providers", label: "AI providers" },
-  { to: "/settings/integrations", label: "Integrations" },
-];
+  ...(isOwner.value ? [{ to: "/settings/integrations", label: "Integrations" }, { to: "/members", label: "Members" }] : []),
+]);
 </script>
 
 <template>

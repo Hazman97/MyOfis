@@ -26,7 +26,7 @@ import {
   WebPostEdit,
 } from "@agent-office/shared";
 import { TOOL_REGISTRY } from "@agent-office/tools";
-import { SESSION_COOKIE, SESSION_TTL_MS, isHttps, requireOwner, type Authenticator } from "./auth.ts";
+import { SESSION_COOKIE, SESSION_TTL_MS, isHttps, ownerOnly, requireUser, type Authenticator, type Identity } from "./auth.ts";
 import type { Hub } from "./core.ts";
 import { hashToken, keyHint, normalizeCode, pairingCode, randomToken } from "./crypto.ts";
 import { agents, approvals, jobs, pairingCodes, projects, providers, runners, runs, schedules, uploads } from "./db/schema.ts";
@@ -35,6 +35,23 @@ import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runner
 import { searchWeb } from "./websearch.ts";
 import { fileResponse } from "./uploads.ts";
 import { systemInfo } from "./systemInfo.ts";
+import { Members } from "./members.ts";
+import {
+  MEMBER_TOOLS,
+  OWNER_WORKSPACE,
+  assertMemberTools,
+  ownAgent,
+  ownApproval,
+  ownDraft,
+  ownJob,
+  ownProject,
+  ownProvider,
+  ownRun,
+  ownSchedule,
+  ownUpload,
+  usableAgent,
+  visibleAgents,
+} from "./scope.ts";
 import { CATALOG_SOURCES, SkillCatalog } from "./skillCatalog.ts";
 import type { Integrations } from "./integrations.ts";
 import type { TelegramBot } from "./telegram.ts";
@@ -88,6 +105,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   const app = new Hono();
   const publicOrigin = new URL(config.publicBaseUrl).origin;
   const pairLimit = limiter(20, 60_000);
+  const members = new Members(hub);
   const loginLimit = limiter(20, 60_000);
 
   app.onError((err, c) => {
@@ -212,7 +230,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const body = z.object({ run_id: z.string(), query: z.string().min(2).max(300), all_agents: z.boolean().default(false) }).parse(await c.req.json());
     const run = getRun(db, body.run_id);
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
-    const hits = hub.learning.search(body.query, body.all_agents ? null : run.agent_id).filter((h) => h.run_id !== run.id);
+    const ws = getJob(db, run.job_id)?.workspace_id ?? "owner";
+    const hits = hub.learning.search(body.query, body.all_agents ? null : run.agent_id, 8, ws).filter((h) => h.run_id !== run.id);
     return c.json({ results: hits });
   });
 
@@ -273,7 +292,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     if (!getAgent(db, run.agent_id)?.tools.includes("video_edit")) throw new HttpError(403, "this agent may not upload videos");
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
-    const r = hub.uploadParts.put(`run:${run.id}`, c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c), run.id);
+    const ws = getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
+    const r = hub.uploadParts.put(`run:${run.id}`, c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c), run.id, ws);
     return c.json({ received: r.received, total: r.total, ...(r.upload ? { upload: publicUpload(r.upload) } : {}) }, r.upload ? 201 : 200);
   });
 
@@ -290,6 +310,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tool = body.action === "update" ? "update_web_post" : "take_down_web_post";
     if (!getAgent(db, run.agent_id)?.tools.includes(tool)) throw new HttpError(403, `this agent may not use ${tool}`);
+    ownDraft(db, body.draft_id, getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE);
     const draft = body.action === "update" ? await hub.publisher.updatePublished(body.draft_id, body.edits) : await hub.publisher.takeDown(body.draft_id);
     return c.json({ draft: { id: draft.id, title: draft.title, status: draft.status, url: draft.published_url } });
   });
@@ -312,22 +333,34 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const agent = getAgent(db, run.agent_id);
     if (!agent?.tools.includes("read_bookings")) throw new HttpError(403, "this agent may not read bookings");
+    ownProject(db, body.project_id, getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE);
     return c.json({ data: await hub.publisher.siteData(body.project_id, body.resource, body.params) });
   });
 
-  // ------------------------------------------------------------ owner only
+  // ------------------------------------------------------------ signed in (owner or member)
+  //
+  // Every route works inside the caller's workspace (members, 2026-10-19): rows of other
+  // workspaces answer 404. Owner-only routes are marked with `ownerOnly`.
 
-  const api = new Hono();
-  api.use("*", requireOwner(auth));
+  const api = new Hono<{ Variables: { me: Identity } }>();
+  api.use("*", requireUser(auth));
+  const W = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").workspace_id;
+  const memberOf = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").role !== "owner";
+  for (const path of ["/settings/pause", "/settings/integrations", "/settings/integrations/*", "/backups", "/skills/catalog", "/skills/catalog/*", "/proposals", "/proposals/*", "/system", "/runners", "/runners/*", "/opencut", "/members", "/members/*"]) {
+    api.use(path, ownerOnly);
+  }
 
-  api.get("/auth/me", (c) => c.json({ ok: true, mode: auth.mode }));
+  api.get("/auth/me", (c) => {
+    const me = c.get("me");
+    return c.json({ ok: true, mode: auth.mode, email: me.email, name: me.name, role: me.role, workspace_id: me.workspace_id });
+  });
 
-  api.get("/state", (c) => c.json({ state: store.state }));
+  api.get("/state", (c) => c.json({ state: store.stateFor(W(c)) }));
 
   api.get("/events", (c) => {
     const since = intParam(c.req.query("since"), 0, Number.MAX_SAFE_INTEGER);
     const limit = intParam(c.req.query("limit"), 500, 5000);
-    return c.json({ events: store.list(since, limit, c.req.query("run_id") || undefined) });
+    return c.json({ events: store.list(since, limit, c.req.query("run_id") || undefined, W(c)) });
   });
 
   // settings / kill switch
@@ -373,33 +406,48 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ ok: true, login: user.login ?? null });
   });
 
-  // agents
-  api.get("/agents", (c) => c.json({ agents: db.select().from(agents).orderBy(agents.created_at).all().map(toAgent) }));
+  // members (owner only): invite by email, disable, share agents with a daily limit
+  api.get("/members", (c) => c.json({ members: members.list() }));
+  api.post("/members", async (c) => c.json({ member: members.invite(await c.req.json()) }, 201));
+  api.patch("/members/:id", async (c) => c.json({ member: members.update(c.req.param("id"), await c.req.json()) }));
+  api.put("/members/:id/shares", async (c) => c.json({ member: members.setShares(c.req.param("id"), await c.req.json()) }));
+
+  // agents: your own, plus (for members) the owner's agents shared with you, read-only
+  api.get("/agents", (c) => c.json({ agents: visibleAgents(db, W(c)) }));
   api.get("/agents/:id", (c) => {
-    const a = getAgent(db, c.req.param("id"));
-    if (!a) throw new HttpError(404, "agent not found");
-    return c.json({ agent: toAgent(a) });
+    const a = usableAgent(db, c.req.param("id"), W(c));
+    return c.json({ agent: { ...toAgent(a), ...(a.workspace_id !== W(c) ? { shared: true } : {}) } });
   });
   api.post("/agents", async (c) => {
     const data = AgentInput.parse(await c.req.json());
-    assertAgentRefs(data.provider, data.runner_id);
+    const ws = W(c);
+    assertAgentRefs(data.provider, data.runner_id, ws);
     assertTools(data.tools);
-    if (db.select({ id: agents.id }).from(agents).where(eq(agents.slug, data.slug)).get()) {
+    if (memberOf(c)) assertMemberAgent(data.tools, data.config, data.runner_id);
+    if (db.select({ id: agents.id }).from(agents).where(and(eq(agents.slug, data.slug), eq(agents.workspace_id, ws))).get()) {
       throw new HttpError(409, "slug already used");
     }
-    const row = db.insert(agents).values({ ...data, id: newId("agt") }).returning().get();
+    const row = db.insert(agents).values({ ...data, id: newId("agt"), workspace_id: ws }).returning().get();
     return c.json({ agent: toAgent(row) }, 201);
   });
   api.patch("/agents/:id", async (c) => {
     const id = c.req.param("id");
-    if (!getAgent(db, id)) throw new HttpError(404, "agent not found");
+    const ws = W(c);
+    const current = ownAgent(db, id, ws);
     const raw = z.record(z.string(), z.unknown()).parse(await c.req.json());
     const patch = AgentPatch.parse(raw);
     // Partial parse still fills defaults; keep only keys the client actually sent.
     const changes = Object.fromEntries(Object.entries(patch).filter(([k]) => k in raw));
     assertTools(changes.tools);
     if (typeof changes.provider === "string" || changes.runner_id !== undefined) {
-      assertAgentRefs(changes.provider as string | undefined, changes.runner_id as string | null | undefined);
+      assertAgentRefs(changes.provider as string | undefined, changes.runner_id as string | null | undefined, ws);
+    }
+    if (memberOf(c)) {
+      assertMemberAgent(
+        (changes.tools as string[] | undefined) ?? current.tools,
+        (changes.config as { runtime?: string } | undefined) ?? toAgent(current).config,
+        (changes.runner_id as string | null | undefined) ?? current.runner_id,
+      );
     }
     const row = db.update(agents).set(changes).where(eq(agents.id, id)).returning().get();
     hub.dispatch();
@@ -412,24 +460,32 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (unknown.length) throw new HttpError(400, `unknown tools: ${unknown.join(", ")}`);
   }
 
-  function assertAgentRefs(provider: string | undefined, runnerId: string | null | undefined) {
-    if (provider !== undefined && !getProviderBySlug(db, provider)) throw new HttpError(400, `unknown provider "${provider}"`);
+  /** Members' agents run on the owner's PC: safe tools only, the AI SDK runtime, no pinned runner. */
+  function assertMemberAgent(tools: string[], config: { runtime?: string } | undefined, runnerId: string | null | undefined) {
+    assertMemberTools(tools);
+    if (config?.runtime === "opencode") throw new HttpError(400, "the OpenCode runtime is for the owner's agents only");
+    if (runnerId) throw new HttpError(400, "members cannot pick a runner");
+  }
+
+  function assertAgentRefs(provider: string | undefined, runnerId: string | null | undefined, ws: string) {
+    if (provider !== undefined && !getProviderBySlug(db, provider, ws)) throw new HttpError(400, `unknown provider "${provider}"`);
     if (runnerId && !getRunner(db, runnerId)) throw new HttpError(400, "unknown runner");
   }
 
   // projects
-  api.get("/projects", (c) => c.json({ projects: db.select().from(projects).orderBy(projects.name).all() }));
+  api.get("/projects", (c) => c.json({ projects: db.select().from(projects).where(eq(projects.workspace_id, W(c))).orderBy(projects.name).all() }));
   api.post("/projects", async (c) => {
     const data = ProjectInput.parse(await c.req.json());
-    if (db.select({ id: projects.id }).from(projects).where(eq(projects.slug, data.slug)).get()) {
+    const ws = W(c);
+    if (db.select({ id: projects.id }).from(projects).where(and(eq(projects.slug, data.slug), eq(projects.workspace_id, ws))).get()) {
       throw new HttpError(409, "slug already used");
     }
-    const row = db.insert(projects).values({ ...data, id: newId("prj") }).returning().get();
+    const row = db.insert(projects).values({ ...data, id: newId("prj"), workspace_id: ws }).returning().get();
     return c.json({ project: row }, 201);
   });
   api.patch("/projects/:id", async (c) => {
     const id = c.req.param("id");
-    if (!db.select({ id: projects.id }).from(projects).where(eq(projects.id, id)).get()) throw new HttpError(404, "project not found");
+    ownProject(db, id, W(c));
     const raw = z.record(z.string(), z.unknown()).parse(await c.req.json());
     const patch = ProjectInput.omit({ slug: true }).partial().parse(raw);
     const changes = Object.fromEntries(Object.entries(patch).filter(([k]) => k in raw));
@@ -437,31 +493,30 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ project: row });
   });
 
-  // memory (Hermes-style): each agent's notes + the owner profile shared by all agents
+  // memory (Hermes-style): each agent's notes + your profile, per workspace (a shared agent keeps separate notes for you)
   const learning = hub.learning;
   const memTarget = z.enum(["memory", "user"]);
   api.get("/agents/:id/memory", (c) => {
-    const id = c.req.param("id");
-    if (!getAgent(db, id)) throw new HttpError(404, "agent not found");
-    return c.json({ memory: learning.entries("memory", id), user: learning.entries("user", id), limits: MEMORY_LIMITS, write_approval: learning.writeApproval });
+    const id = usableAgent(db, c.req.param("id"), W(c)).id;
+    const ws = W(c);
+    return c.json({ memory: learning.entries("memory", id, ws), user: learning.entries("user", id, ws), limits: MEMORY_LIMITS, write_approval: ws === OWNER_WORKSPACE && learning.writeApproval });
   });
   api.put("/agents/:id/memory/:target", async (c) => {
-    const id = c.req.param("id");
-    if (!getAgent(db, id)) throw new HttpError(404, "agent not found");
+    const id = usableAgent(db, c.req.param("id"), W(c)).id;
     const { entries } = z.object({ entries: z.array(z.string().max(1000)).max(100) }).parse(await c.req.json());
-    return c.json({ entries: learning.replaceEntries(id, memTarget.parse(c.req.param("target")), entries) });
+    return c.json({ entries: learning.replaceEntries(id, memTarget.parse(c.req.param("target")), entries, W(c)) });
   });
-  api.get("/memory/settings", (c) => c.json({ write_approval: learning.writeApproval, limits: MEMORY_LIMITS }));
+  api.get("/memory/settings", (c) => c.json({ write_approval: !memberOf(c) && learning.writeApproval, limits: MEMORY_LIMITS }));
   api.put("/memory/settings", async (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
     learning.writeApproval = z.object({ write_approval: z.boolean() }).parse(await c.req.json()).write_approval;
     return c.json({ write_approval: learning.writeApproval });
   });
 
-
   // nightly backups (data/backups/<date>/): list them, or make one now
   api.get("/backups", (c) => c.json({ backups: hub.backups.list(), dir: hub.backups.dir }));
   api.post("/backups", (c) => c.json({ backup: hub.backups.run() }, 201));
-  // skills (agentskills.io SKILL.md, the format Hermes uses) and proposals waiting for the owner
+  // skills (agentskills.io SKILL.md, the format Hermes uses): the owner's library, readable by everyone
   // popular public skills (Anthropic, Hermes Agent): browse and install one with a click
   const catalog = new SkillCatalog(join(config.filesDir, "skill-catalog.json"));
   api.get("/skills/catalog", async (c) => c.json({ ...(await catalog.list(c.req.query("refresh") === "1")), sources: CATALOG_SOURCES }));
@@ -473,10 +528,12 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
   api.get("/skills", (c) => c.json({ skills: learning.skillsWithUsage() }));
   api.post("/skills", async (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
     const { content } = z.object({ content: z.string().min(10).max(MAX_SKILL_CHARS) }).parse(await c.req.json());
     return c.json({ skill: learning.writeSkill(content) }, 201);
   });
   api.delete("/skills/:name", (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
     learning.deleteSkill(c.req.param("name"));
     return c.json({ ok: true });
   });
@@ -486,27 +543,36 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ proposal: learning.decide(c.req.param("id"), decision) });
   });
 
-  // project briefs (projects/<slug>/brief.yaml) and the feature log
-
-  // Publisher: photos sent in chat, website publishing per project, publishing approved posts
+  // Publisher: photos and videos sent in chat, website publishing per project, publishing approved posts
   api.post("/uploads", async (c) => {
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
     const bytes = new Uint8Array(await c.req.arrayBuffer());
-    const u = hub.publisher.saveUpload(c.req.query("name") ?? "image", type, bytes);
+    const u = hub.publisher.saveUpload(c.req.query("name") ?? "image", type, bytes, W(c));
     return c.json({ upload: publicUpload(u) }, 201);
   });
   // videos come in parts (Cloudflare refuses bodies over 100 MB); see UploadParts
   api.put("/uploads/parts/:key", async (c) => {
     const q = partQuery.parse(c.req.query());
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
-    const r = hub.uploadParts.put("owner", c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c));
+    const r = hub.uploadParts.put(`ws:${W(c)}`, c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c), null, W(c));
     return c.json({ received: r.received, total: r.total, ...(r.upload ? { upload: publicUpload(r.upload) } : {}) }, r.upload ? 201 : 200);
   });
   api.get("/uploads/:id", (c) => {
+    ownUpload(db, c.req.param("id"), W(c));
     const f = hub.publisher.uploadFile(c.req.param("id"));
     if (!f) throw new HttpError(404, "upload not found");
     const download: Record<string, string> = c.req.query("download") === "1" ? { "content-disposition": `attachment; filename="${f.row.name.replace(/"/g, "")}"` } : {};
     return fileResponse(f.file, f.row.content_type, c.req.header("range"), { "cache-control": "private, max-age=86400", ...download });
+  });
+  // everything under /projects/:id/ is the caller's own project
+  api.use("/projects/:id/*", async (c, next) => {
+    ownProject(db, c.req.param("id"), W(c));
+    await next();
+  });
+  // and everything under /drafts/:id/ is the caller's own draft
+  api.use("/drafts/:id/*", async (c, next) => {
+    ownDraft(db, c.req.param("id"), W(c));
+    await next();
   });
   api.get("/projects/:id/publish", (c) => c.json({ publish: hub.publisher.settings(c.req.param("id")) }));
   api.put("/projects/:id/publish", async (c) => c.json({ publish: hub.publisher.setSettings(c.req.param("id"), await c.req.json()) }));
@@ -533,7 +599,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.post("/drafts/:id/take-down", async (c) => c.json({ draft: await hub.publisher.takeDown(c.req.param("id")) }));
   api.get("/projects/:id/brief", (c) => {
     const p = hub.content.project(c.req.param("id"));
-    return c.json({ brief: hub.content.readBrief(p), example: EXAMPLE_BRIEF, path: `projects/${p.slug}/brief.yaml` });
+    return c.json({ brief: hub.content.readBrief(p), example: EXAMPLE_BRIEF, path: hub.content.briefPath(p) });
   });
   api.put("/projects/:id/brief", async (c) => {
     const p = hub.content.project(c.req.param("id"));
@@ -544,15 +610,17 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ features: hub.content.features(p.id) });
   });
   api.post("/projects/:id/features", async (c) => {
+    // a release note starts the owner's Tester and Marketing: owner projects only
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
     const p = hub.content.project(c.req.param("id"));
     const note = FeatureNoteInput.parse(await c.req.json());
     return c.json({ feature: hub.addFeature(p.id, { title: note.title, user_facing_note: note.user_facing_note, source_pr_url: note.source_pr_url ?? null }) }, 201);
   });
 
-  // content drafts: Marketing's output, never published by the system
+  // content drafts: approved by their owner; website / social posts go out on approval
   api.get("/drafts", (c) => {
     const status = c.req.query("status");
-    return c.json({ drafts: hub.content.listDrafts({ status: status === "pending" || status === "decided" ? status : undefined, project_id: c.req.query("project_id") || undefined }) });
+    return c.json({ drafts: hub.content.listDrafts({ status: status === "pending" || status === "decided" ? status : undefined, project_id: c.req.query("project_id") || undefined, workspace_id: W(c) }) });
   });
   api.post("/drafts/:id/decide", async (c) => {
     const decision = DraftDecision.parse(await c.req.json());
@@ -573,7 +641,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         attachments: z.array(z.string().max(64)).max(10).optional(),
       })
       .parse(await c.req.json());
-    const { job, thread_id } = hub.chat(body);
+    const { job, thread_id } = hub.chat(body, W(c));
     return c.json({ job, thread_id }, 201);
   });
   api.get("/chat/threads", (c) => {
@@ -582,7 +650,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const rows = db
       .select({ input: jobs.input, title: jobs.title, created_at: jobs.created_at })
       .from(jobs)
-      .where(and(eq(jobs.agent_id, agentId), eq(jobs.type, "chat")))
+      .where(and(eq(jobs.agent_id, agentId), eq(jobs.type, "chat"), eq(jobs.workspace_id, W(c))))
       .orderBy(desc(jobs.created_at))
       .limit(500)
       .all();
@@ -600,7 +668,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ threads: [...threads.values()].slice(0, 50) });
   });
   api.get("/chat/threads/:id", (c) => {
-    const rows = hub.chatJobs(c.req.param("id"));
+    const rows = hub.chatJobs(c.req.param("id")).filter((j) => j.workspace_id === W(c));
     return c.json({
       messages: rows.map((j) => ({
         job_id: j.id,
@@ -624,40 +692,36 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
 
   // Video Studio: how a video was made, render it again without the AI, or use your own edit
-  api.get("/videos/:id", (c) => c.json(hub.studio.info(c.req.param("id"))));
+  api.get("/videos/:id", (c) => c.json(hub.studio.info(c.req.param("id"), W(c))));
   api.post("/videos/:id/render", async (c) => {
     const body = z.object({ plan: z.unknown(), draft_id: z.string().nullable().optional() }).parse(await c.req.json());
-    return c.json({ job: hub.studio.render(c.req.param("id"), body) }, 201);
+    return c.json({ job: hub.studio.render(c.req.param("id"), body, W(c)) }, 201);
   });
   api.get("/opencut", (c) => c.json({ opencut: hub.opencut?.last() ?? null }));
   api.patch("/drafts/:id/video", async (c) => {
     const { upload_id } = z.object({ upload_id: z.string().max(64) }).parse(await c.req.json());
+    ownUpload(db, upload_id, W(c));
     return c.json({ draft: hub.content.setDraftVideo(c.req.param("id"), upload_id) });
   });
 
   // schedules
-  const getSchedule = (id: string) => {
-    const row = db.select().from(schedules).where(eq(schedules.id, id)).get();
-    if (!row) throw new HttpError(404, "schedule not found");
-    return row;
-  };
   api.get("/schedules", (c) => {
     const agentId = c.req.query("agent_id");
-    const q = db.select().from(schedules);
-    const rows = (agentId ? q.where(eq(schedules.agent_id, agentId)) : q).all();
+    const mine = eq(schedules.workspace_id, W(c));
+    const rows = db.select().from(schedules).where(agentId ? and(mine, eq(schedules.agent_id, agentId)) : mine).all();
     return c.json({ schedules: rows.map((r) => scheduler.toSchedule(r)) });
   });
   api.post("/schedules", async (c) => {
     const data = ScheduleInput.parse(await c.req.json());
-    if (!getAgent(db, data.agent_id)) throw new HttpError(400, "unknown agent");
+    usableAgent(db, data.agent_id, W(c));
     assertValidCron(data.cron);
-    const row = db.insert(schedules).values({ ...data, id: newId("sch") }).returning().get();
+    const row = db.insert(schedules).values({ ...data, id: newId("sch"), workspace_id: W(c) }).returning().get();
     scheduler.reload();
     return c.json({ schedule: scheduler.toSchedule(row) }, 201);
   });
   api.patch("/schedules/:id", async (c) => {
     const id = c.req.param("id");
-    getSchedule(id);
+    ownSchedule(db, id, W(c));
     const raw = z.record(z.string(), z.unknown()).parse(await c.req.json());
     const patch = ScheduleInput.omit({ agent_id: true }).partial().parse(raw);
     const changes = Object.fromEntries(Object.entries(patch).filter(([k]) => k in raw));
@@ -668,13 +732,13 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
   api.delete("/schedules/:id", (c) => {
     const id = c.req.param("id");
-    getSchedule(id);
+    ownSchedule(db, id, W(c));
     db.delete(schedules).where(eq(schedules.id, id)).run();
     scheduler.reload();
     return c.json({ ok: true });
   });
   api.post("/schedules/:id/run-now", (c) => {
-    getSchedule(c.req.param("id"));
+    ownSchedule(db, c.req.param("id"), W(c));
     const jobId = scheduler.fire(c.req.param("id"), { force: true });
     if (!jobId) throw new HttpError(409, "could not start: the agent is disabled");
     return c.json({ job_id: jobId });
@@ -684,6 +748,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.get("/artifacts/:runId/:name", async (c) => {
     const { runId, name } = c.req.param();
     if (!ARTIFACT_NAME.test(name) || !/^[a-z0-9_]+$/.test(runId)) throw new HttpError(400, "invalid path");
+    ownRun(db, runId, W(c));
     const ext = name.split(".").pop()!.toLowerCase();
     const type = ARTIFACT_TYPES[ext];
     if (!type) throw new HttpError(404, "not found");
@@ -700,7 +765,6 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     });
   });
 
-  // office view art: Tiled map, tileset and sprite atlases from MAPS_DIR (swappable without a rebuild)
   // the owner's manual (docs/manual.html), shown in the app at /manual; its office picture comes from MAPS_DIR
   api.get("/manual", async (c) => {
     const file = Bun.file(config.manualPath);
@@ -709,6 +773,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.html(html, 200, { "cache-control": "private, no-cache", "x-content-type-options": "nosniff" });
   });
 
+  // office view art: Tiled map, tileset and sprite atlases from MAPS_DIR (swappable without a rebuild)
   api.get("/office/assets/:name", async (c) => {
     const name = c.req.param("name");
     if (!OFFICE_ASSET_NAME.test(name)) throw new HttpError(400, "invalid asset name");
@@ -720,24 +785,36 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     });
   });
 
-  // tools catalog (for the agent editor)
   // the System page: versions, schema (ERD), counts, connected integrations (no secrets)
   api.get("/system", (c) => c.json(systemInfo(hub, integrations)));
+  // tools catalog (for the agent editor); members see which ones they may use
   api.get("/tools", (c) =>
     c.json({
-      tools: Object.values(TOOL_REGISTRY).map((t) => ({ name: t.name, description: t.description, category: t.category })),
+      tools: Object.values(TOOL_REGISTRY)
+        .filter((t) => !memberOf(c) || MEMBER_TOOLS.has(t.name))
+        .map((t) => ({ name: t.name, description: t.description, category: t.category })),
     }),
   );
 
-  // approvals
+  // approvals (of your workspace's runs)
   api.get("/approvals", (c) => {
     const status = z.enum(["pending", "approved", "rejected", "expired", "all"]).catch("pending").parse(c.req.query("status"));
-    const q = db.select().from(approvals);
-    const rows = (status === "all" ? q : q.where(eq(approvals.status, status))).orderBy(desc(approvals.created_at)).limit(200).all();
+    const mine = eq(jobs.workspace_id, W(c));
+    const rows = db
+      .select({ a: approvals })
+      .from(approvals)
+      .innerJoin(runs, eq(runs.id, approvals.run_id))
+      .innerJoin(jobs, eq(jobs.id, runs.job_id))
+      .where(status === "all" ? mine : and(mine, eq(approvals.status, status)))
+      .orderBy(desc(approvals.created_at))
+      .limit(200)
+      .all()
+      .map((r) => r.a);
     return c.json({ approvals: rows });
   });
   api.post("/approvals/:id/decide", async (c) => {
     const { decision } = z.object({ decision: z.enum(["approved", "rejected"]) }).parse(await c.req.json());
+    ownApproval(db, c.req.param("id"), W(c));
     hub.decideApproval(c.req.param("id"), decision, "web");
     return c.json({ ok: true });
   });
@@ -745,14 +822,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   // jobs
   api.get("/jobs", (c) => {
     const limit = intParam(c.req.query("limit"), 100, 500);
-    const rows = db.select().from(jobs).orderBy(desc(jobs.created_at)).limit(limit).all();
+    const rows = db.select().from(jobs).where(eq(jobs.workspace_id, W(c))).orderBy(desc(jobs.created_at)).limit(limit).all();
     return c.json({ jobs: rows.map(toJob) });
   });
   api.post("/jobs", async (c) => {
-    const job = hub.createJob(JobInput.parse(await c.req.json()));
+    const job = hub.createJob(JobInput.parse(await c.req.json()), W(c));
     return c.json({ job }, 201);
   });
   api.post("/jobs/:id/cancel", (c) => {
+    ownJob(db, c.req.param("id"), W(c));
     hub.cancelJob(c.req.param("id"));
     return c.json({ ok: true });
   });
@@ -761,21 +839,29 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.get("/runs", (c) => {
     const jobId = c.req.query("job_id");
     const limit = intParam(c.req.query("limit"), 100, 500);
-    const q = db.select().from(runs);
-    const rows = (jobId ? q.where(eq(runs.job_id, jobId)) : q).orderBy(desc(runs.started_at)).limit(limit).all();
+    const mine = eq(jobs.workspace_id, W(c));
+    const rows = db
+      .select({ r: runs })
+      .from(runs)
+      .innerJoin(jobs, eq(jobs.id, runs.job_id))
+      .where(jobId ? and(mine, eq(runs.job_id, jobId)) : mine)
+      .orderBy(desc(runs.started_at))
+      .limit(limit)
+      .all()
+      .map((x) => x.r);
     return c.json({ runs: rows.map(toRun) });
   });
   api.get("/runs/:id", (c) => {
-    const run = getRun(db, c.req.param("id"));
-    if (!run) throw new HttpError(404, "run not found");
+    const run = ownRun(db, c.req.param("id"), W(c));
     return c.json({ run: toRun(run), events: store.list(0, 5000, run.id) });
   });
   api.post("/runs/:id/cancel", (c) => {
+    ownRun(db, c.req.param("id"), W(c));
     hub.cancelRun(c.req.param("id"));
     return c.json({ ok: true });
   });
 
-  // runners
+  // runners (owner only: they are the owner's machines)
   api.get("/runners", (c) => c.json({ runners: db.select().from(runners).orderBy(runners.created_at).all().map(toRunner) }));
   api.post("/runners/pairing-code", (c) => {
     const code = pairingCode();
@@ -797,21 +883,24 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ ok: true });
   });
 
-  // providers
+  // providers (each workspace has its own; a member's own agents use the member's keys)
   api.get("/providers/presets", (c) => c.json({ presets: PROVIDER_PRESETS }));
   api.get("/providers", (c) =>
-    c.json({ providers: db.select().from(providers).orderBy(providers.created_at).all().map(toProviderPublic) }),
+    c.json({ providers: db.select().from(providers).where(eq(providers.workspace_id, W(c))).orderBy(providers.created_at).all().map(toProviderPublic) }),
   );
   api.post("/providers", async (c) => {
     const data = ProviderInput.parse(await c.req.json());
-    if (getProviderBySlug(db, data.slug)) throw new HttpError(409, "slug already used");
+    const ws = W(c);
+    if (getProviderBySlug(db, data.slug, ws)) throw new HttpError(409, "slug already used");
     if (data.kind === "openai_compatible" && !data.base_url) throw new HttpError(400, "base_url is required for OpenAI-compatible providers");
+    if (memberOf(c) && data.kind === "mock") throw new HttpError(400, "the mock provider is for tests");
     const { api_key, ...rest } = data;
     const row = db
       .insert(providers)
       .values({
         ...rest,
         id: newId("prv"),
+        workspace_id: ws,
         api_key_enc: api_key ? secrets.encrypt(api_key) : null,
         api_key_hint: api_key ? keyHint(api_key) : null,
       })
@@ -821,8 +910,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
   api.patch("/providers/:id", async (c) => {
     const id = c.req.param("id");
-    const existing = db.select().from(providers).where(eq(providers.id, id)).get();
-    if (!existing) throw new HttpError(404, "provider not found");
+    ownProvider(db, id, W(c));
     const raw = z.record(z.string(), z.unknown()).parse(await c.req.json());
     const patch = ProviderInput.omit({ slug: true }).partial().parse(raw);
     const changes: Partial<typeof providers.$inferInsert> = {};
@@ -838,9 +926,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
   api.delete("/providers/:id", (c) => {
     const id = c.req.param("id");
-    const existing = db.select().from(providers).where(eq(providers.id, id)).get();
-    if (!existing) throw new HttpError(404, "provider not found");
-    if (db.select({ id: agents.id }).from(agents).where(eq(agents.provider, existing.slug)).get()) {
+    const existing = ownProvider(db, id, W(c));
+    if (db.select({ id: agents.id }).from(agents).where(and(eq(agents.provider, existing.slug), eq(agents.workspace_id, existing.workspace_id))).get()) {
       throw new HttpError(409, "provider is used by an agent; switch those agents first");
     }
     db.delete(providers).where(eq(providers.id, id)).run();

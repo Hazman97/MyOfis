@@ -9,7 +9,7 @@ import { Secrets, hashToken } from "./crypto.ts";
 import { openDb } from "./db/client.ts";
 import { runners } from "./db/schema.ts";
 import type { HubConfig } from "./env.ts";
-import { EventStore } from "./events.ts";
+import { EventStore, visibleTo } from "./events.ts";
 import { createHttpApp } from "./http.ts";
 import { Integrations } from "./integrations.ts";
 import { ReleaseWatcher } from "./releases.ts";
@@ -25,7 +25,7 @@ import { seed } from "./seed.ts";
 import { LocalStorage } from "./storage.ts";
 
 type RunnerSocketData = { kind: "runner"; runnerId: string; name: string; conn: RunnerConn | null };
-type WebSocketData = { kind: "web"; since: number | null; unsubscribe: (() => void) | null };
+type WebSocketData = { kind: "web"; since: number | null; unsubscribe: (() => void) | null; workspace: string };
 type SocketData = RunnerSocketData | WebSocketData;
 
 const HELLO_TIMEOUT_MS = 10_000;
@@ -50,7 +50,7 @@ export function startHub(
   const storage = new LocalStorage(config.filesDir);
   const store = new EventStore(db, storage);
   const hub = new Hub(config, db, store, secrets, { ...TIMINGS, ...opts.timings });
-  const auth = createAuthenticator(config, secrets);
+  const auth = createAuthenticator(config, secrets, db);
 
   seed(db, config, secrets);
   const integrations = new Integrations(db, secrets);
@@ -95,10 +95,11 @@ export function startHub(
       }
 
       if (url.pathname === "/ws/web") {
-        if (!(await auth.isOwner(req))) return new Response("unauthorized", { status: 401 });
+        const me = await auth.identify(req);
+        if (!me) return new Response("unauthorized", { status: 401 });
         const sinceRaw = url.searchParams.get("since");
         const since = sinceRaw !== null && /^\d+$/.test(sinceRaw) ? Number(sinceRaw) : null;
-        if (srv.upgrade(req, { data: { kind: "web", since, unsubscribe: null } })) return;
+        if (srv.upgrade(req, { data: { kind: "web", since, unsubscribe: null, workspace: me.workspace_id } })) return;
         return new Response("upgrade failed", { status: 400 });
       }
 
@@ -109,19 +110,23 @@ export function startHub(
       open(ws) {
         const d = ws.data;
         if (d.kind === "web") {
+          // each person sees their own workspace's office (plus runners and pause)
           if (d.since === null || d.since > store.state.last_event_id) {
-            sendWeb(ws, { type: "snapshot", state: store.state, last_event_id: store.state.last_event_id });
+            const view = store.stateFor(d.workspace);
+            sendWeb(ws, { type: "snapshot", state: view, last_event_id: store.state.last_event_id });
           } else {
             // Resume / replay: everything after `since`, in batches. Synchronous, so no live event can interleave.
             let after = d.since;
             for (;;) {
-              const batch = store.list(after, RESUME_BATCH);
+              const batch = store.list(after, RESUME_BATCH, undefined, d.workspace);
               if (batch.length) sendWeb(ws, { type: "events", events: batch });
               if (batch.length < RESUME_BATCH) break;
               after = batch[batch.length - 1]!.id;
             }
           }
-          d.unsubscribe = store.subscribe((event) => sendWeb(ws, { type: "event", event }));
+          d.unsubscribe = store.subscribe((event) => {
+            if (visibleTo(event, d.workspace)) sendWeb(ws, { type: "event", event });
+          });
           return;
         }
         setTimeout(() => {

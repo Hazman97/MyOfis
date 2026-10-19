@@ -88,7 +88,7 @@ export class Scheduler {
     }
     const tpl = JobTemplate.parse(row.job_template);
     db.update(schedules).set({ last_run_at: new Date().toISOString() }).where(eq(schedules.id, id)).run();
-    const job = this.hub.createJob({ ...tpl, agent_id: row.agent_id, trigger: "schedule" });
+    const job = this.hub.createJob({ ...tpl, agent_id: row.agent_id, trigger: "schedule" }, row.workspace_id);
     return job.id;
   }
 }

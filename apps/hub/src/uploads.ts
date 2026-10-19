@@ -37,6 +37,7 @@ export class UploadParts {
     p: { name: string; content_type: string; total: number; offset: number },
     bytes: Uint8Array,
     runId: string | null = null,
+    workspaceId = "owner",
   ): { received: number; total: number; upload?: ReturnType<Publisher["adoptUpload"]> } {
     this.#sweep();
     if (!KEY.test(key)) throw new HttpError(400, "invalid upload key");
@@ -72,7 +73,7 @@ export class UploadParts {
       rmSync(cur.path, { force: true });
       throw new HttpError(400, "upload size mismatch, send it again");
     }
-    return { received: cur.received, total: cur.total, upload: this.publisher.adoptUpload(cur.name, cur.type, cur.path, runId) };
+    return { received: cur.received, total: cur.total, upload: this.publisher.adoptUpload(cur.name, cur.type, cur.path, runId, workspaceId) };
   }
 
   #drop(id: string) {

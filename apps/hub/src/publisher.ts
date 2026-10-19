@@ -54,7 +54,7 @@ export class Publisher {
 
   // ---------------------------------------------------------------- uploads (chat photos)
 
-  saveUpload(name: string, contentType: string, bytes: Uint8Array) {
+  saveUpload(name: string, contentType: string, bytes: Uint8Array, workspaceId = "owner") {
     const ext = IMAGE_TYPES[contentType];
     if (!ext) throw new HttpError(400, "only JPEG, PNG, WebP or GIF images");
     if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES) throw new HttpError(400, "the image must be under 10 MB");
@@ -64,14 +64,14 @@ export class Publisher {
     const path = join("uploads", `${id}.${ext}`);
     writeFileSync(join(this.filesDir, path), bytes);
     const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `image.${ext}`;
-    return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size: bytes.length, path }).returning().get();
+    return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size: bytes.length, path, workspace_id: workspaceId }).returning().get();
   }
 
   /**
    * Take a finished file (a video sent in parts, or Editor's render) into the uploads table.
    * `tmpPath` is moved, not copied.
    */
-  adoptUpload(name: string, contentType: string, tmpPath: string, runId: string | null = null) {
+  adoptUpload(name: string, contentType: string, tmpPath: string, runId: string | null = null, workspaceId = "owner") {
     const ext = VIDEO_TYPES[contentType] ?? IMAGE_TYPES[contentType];
     if (!ext) throw new HttpError(400, "only photos (JPEG, PNG, WebP, GIF) or videos (MP4, MOV, WebM, MKV)");
     const id = newId("upl");
@@ -80,7 +80,7 @@ export class Publisher {
     renameSync(tmpPath, join(this.filesDir, path));
     const size = statSync(join(this.filesDir, path)).size;
     const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `video.${ext}`;
-    return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size, path, run_id: runId }).returning().get();
+    return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size, path, run_id: runId, workspace_id: workspaceId }).returning().get();
   }
 
   /** Remember how a render was made (Video Studio). */

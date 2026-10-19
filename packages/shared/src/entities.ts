@@ -131,9 +131,16 @@ export const AgentInput = z.object({
 });
 export type AgentInput = z.input<typeof AgentInput>;
 
+/** The owner's workspace id. Every member has their own workspace (2026-10-19). */
+export const OWNER_WORKSPACE = "owner";
+
 export const Agent = AgentInput.extend({
   id: z.string(),
   created_at: z.string(),
+  /** Whose agent it is. */
+  workspace_id: z.string().default(OWNER_WORKSPACE),
+  /** Set in a member's list for the owner's agents shared with them (read-only, the owner's AI pays). */
+  shared: z.boolean().optional(),
 });
 export type Agent = z.infer<typeof Agent>;
 
@@ -154,6 +161,7 @@ export type JobInput = z.input<typeof JobInput>;
 
 export const Job = JobInput.extend({
   id: z.string(),
+  workspace_id: z.string().default(OWNER_WORKSPACE),
   status: JobStatus,
   created_at: z.string(),
 });

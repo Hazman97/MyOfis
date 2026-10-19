@@ -76,16 +76,27 @@ export class Content {
     return p;
   }
 
-  #dir(slug: string) {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new HttpError(400, "invalid project slug");
-    return join(this.projectsDir, slug);
+  /** projects/<slug> for the owner, projects/<workspace>/<slug> for a member (slugs are unique per workspace). */
+  #rel(p: { slug: string; workspace_id: string }) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(p.slug)) throw new HttpError(400, "invalid project slug");
+    if (p.workspace_id !== "owner" && !/^ws_[a-z0-9]+$/.test(p.workspace_id)) throw new HttpError(400, "invalid workspace");
+    return p.workspace_id === "owner" ? p.slug : `${p.workspace_id}/${p.slug}`;
+  }
+
+  #dir(p: { slug: string; workspace_id: string }) {
+    return join(this.projectsDir, this.#rel(p));
+  }
+
+  /** Where the brief lives, relative to the repo (shown to the owner). */
+  briefPath(p: { slug: string; workspace_id: string }) {
+    return `projects/${this.#rel(p)}/brief.yaml`;
   }
 
   // ---------------------------------------------------------------- briefs
 
   /** null when the project has no brief yet. Throws 409 when the file exists but is invalid (owner edited it by hand). */
   readBrief(p: ProjectRow): ProjectBrief | null {
-    const file = join(this.#dir(p.slug), "brief.yaml");
+    const file = join(this.#dir(p), "brief.yaml");
     if (!existsSync(file)) return null;
     let raw: unknown;
     try {
@@ -110,13 +121,13 @@ export class Content {
 
   writeBrief(p: ProjectRow, input: unknown): ProjectBrief {
     const brief = ProjectBrief.parse(input);
-    const dir = this.#dir(p.slug);
+    const dir = this.#dir(p);
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "brief.yaml");
     // write-then-rename so a crash never leaves half a brief
     writeFileSync(`${file}.tmp`, BRIEF_HEADER + stringifyYaml(brief, { lineWidth: 0 }));
     renameSync(`${file}.tmp`, file);
-    const rel = `projects/${p.slug}/brief.yaml`;
+    const rel = this.briefPath(p);
     if (p.brief_path !== rel) this.db.update(projects).set({ brief_path: rel }).where(eq(projects.id, p.id)).run();
     return brief;
   }
@@ -139,7 +150,7 @@ export class Content {
   }
 
   appendFeaturesMd(p: ProjectRow, f: FeatureRow): void {
-    const dir = this.#dir(p.slug);
+    const dir = this.#dir(p);
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "FEATURES.md");
     const date = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date(f.released_at));
@@ -154,15 +165,15 @@ export class Content {
     return row ? toDraft(row) : null;
   }
 
-  listDrafts(filter: { status?: string; project_id?: string; limit?: number }): ContentDraft[] {
-    const conds = [];
+  listDrafts(filter: { status?: string; project_id?: string; limit?: number; workspace_id?: string }): ContentDraft[] {
+    const conds = [eq(contentDrafts.workspace_id, filter.workspace_id ?? "owner")];
     if (filter.status === "pending") conds.push(eq(contentDrafts.status, "draft"));
     else if (filter.status === "decided") conds.push(ne(contentDrafts.status, "draft"));
     if (filter.project_id) conds.push(eq(contentDrafts.project_id, filter.project_id));
     return this.db
       .select()
       .from(contentDrafts)
-      .where(conds.length ? and(...conds) : undefined)
+      .where(and(...conds))
       .orderBy(desc(contentDrafts.created_at), desc(contentDrafts.id))
       .limit(Math.min(filter.limit ?? 200, 500))
       .all()
@@ -174,9 +185,11 @@ export class Content {
     emit: Emit,
     d: { project_id: string; agent_id: string; run_id: string; platform: string; kind: string; title: string; body: string; self_check: SelfCheck; feature_id: string | null; meta?: WebPost | null },
   ): DraftRow {
+    // a draft belongs to its project's workspace
+    const ws = tx.select({ w: projects.workspace_id }).from(projects).where(eq(projects.id, d.project_id)).get()?.w ?? "owner";
     const row = tx
       .insert(contentDrafts)
-      .values({ id: newId("drf"), ...d, original_body: d.body, status: "draft" })
+      .values({ id: newId("drf"), ...d, workspace_id: ws, original_body: d.body, status: "draft" })
       .returning()
       .get();
     emit(
@@ -252,12 +265,12 @@ export class Content {
   // ---------------------------------------------------------------- agent context
 
   /** Everything Marketing may read: briefs, released features and decided drafts (the owner's feedback). */
-  context(projectIds: string[] | "all"): ProjectContext {
+  context(projectIds: string[] | "all", workspaceId = "owner"): ProjectContext {
     const rows =
       projectIds === "all"
-        ? this.db.select().from(projects).where(eq(projects.enabled, true)).all()
+        ? this.db.select().from(projects).where(and(eq(projects.enabled, true), eq(projects.workspace_id, workspaceId))).all()
         : projectIds.length
-          ? this.db.select().from(projects).where(inArray(projects.id, projectIds)).all()
+          ? this.db.select().from(projects).where(and(inArray(projects.id, projectIds), eq(projects.workspace_id, workspaceId))).all()
           : [];
     const today = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date());
     return {

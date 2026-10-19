@@ -26,6 +26,18 @@ export interface ToolInfo {
   category: string;
 }
 
+/** A friend with their own workspace on the owner's MyOfis (Settings → Members). */
+export interface Member {
+  id: string;
+  email: string;
+  name: string;
+  disabled: boolean;
+  workspace_id: string;
+  created_at: string;
+  shares: { agent_id: string; agent_name: string; daily_token_budget: number; used_today: number }[];
+  tokens_today: number;
+}
+
 /** GET /api/system: the running system, for the System page. */
 export interface SystemTable {
   name: string;
@@ -236,7 +248,12 @@ export const api = {
     return r;
   },
   authMode: () => request<{ mode: "local" | "cf-access" }>("/auth/mode"),
-  me: () => request<{ ok: true; mode: string }>("/auth/me"),
+  me: () => request<{ ok: true; mode: string; email: string; name: string; role: "owner" | "member"; workspace_id: string }>("/auth/me"),
+  members: () => request<{ members: Member[] }>("/members"),
+  inviteMember: (body: { email: string; name: string }) => request<{ member: Member }>("/members", { body }),
+  updateMember: (id: string, body: { name?: string; disabled?: boolean }) => request<{ member: Member }>(`/members/${id}`, { method: "PATCH", body }),
+  setMemberShares: (id: string, shares: { agent_id: string; daily_token_budget: number }[]) =>
+    request<{ member: Member }>(`/members/${id}/shares`, { method: "PUT", body: { shares } }),
 
   state: () => request<{ state: OfficeState }>("/state"),
   settings: () =>

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type { AgentConfig, PublishInfo, RenderInfo, SelfCheck, WebPost } from "@agent-office/shared";
 
 export interface ProjectPublish {
@@ -15,6 +15,28 @@ export interface ProjectPublish {
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
 const json = <T>(name: string) => text(name, { mode: "json" }).$type<T>();
 const bool = (name: string) => integer(name, { mode: "boolean" });
+/** Whose data a row is (members, 2026-10-19). The owner's workspace is the fixed id "owner". */
+const ws = () => text("workspace_id").notNull().default("owner");
+
+/** One per person: the owner's ("owner") and one per invited member. */
+export const workspaces = sqliteTable("workspaces", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  created_at: text("created_at").notNull().default(now),
+});
+
+/** People who may log in (Cloudflare Access email). The owner is created from OWNER_EMAIL. */
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  name: text("name").notNull().default(""),
+  role: text("role", { enum: ["owner", "member"] }).notNull().default("member"),
+  workspace_id: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id),
+  disabled: bool("disabled").notNull().default(false),
+  created_at: text("created_at").notNull().default(now),
+});
 
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -40,9 +62,12 @@ export const pairingCodes = sqliteTable("pairing_codes", {
 });
 
 /** LLM providers. Added beyond the spec so the owner can configure presets and custom endpoints. */
-export const providers = sqliteTable("providers", {
+export const providers = sqliteTable(
+  "providers",
+  {
   id: text("id").primaryKey(),
-  slug: text("slug").notNull().unique(),
+  workspace_id: ws(),
+  slug: text("slug").notNull(),
   name: text("name").notNull(),
   kind: text("kind", { enum: ["anthropic", "openai", "google", "openai_compatible", "mock"] }).notNull(),
   base_url: text("base_url"),
@@ -55,11 +80,16 @@ export const providers = sqliteTable("providers", {
     .default(sql`'{}'`),
   enabled: bool("enabled").notNull().default(true),
   created_at: text("created_at").notNull().default(now),
-});
+  },
+  (t) => [uniqueIndex("providers_ws_slug").on(t.workspace_id, t.slug)],
+);
 
-export const agents = sqliteTable("agents", {
+export const agents = sqliteTable(
+  "agents",
+  {
   id: text("id").primaryKey(),
-  slug: text("slug").notNull().unique(),
+  workspace_id: ws(),
+  slug: text("slug").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default(""),
   sprite: text("sprite").notNull().default("default"),
@@ -77,11 +107,32 @@ export const agents = sqliteTable("agents", {
   desk_y: integer("desk_y").notNull().default(0),
   enabled: bool("enabled").notNull().default(true),
   created_at: text("created_at").notNull().default(now),
-});
+  },
+  (t) => [uniqueIndex("agents_ws_slug").on(t.workspace_id, t.slug)],
+);
 
-export const projects = sqliteTable("projects", {
+/** Owner agents shared with a member's workspace: they run on the owner's provider, within a daily limit per member. */
+export const agentShares = sqliteTable(
+  "agent_shares",
+  {
+    agent_id: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    workspace_id: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    daily_token_budget: integer("daily_token_budget").notNull().default(50000),
+    created_at: text("created_at").notNull().default(now),
+  },
+  (t) => [primaryKey({ columns: [t.agent_id, t.workspace_id] })],
+);
+
+export const projects = sqliteTable(
+  "projects",
+  {
   id: text("id").primaryKey(),
-  slug: text("slug").notNull().unique(),
+  workspace_id: ws(),
+  slug: text("slug").notNull(),
   name: text("name").notNull(),
   brief_path: text("brief_path"),
   repo_url: text("repo_url"),
@@ -89,12 +140,16 @@ export const projects = sqliteTable("projects", {
   /** The website's publish endpoint (Publisher): URL, encrypted shared secret, what it accepts. */
   publish: json<ProjectPublish>("publish"),
   enabled: bool("enabled").notNull().default(true),
-});
+  },
+  (t) => [uniqueIndex("projects_ws_slug").on(t.workspace_id, t.slug)],
+);
 
 export const jobs = sqliteTable(
   "jobs",
   {
     id: text("id").primaryKey(),
+    /** The workspace the work is for (a member using a shared agent: the member's). */
+    workspace_id: ws(),
     agent_id: text("agent_id")
       .notNull()
       .references(() => agents.id),
@@ -109,7 +164,7 @@ export const jobs = sqliteTable(
     }).notNull(),
     created_at: text("created_at").notNull().default(now),
   },
-  (t) => [index("jobs_status_idx").on(t.status, t.created_at)],
+  (t) => [index("jobs_status_idx").on(t.status, t.created_at), index("jobs_ws_idx").on(t.workspace_id, t.created_at)],
 );
 
 export const runs = sqliteTable(
@@ -148,6 +203,8 @@ export const events = sqliteTable(
     ts: text("ts").notNull(),
     run_id: text("run_id"),
     agent_id: text("agent_id"),
+    /** Who may see it: a workspace id, or null for everyone (runners, pause). */
+    workspace_id: text("workspace_id"),
     type: text("type").notNull(),
     payload: json<Record<string, unknown>>("payload").notNull(),
   },
@@ -155,6 +212,7 @@ export const events = sqliteTable(
     index("events_ts_idx").on(t.ts),
     index("events_agent_idx").on(t.agent_id, t.id),
     index("events_run_idx").on(t.run_id, t.id),
+    index("events_ws_idx").on(t.workspace_id, t.id),
   ],
 );
 
@@ -177,6 +235,7 @@ export const approvals = sqliteTable("approvals", {
 
 export const schedules = sqliteTable("schedules", {
   id: text("id").primaryKey(),
+  workspace_id: ws(),
   agent_id: text("agent_id")
     .notNull()
     .references(() => agents.id),
@@ -201,6 +260,7 @@ export const featureLog = sqliteTable("feature_log", {
 
 export const contentDrafts = sqliteTable("content_drafts", {
   id: text("id").primaryKey(),
+  workspace_id: ws(),
   project_id: text("project_id")
     .notNull()
     .references(() => projects.id),
@@ -236,6 +296,7 @@ export const proposals = sqliteTable(
   "proposals",
   {
     id: text("id").primaryKey(),
+    workspace_id: ws(),
     kind: text("kind", { enum: ["skill", "memory"] }).notNull(),
     agent_id: text("agent_id").notNull(),
     run_id: text("run_id"),
@@ -257,6 +318,7 @@ export const proposals = sqliteTable(
 /** Files the owner sends in chat (photos, videos) and videos Editor renders. Stored under FILES_DIR/uploads/. */
 export const uploads = sqliteTable("uploads", {
   id: text("id").primaryKey(),
+  workspace_id: ws(),
   name: text("name").notNull(),
   content_type: text("content_type").notNull(),
   size: integer("size").notNull(),

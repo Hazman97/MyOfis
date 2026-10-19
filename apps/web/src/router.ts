@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { api } from "./api/http.ts";
+import { me } from "./me.ts";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -18,6 +19,7 @@ export const router = createRouter({
     { path: "/skills", name: "skills", component: () => import("./views/SkillsView.vue") },
     { path: "/projects", name: "projects", component: () => import("./views/ProjectsView.vue") },
     { path: "/studio/:id", name: "studio", component: () => import("./views/VideoStudioView.vue"), props: true },
+    { path: "/members", name: "members", component: () => import("./views/MembersView.vue") },
     { path: "/system", name: "system", component: () => import("./views/SystemView.vue") },
     { path: "/manual", name: "manual", component: () => import("./views/ManualView.vue") },
     { path: "/runners", name: "runners", component: () => import("./views/RunnersView.vue") },
@@ -33,7 +35,8 @@ let authChecked = false;
 router.beforeEach(async (to) => {
   if (to.meta.public || authChecked) return true;
   try {
-    await api.me();
+    const m = await api.me();
+    me.value = { email: m.email, name: m.name, role: m.role, workspace_id: m.workspace_id };
     authChecked = true;
     return true;
   } catch {

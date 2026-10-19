@@ -95,6 +95,8 @@ export const EventEnvelope = z.object({
   ts: z.string(),
   run_id: z.string().nullable(),
   agent_id: z.string().nullable(),
+  /** Who may see it (a workspace id); null = everyone (runners, pause). */
+  workspace_id: z.string().nullable().optional(),
 });
 export type EventEnvelope = z.infer<typeof EventEnvelope>;
 

@@ -7,6 +7,7 @@ import type { Hub } from "./core.ts";
 import { agents, approvals, contentDrafts, projects, settings } from "./db/schema.ts";
 import type { Integrations } from "./integrations.ts";
 import { getAgent, getJob, getRun } from "./repo.ts";
+import { OWNER_WORKSPACE, ownApproval, ownDraft } from "./scope.ts";
 
 const POLL_TIMEOUT_S = 25;
 const MESSAGE_MAX = 3500;
@@ -188,6 +189,8 @@ export class TelegramBot {
 
   async #onEvent(e: AgentEvent): Promise<void> {
     if (!this.integrations.telegram()) return;
+    // the bot is the owner's phone: members' work is never sent here
+    if (e.workspace_id && e.workspace_id !== OWNER_WORKSPACE) return;
     const agentName = () => (e.agent_id ? (getAgent(this.hub.db, e.agent_id)?.name ?? "An agent") : "An agent");
     const jobTitle = () => {
       const run = e.run_id ? getRun(this.hub.db, e.run_id) : undefined;
@@ -367,6 +370,7 @@ export class TelegramBot {
     if (parsed.kind === "draft") return this.#decideDraft(token, cq.id, cq.message, parsed.id, parsed.yes);
     let reply: string;
     try {
+      ownApproval(this.hub.db, parsed.id, OWNER_WORKSPACE);
       this.hub.decideApproval(parsed.id, parsed.yes ? "approved" : "rejected", "telegram");
       reply = parsed.yes ? "✅ Approved" : "❌ Rejected";
     } catch (err) {
@@ -383,6 +387,7 @@ export class TelegramBot {
   async #decideDraft(token: string, callbackId: string, message: { message_id: number; chat: { id: number } } | undefined, draftId: string, yes: boolean): Promise<void> {
     let reply: string;
     try {
+      ownDraft(this.hub.db, draftId, OWNER_WORKSPACE);
       const draft = this.hub.content.decideDraft(draftId, yes ? { decision: "approve" } : { decision: "reject" });
       if (!yes) reply = "❌ Rejected";
       else {
@@ -416,20 +421,20 @@ export class TelegramBot {
 
   /** The agent to talk to: the chosen one, else Publisher, else the first enabled agent. */
   #agent(state: TgChat) {
-    const enabled = this.hub.db.select().from(agents).where(eq(agents.enabled, true)).all();
+    const enabled = this.hub.db.select().from(agents).where(and(eq(agents.enabled, true), eq(agents.workspace_id, OWNER_WORKSPACE))).all();
     return enabled.find((a) => a.id === state.agent_id) ?? enabled.find((a) => a.slug === "publisher") ?? enabled[0] ?? null;
   }
 
   /** The project for this chat: the chosen one, else the only project whose website accepts posts. */
   #project(state: TgChat): string | null {
     if (state.project_id) return state.project_id;
-    const withSite = this.hub.db.select({ id: projects.id, publish: projects.publish }).from(projects).where(eq(projects.enabled, true)).all().filter((p) => p.publish?.info);
+    const withSite = this.hub.db.select({ id: projects.id, publish: projects.publish }).from(projects).where(and(eq(projects.enabled, true), eq(projects.workspace_id, OWNER_WORKSPACE))).all().filter((p) => p.publish?.info);
     return withSite.length === 1 ? withSite[0]!.id : null;
   }
 
   async #command(cmd: string, arg: string): Promise<void> {
     const state = this.#chatState();
-    const list = () => this.hub.db.select({ slug: agents.slug, name: agents.name, role: agents.role }).from(agents).where(eq(agents.enabled, true)).all();
+    const list = () => this.hub.db.select({ slug: agents.slug, name: agents.name, role: agents.role }).from(agents).where(and(eq(agents.enabled, true), eq(agents.workspace_id, OWNER_WORKSPACE))).all();
     switch (cmd) {
       case "/status":
         await this.notify(this.#statusText());
@@ -442,7 +447,7 @@ export class TelegramBot {
         await this.notify(`Agents (switch with /agent <slug>):\n${list().map((a) => `• ${a.slug}: ${a.name}${a.role ? ` (${a.role})` : ""}`).join("\n")}`);
         return;
       case "/agent": {
-        const a = this.hub.db.select().from(agents).where(and(eq(agents.slug, arg.toLowerCase()), eq(agents.enabled, true))).get();
+        const a = this.hub.db.select().from(agents).where(and(eq(agents.slug, arg.toLowerCase()), eq(agents.enabled, true), eq(agents.workspace_id, OWNER_WORKSPACE))).get();
         if (!a) {
           await this.notify(`No agent "${arg}". ${list().map((x) => x.slug).join(", ")}`);
           return;
@@ -452,7 +457,7 @@ export class TelegramBot {
         return;
       }
       case "/project": {
-        const all = this.hub.db.select({ id: projects.id, slug: projects.slug, name: projects.name }).from(projects).where(eq(projects.enabled, true)).all();
+        const all = this.hub.db.select({ id: projects.id, slug: projects.slug, name: projects.name }).from(projects).where(and(eq(projects.enabled, true), eq(projects.workspace_id, OWNER_WORKSPACE))).all();
         const p = all.find((x) => x.slug === arg.toLowerCase());
         if (!p) {
           await this.notify(`Projects: ${all.map((x) => x.slug).join(", ") || "none"}. Use /project <slug>.`);

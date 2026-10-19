@@ -65,7 +65,15 @@ export interface SearchHit {
   snippet: string;
 }
 
-const memKey = (target: MemoryTarget, agentId: string) => (target === "user" ? "memory.user" : `memory.agent.${agentId}`);
+/**
+ * Memory keys. The owner's: "memory.user" and "memory.agent.<id>". A member's workspace has its own
+ * profile and its own notes for each agent (also for agents the owner shared with them), so
+ * nothing about one person leaks into another's work.
+ */
+const memKey = (target: MemoryTarget, agentId: string, ws = "owner") => {
+  const base = target === "user" ? "memory.user" : `memory.agent.${agentId}`;
+  return ws === "owner" ? base : `${base}.${ws}`;
+};
 const APPROVAL_KEY = "memory.write_approval";
 
 export class Learning {
@@ -86,8 +94,8 @@ export class Learning {
     this.db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
   }
 
-  entries(target: MemoryTarget, agentId: string): string[] {
-    const v = this.#get<unknown>(memKey(target, agentId), []);
+  entries(target: MemoryTarget, agentId: string, ws = "owner"): string[] {
+    const v = this.#get<unknown>(memKey(target, agentId, ws), []);
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
   }
 
@@ -100,27 +108,28 @@ export class Learning {
   }
 
   /** Apply ops now (or stage them when write approval is on). */
-  memoryOps(agentId: string, runId: string | null, target: MemoryTarget, ops: MemoryOp[], reason = ""): MemoryResult | { ok: true; staged: string } {
-    if (this.writeApproval) {
+  memoryOps(agentId: string, runId: string | null, target: MemoryTarget, ops: MemoryOp[], reason = "", ws = "owner"): MemoryResult | { ok: true; staged: string } {
+    // write approval is the owner's switch for the owner's own memory
+    if (this.writeApproval && ws === "owner") {
       const id = newId("prp");
       this.db.insert(proposals).values({ id, kind: "memory", agent_id: agentId, run_id: runId, name: target, action: "ops", content: JSON.stringify(ops), reason }).run();
       return { ok: true, staged: id };
     }
-    return this.#apply(agentId, target, ops);
+    return this.#apply(agentId, target, ops, ws);
   }
 
-  #apply(agentId: string, target: MemoryTarget, ops: MemoryOp[]): MemoryResult {
-    const r = applyMemoryOps(this.entries(target, agentId), ops, MEMORY_LIMITS[target]);
-    if (r.ok) this.#set(memKey(target, agentId), r.entries);
+  #apply(agentId: string, target: MemoryTarget, ops: MemoryOp[], ws = "owner"): MemoryResult {
+    const r = applyMemoryOps(this.entries(target, agentId, ws), ops, MEMORY_LIMITS[target]);
+    if (r.ok) this.#set(memKey(target, agentId, ws), r.entries);
     return r;
   }
 
-  /** Owner edits a store directly (still within the limit, still scanned). */
-  replaceEntries(agentId: string, target: MemoryTarget, entries: string[]): string[] {
+  /** The owner (or a member, for their workspace) edits a store directly (still within the limit, still scanned). */
+  replaceEntries(agentId: string, target: MemoryTarget, entries: string[], ws = "owner"): string[] {
     const ops = entries.map((content) => ({ action: "add" as const, content }));
     const r = applyMemoryOps([], ops, MEMORY_LIMITS[target]);
     if (!r.ok) throw new HttpError(400, r.error);
-    this.#set(memKey(target, agentId), r.entries);
+    this.#set(memKey(target, agentId, ws), r.entries);
     return r.entries;
   }
 
@@ -245,7 +254,8 @@ export class Learning {
 
   proposals(status?: "pending"): Proposal[] {
     const q = this.db.select().from(proposals);
-    return (status ? q.where(eq(proposals.status, status)) : q).orderBy(desc(proposals.created_at)).limit(200).all().map((r) => this.#toProposal(r));
+    const owner = eq(proposals.workspace_id, "owner");
+    return (status ? q.where(and(owner, eq(proposals.status, status))) : q.where(owner)).orderBy(desc(proposals.created_at)).limit(200).all().map((r) => this.#toProposal(r));
   }
 
   decide(id: string, decision: "approve" | "reject"): Proposal {
@@ -278,25 +288,28 @@ export class Learning {
 
   // ---------------------------------------------------------------- session search (FTS5)
 
-  index(run: { run_id: string; agent_id: string; job_type: string; ts: string; title: string; body: string }): void {
+  index(run: { run_id: string; agent_id: string; job_type: string; ts: string; title: string; body: string; workspace_id?: string }): void {
     const sqlite = this.#sqlite();
     sqlite.query("DELETE FROM search_index WHERE run_id = ?").run(run.run_id);
-    sqlite.query("INSERT INTO search_index (run_id, agent_id, job_type, ts, title, body) VALUES (?, ?, ?, ?, ?, ?)").run(run.run_id, run.agent_id, run.job_type, run.ts, run.title, run.body.slice(0, 50_000));
+    sqlite
+      .query("INSERT INTO search_index (run_id, agent_id, job_type, ts, workspace_id, title, body) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(run.run_id, run.agent_id, run.job_type, run.ts, run.workspace_id ?? "owner", run.title, run.body.slice(0, 50_000));
   }
 
   indexed(runId: string): boolean {
     return !!this.#sqlite().query("SELECT 1 FROM search_index WHERE run_id = ?").get(runId);
   }
 
-  search(query: string, agentId: string | null, limit = 8): SearchHit[] {
+  /** Past work of one workspace (and one agent, unless null). */
+  search(query: string, agentId: string | null, limit = 8, ws = "owner"): SearchHit[] {
     // words only, each quoted: user text never becomes FTS syntax
     const terms = query.match(/[\p{L}\p{N}]{2,}/gu)?.slice(0, 12) ?? [];
     if (!terms.length) return [];
     const match = terms.map((t) => `"${t}"`).join(" OR ");
-    const where = agentId ? "search_index MATCH ? AND agent_id = ?" : "search_index MATCH ?";
-    const args = agentId ? [match, agentId] : [match];
+    const where = agentId ? "search_index MATCH ? AND workspace_id = ? AND agent_id = ?" : "search_index MATCH ? AND workspace_id = ?";
+    const args = agentId ? [match, ws, agentId] : [match, ws];
     return this.#sqlite()
-      .query(`SELECT run_id, agent_id, job_type, ts, title, snippet(search_index, 5, '[', ']', ' … ', 24) AS snippet FROM search_index WHERE ${where} ORDER BY rank LIMIT ${Math.min(limit, 20)}`)
+      .query(`SELECT run_id, agent_id, job_type, ts, title, snippet(search_index, 6, '[', ']', ' … ', 24) AS snippet FROM search_index WHERE ${where} ORDER BY rank LIMIT ${Math.min(limit, 20)}`)
       .all(...args) as SearchHit[];
   }
 

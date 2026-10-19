@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { ulid } from "ulid";
 import { AgentConfig, type Agent, type Job, type ProviderPublic, type Run, type Runner, type RunnerCapabilities } from "@agent-office/shared";
 import type { Db } from "./db/client.ts";
@@ -60,6 +60,7 @@ export const toProviderPublic = (r: ProviderRow): ProviderPublic => ({
 export const getAgent = (db: Db, id: string) => db.select().from(agents).where(eq(agents.id, id)).get();
 export const getJob = (db: Db, id: string) => db.select().from(jobs).where(eq(jobs.id, id)).get();
 export const getRun = (db: Db, id: string) => db.select().from(runs).where(eq(runs.id, id)).get();
-export const getProviderBySlug = (db: Db, slug: string) =>
-  db.select().from(providers).where(eq(providers.slug, slug)).get();
+/** Providers are named by slug inside a workspace (an agent uses its own workspace's providers). */
+export const getProviderBySlug = (db: Db, slug: string, workspaceId = "owner") =>
+  db.select().from(providers).where(and(eq(providers.slug, slug), eq(providers.workspace_id, workspaceId))).get();
 export const getRunner = (db: Db, id: string) => db.select().from(runners).where(eq(runners.id, id)).get();
