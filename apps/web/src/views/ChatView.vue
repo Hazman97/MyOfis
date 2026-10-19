@@ -384,6 +384,13 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                     </span>
                     <span class="text-xs font-medium">{{ live(m).status === "queued" ? "waiting for a runner…" : live(m).status === "waiting_approval" ? "waiting for your approval" : "thinking…" }}</span>
                   </div>
+                  <!-- videos the agent made (Editor): watch here, edit in the studio -->
+                  <div v-if="m.renders?.length" class="mt-2 space-y-2">
+                    <div v-for="r in m.renders" :key="r.id" class="space-y-1">
+                      <video :src="api.uploadUrl(r.id)" controls playsinline preload="metadata" class="max-h-72 max-w-full rounded-lg border border-line bg-black" :aria-label="r.name" />
+                      <RouterLink :to="{ name: 'studio', params: { id: r.id } }" class="btn btn-sm">Open in Video Studio</RouterLink>
+                    </div>
+                  </div>
                 </div>
                 <div class="mt-1.5 flex items-center gap-3 px-1 text-[11px] text-faint opacity-80 group-hover:opacity-100 transition-opacity">
                   <span class="font-mono">{{ fmtTime(m.created_at) }}</span>

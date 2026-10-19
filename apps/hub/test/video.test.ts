@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { freshFetch } from "@agent-office/shared";
 import { uploads } from "../src/db/schema.ts";
 import { TOKEN, createTestEnv, waitFor, type TestEnv } from "./helpers.ts";
+import { OpencutWatch } from "../src/opencutWatch.ts";
 
 let env: TestEnv;
 afterEach(async () => {
@@ -108,4 +109,93 @@ describe.skipIf(!ffmpeg || !Bun.which("ffprobe"))("Editor renders on the runner"
     // no TikTok connected: approving just records it (the owner downloads and posts it)
     expect((await env.api(`/api/drafts/${draft.id}/decide`, { body: { decision: "approve" } })).body.draft).toMatchObject({ status: "approved", publish_error: null });
   }, 180_000);
+
+  test("Video Studio: a render remembers its plan; Render again (no AI) swaps the draft's video; own edits can replace it", async () => {
+    env = await createTestEnv();
+    await env.pairRunner();
+    const project = (await env.api("/api/projects", { body: { slug: "sp", name: "SmashPoint" } })).body.project;
+    const v = await sendVideo(clip, "match.mp4");
+    const agent = (
+      await env.api("/api/agents", { body: { slug: "ed2", name: "Editor 2", provider: "mock", model: "mock-script", tools: ["video_edit", "save_draft"], config: { self_review: false } } })
+    ).body.agent;
+    const script = [
+      { tool: "video_edit", input: { clips: [{ video: 1, start: 0.5 }], name: "first", captions: [{ text: "Smash", start: 0, end: 1 }] } },
+      { tool: "save_draft", input: { project: "sp", platform: "tiktok", kind: "video", title: "Clip", body: "Smash! #smashpoint", self_check: check, video: v.id } },
+      { text: "ok" },
+    ];
+    const job = (await env.api("/api/jobs", { body: { agent_id: agent.id, project_id: project.id, title: "edit", input: { script, attachments: [{ id: v.id, name: "match.mp4", content_type: "video/mp4" }] } } })).body.job;
+    await waitFor(() => ["done", "failed"].includes(env.hub.hub.store.state.jobs[job.id]?.status ?? ""), 120_000, "first render");
+
+    // the render remembers how it was made
+    const render = env.hub.hub.db.select().from(uploads).all().find((u) => u.run_id)!;
+    const info = (await env.api(`/api/videos/${render.id}`)).body;
+    expect(info).toMatchObject({ known: true, render: { plan: { name: "first", preset: "tiktok_fhd", captions: [{ text: "Smash" }] }, attachments: [{ id: v.id }] } });
+    // the owner's own clip has no plan yet: the studio starts from the whole video
+    const own = (await env.api(`/api/videos/${v.id}`)).body;
+    expect(own).toMatchObject({ known: false, render: { plan: { clips: [{ video: 1, start: 0 }] } } });
+    const draft = own.drafts[0];
+    expect(draft).toMatchObject({ title: "Clip", status: "draft" });
+
+    // bad plans are refused before any job starts
+    expect((await env.api(`/api/videos/${v.id}/render`, { body: { plan: { clips: [{ video: 2 }] } } })).status).toBe(400);
+    expect((await env.api(`/api/videos/${v.id}/render`, { body: { plan: { clips: [{ video: 1, start: 1, end: 0.5 }] } } })).status).toBe(400);
+
+    // Render again from the studio: no LLM, the draft switches to the new video
+    const plan = { ...own.render.plan, fit: "pad", name: "again", captions: [{ text: "Sabtu ni!", start: 0, end: 1, position: "top" }] };
+    const rj = (await env.api(`/api/videos/${v.id}/render`, { body: { plan, draft_id: draft.id } })).body.job;
+    expect(rj).toMatchObject({ type: "video_render" });
+    await waitFor(() => ["done", "failed"].includes(env.hub.hub.store.state.jobs[rj.id]?.status ?? ""), 120_000, "re-render");
+    expect(env.hub.hub.store.state.jobs[rj.id]?.status).toBe("done");
+    const again = env.hub.hub.db.select().from(uploads).all().find((u) => u.name === "again-tiktok_fhd.mp4")!;
+    expect(again.render?.plan.fit).toBe("pad");
+    const updated = (await env.api("/api/drafts?status=pending")).body.drafts.find((d: { id: string }) => d.id === draft.id);
+    expect(updated.meta.video_upload_id).toBe(again.id);
+    expect(env.hub.hub.store.state.pending_drafts[draft.id]?.updated_at).toBeTruthy();
+    // a re-render uses no tokens
+    const run = env.hub.hub.store.state.runs[env.hub.hub.store.state.jobs[rj.id]!.run_ids[0]!]!;
+    expect(run.tokens_in + run.tokens_out).toBe(0);
+
+    // the owner's own edit (e.g. exported from OpenCut) can replace it; photos and decided drafts cannot
+    const mine = await sendVideo(clip, "opencut-export.mp4");
+    expect((await env.api(`/api/drafts/${draft.id}/video`, { method: "PATCH", body: { upload_id: mine.id } })).body.draft.meta.video_upload_id).toBe(mine.id);
+    const photo = (await (await freshFetch(`${env.hub.url}/api/uploads?name=p.jpg`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/jpeg" }, body: new Uint8Array([255, 216, 255]) })).json()) as { upload: { id: string } };
+    expect((await env.api(`/api/drafts/${draft.id}/video`, { method: "PATCH", body: { upload_id: photo.upload.id } })).status).toBe(400);
+    await env.api(`/api/drafts/${draft.id}/decide`, { body: { decision: "reject" } });
+    expect((await env.api(`/api/drafts/${draft.id}/video`, { method: "PATCH", body: { upload_id: mine.id } })).status).toBe(409);
+  }, 300_000);
+});
+
+describe("OpenCut watcher", () => {
+  test("first look only records; a new release or changed API lines are reported", async () => {
+    let tag = "v0.1.0";
+    let readme = "# OpenCut\n- [ ] Editor API (planned)\n- [ ] MCP server (planned)\n";
+    const gh = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(req) {
+        const p = new URL(req.url).pathname;
+        if (!req.headers.get("user-agent")) return new Response("no UA", { status: 403 });
+        if (p.endsWith("/releases")) return Response.json([{ tag_name: tag, name: tag, html_url: `https://github.com/opencut-app/opencut/releases/${tag}` }]);
+        if (p.endsWith("/readme")) return new Response(readme);
+        return new Response("nope", { status: 404 });
+      },
+    });
+    try {
+      env = await createTestEnv({}, { opencutApiBase: `http://127.0.0.1:${gh.port}` });
+      const w = new OpencutWatch(env.hub.hub.db, `http://127.0.0.1:${gh.port}`);
+      expect(w.due()).toBe(true);
+      expect(await w.check()).toEqual([]);
+      expect(w.due()).toBe(false);
+      expect(await w.check()).toEqual([]); // nothing changed
+      tag = "v0.2.0";
+      readme = "# OpenCut\n- [x] Editor API (shipped)\n- [ ] MCP server (planned)\n";
+      const msgs = await w.check();
+      expect(msgs).toHaveLength(2);
+      expect(msgs[0]).toContain("OpenCut released v0.2.0");
+      expect(msgs[1]).toContain("Editor API (shipped)");
+      expect((await env.api("/api/opencut")).body.opencut).toMatchObject({ release: "v0.2.0" });
+    } finally {
+      gh.stop(true);
+    }
+  });
 });

@@ -20,6 +20,8 @@ import { agents, approvals, contentDrafts, featureLog, jobs, projects, runners, 
 import type { Backups } from "./backup.ts";
 import type { Publisher } from "./publisher.ts";
 import type { UploadParts } from "./uploads.ts";
+import type { Studio } from "./studio.ts";
+import type { OpencutWatch } from "./opencutWatch.ts";
 import type { Social } from "./social.ts";
 import type { Learning } from "./learning.ts";
 import type { Emit, EventStore } from "./events.ts";
@@ -90,6 +92,10 @@ export class Hub {
   publisher!: Publisher;
   /** Videos sent in parts (chat, Editor's renders). */
   uploadParts!: UploadParts;
+  /** Video Studio: show how a video was made, render it again without the AI. */
+  studio!: Studio;
+  /** Daily look at OpenCut's releases / API plans (Video Studio's "edit fully" partner). */
+  opencut!: OpencutWatch;
   social!: Social;
   /** Agents told they are over today's token budget, with the day they were told. */
   readonly #overBudget = new Map<string, string>();
@@ -806,6 +812,7 @@ Error: ${r.error}` : ""}` });
   /** A consult job's run ended: send the answer to the asking run. An asking run that ended: cancel its open questions. */
   #afterRun(run: typeof runs.$inferSelect, status: string, error: string | undefined): void {
     const job = getJob(this.db, run.job_id);
+    if (job?.type === "video_render" && status === "done") this.studio?.afterRender(run.id, job);
     if (job?.type === "consult") {
       const parentId = job.input.parent_run_id;
       const consultId = job.input.consult_id;
@@ -903,9 +910,10 @@ Error: ${r.error}` : ""}` });
       for (const b of busy) if (!waiting.has(b.id)) load.set(b.runner_id, (load.get(b.runner_id) ?? 0) + 1);
 
       for (const { job, agent } of queued) {
-        // over today's token budget: the job waits (for tomorrow, or for a higher budget)
-        if (!this.#checkBudget(agent)) continue;
-        const conn = this.#pickRunner(agent.runner_id, load);
+        const render = job.type === "video_render";
+        // over today's token budget: the job waits (for tomorrow, or for a higher budget); a re-render uses no tokens
+        if (!render && !this.#checkBudget(agent)) continue;
+        const conn = this.#pickRunner(agent.runner_id, load, render ? "ffmpeg" : null);
         if (!conn) continue;
         load.set(conn.runnerId, (load.get(conn.runnerId) ?? 0) + 1);
         this.#startRun(conn, job, agent);
@@ -915,13 +923,20 @@ Error: ${r.error}` : ""}` });
     }
   }
 
-  #pickRunner(preferred: string | null, load: Map<string, number>): RunnerConn | undefined {
+  #pickRunner(preferred: string | null, load: Map<string, number>, program: string | null = null): RunnerConn | undefined {
     const free = (c: RunnerConn) => (load.get(c.runnerId) ?? 0) < c.maxRuns;
     if (preferred) {
       const c = this.conns.get(preferred);
       return c && free(c) ? c : undefined;
     }
-    return [...this.conns.values()].filter(free).sort((a, b) => (load.get(a.runnerId) ?? 0) - (load.get(b.runnerId) ?? 0))[0];
+    let pool = [...this.conns.values()].filter(free);
+    // prefer runners that reported the program the job needs (e.g. ffmpeg for a re-render)
+    if (program) {
+      const has = new Set(this.db.select().from(runners).all().filter((r) => (r.capabilities as { programs?: string[] } | null)?.programs?.includes(program)).map((r) => r.id));
+      const withIt = pool.filter((c) => has.has(c.runnerId));
+      if (withIt.length) pool = withIt;
+    }
+    return pool.sort((a, b) => (load.get(a.runnerId) ?? 0) - (load.get(b.runnerId) ?? 0))[0];
   }
 
   #startRun(conn: RunnerConn, job: typeof jobs.$inferSelect, agent: typeof agents.$inferSelect): void {
@@ -936,13 +951,15 @@ Error: ${r.error}` : ""}` });
       emit({ type: "run.started", payload: { run_id: runId, job_id: job.id, agent_id: agent.id, runner_id: conn.runnerId } }, meta);
     });
 
-    if (!provider || !provider.enabled) {
+    // a re-render from the Video Studio runs the video_edit tool directly: no LLM, no key, no tokens
+    const render = job.type === "video_render";
+    if (!render && (!provider || !provider.enabled)) {
       this.finishRun(runId, { status: "failed", error: `provider "${agent.provider}" is missing or disabled`, tokens_in: 0, tokens_out: 0 });
       return;
     }
     let apiKey: string | null = null;
     try {
-      apiKey = provider.api_key_enc ? this.secrets.decrypt(provider.api_key_enc) : null;
+      apiKey = !render && provider?.api_key_enc ? this.secrets.decrypt(provider.api_key_enc) : null;
     } catch {
       this.finishRun(runId, { status: "failed", error: "could not decrypt provider API key (did SECRETS_KEY change?)", tokens_in: 0, tokens_out: 0 });
       return;
@@ -950,11 +967,17 @@ Error: ${r.error}` : ""}` });
     // A release note is a fixed, small job: its own prompt and two safe tools, whatever the agent normally has.
     const featureNote = job.type === "feature_note";
     // a consult answer is one level deep: no asking or handing off from there
-    const tools = featureNote ? FEATURE_NOTE_TOOLS : job.type === "consult" ? agent.tools.filter((t) => t !== "consult_agent" && t !== "consult_team" && t !== "handoff") : agent.tools;
+    const tools = render
+      ? ["video_edit"]
+      : featureNote
+        ? FEATURE_NOTE_TOOLS
+        : job.type === "consult"
+          ? agent.tools.filter((t) => t !== "consult_agent" && t !== "consult_team" && t !== "handoff")
+          : agent.tools;
     const config = toAgent(agent).config;
     let projectContext: RunAssignment["project_context"] = null;
     try {
-      projectContext = tools.some((t) => NEEDS_PROJECT_CONTEXT.has(t)) ? this.content.context(job.project_id ? [job.project_id] : "all") : null;
+      projectContext = !render && tools.some((t) => NEEDS_PROJECT_CONTEXT.has(t)) ? this.content.context(job.project_id ? [job.project_id] : "all") : null;
       for (const p of projectContext?.projects ?? []) p.social = this.social.connected(p.id);
     } catch (err) {
       console.error(`[hub] project context for ${runId} failed: ${(err as Error).message}`);
@@ -972,7 +995,7 @@ Error: ${r.error}` : ""}` });
         config: featureNote ? { ...config, max_steps: Math.min(config.max_steps, 8) } : config,
         permission_level: agent.permission_level,
       },
-      provider: { slug: provider.slug, kind: provider.kind, base_url: provider.base_url, api_key: apiKey },
+      provider: provider ? { slug: provider.slug, kind: provider.kind, base_url: provider.base_url, api_key: apiKey } : { slug: "none", kind: "mock", base_url: null, api_key: null },
       gitea: tools.some((t) => NEEDS_GITEA.has(t)) || (config.runtime === "opencode" && !featureNote) ? this.#giteaForRun() : null,
       project_context: projectContext,
       budget_left_tokens: this.#budgetLeft(agent),

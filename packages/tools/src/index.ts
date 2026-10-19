@@ -18,7 +18,8 @@ export { GiteaClient } from "./gitea.ts";
 export { checkUrl } from "./web.ts";
 export { htmlToText, isPrivateAddress } from "./research.ts";
 export { gitDefaultBranch, giteaRepoOf } from "./git.ts";
-export { buildEditArgs, captionsAss, clipLengths, parseProbe, EditPlan } from "./video.ts";
+export { buildEditArgs, captionsAss, clipLengths, parseProbe } from "./video.ts";
+export { EditPlan } from "@agent-office/shared";
 
 /** Every tool an agent can be granted, by name. Agents list the names they may use in `agents.tools`. */
 export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(

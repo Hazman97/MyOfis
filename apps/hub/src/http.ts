@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { serveStatic } from "hono/bun";
 import { setCookie, deleteCookie } from "hono/cookie";
@@ -21,6 +21,7 @@ import {
   ProviderInput,
   ScheduleInput,
   TIMEZONE,
+  RenderInfo,
   UPLOAD_PART_BYTES,
   WebPostEdit,
 } from "@agent-office/shared";
@@ -28,7 +29,7 @@ import { TOOL_REGISTRY } from "@agent-office/tools";
 import { SESSION_COOKIE, SESSION_TTL_MS, isHttps, requireOwner, type Authenticator } from "./auth.ts";
 import type { Hub } from "./core.ts";
 import { hashToken, keyHint, normalizeCode, pairingCode, randomToken } from "./crypto.ts";
-import { agents, approvals, jobs, pairingCodes, projects, providers, runners, runs, schedules } from "./db/schema.ts";
+import { agents, approvals, jobs, pairingCodes, projects, providers, runners, runs, schedules, uploads } from "./db/schema.ts";
 import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
@@ -245,6 +246,20 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const f = attached ? hub.publisher.uploadFile(c.req.param("id")) : null;
     if (!f) throw new HttpError(404, "not found");
     return fileResponse(f.file, f.row.content_type, c.req.header("range"));
+  });
+
+  /** Runner tells how a render was made (plan + source files), for the Video Studio. Only for uploads its own run made. */
+  app.post("/api/runner/uploads/:id/render", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const run = getRun(db, c.req.query("run_id") ?? "");
+    if (!run || run.runner_id !== runner.id) throw new HttpError(404, "run not found");
+    const upload = hub.publisher.upload(c.req.param("id"));
+    if (!upload || upload.run_id !== run.id) throw new HttpError(404, "upload not found");
+    hub.publisher.setRender(upload.id, RenderInfo.parse(await c.req.json()));
+    return c.json({ ok: true });
   });
 
   /** Runner sends a video it made (Editor's video_edit), in parts. It becomes an upload tied to the run. */
@@ -596,8 +611,28 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         run_id: hub.store.state.jobs[j.id]?.run_ids.at(-1) ?? null,
         reply: hub.chatReply(j),
         attachments: Array.isArray(j.input.attachments) && !j.input.attachments_carried ? j.input.attachments : [],
+        // videos the agent made in this message's runs (Editor), so the chat can open them in the studio
+        renders: hub.store.state.jobs[j.id]?.run_ids.length
+          ? db
+              .select({ id: uploads.id, name: uploads.name, content_type: uploads.content_type })
+              .from(uploads)
+              .where(inArray(uploads.run_id, hub.store.state.jobs[j.id]!.run_ids))
+              .all()
+          : [],
       })),
     });
+  });
+
+  // Video Studio: how a video was made, render it again without the AI, or use your own edit
+  api.get("/videos/:id", (c) => c.json(hub.studio.info(c.req.param("id"))));
+  api.post("/videos/:id/render", async (c) => {
+    const body = z.object({ plan: z.unknown(), draft_id: z.string().nullable().optional() }).parse(await c.req.json());
+    return c.json({ job: hub.studio.render(c.req.param("id"), body) }, 201);
+  });
+  api.get("/opencut", (c) => c.json({ opencut: hub.opencut?.last() ?? null }));
+  api.patch("/drafts/:id/video", async (c) => {
+    const { upload_id } = z.object({ upload_id: z.string().max(64) }).parse(await c.req.json());
+    return c.json({ draft: hub.content.setDraftVideo(c.req.param("id"), upload_id) });
   });
 
   // schedules

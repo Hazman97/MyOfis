@@ -7,6 +7,7 @@ import type {
   PermissionLevel,
   Platform,
   ProjectContext,
+  RenderInfo,
   RiskLevel,
   RunnerEventBody,
   SelfCheck,
@@ -87,8 +88,8 @@ export interface ToolContext {
   attachments: { id: string; name: string; content_type: string }[];
   /** Save an attachment to a file (videos are too big to hold in memory). */
   downloadAttachment(id: string, dest: string): Promise<void>;
-  /** Send a finished video to the hub; it becomes an upload tied to this run. */
-  uploadVideo(path: string, name: string): Promise<{ id: string; size: number }>;
+  /** Send a finished video to the hub; it becomes an upload tied to this run. `render` = how it was made (for the studio). */
+  uploadVideo(path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }>;
   /** Videos this run made (video_edit), in order; save_draft may attach them. */
   renders: { id: string; name: string; content_type: string }[];
   /** Data a project's website shares with Agent Office (Kerani: bookings). */

@@ -191,6 +191,25 @@ export class Content {
    * the original: both are the agent's style memory. An approved style guide
    * becomes the brief's style notes.
    */
+  /**
+   * Swap a pending draft's video (a new render from the Video Studio, or the owner's own export
+   * from OpenCut). Only while the draft waits for a decision, and only for video uploads.
+   */
+  setDraftVideo(id: string, uploadId: string): ContentDraft {
+    const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, id)).get();
+    if (!row) throw new HttpError(404, "draft not found");
+    if (row.status !== "draft") throw new HttpError(409, `draft is already ${row.status}`);
+    const up = this.db.select().from(uploads).where(eq(uploads.id, uploadId)).get();
+    if (!up?.content_type.startsWith("video/")) throw new HttpError(400, "not a video upload");
+    const meta = WebPost.parse({ ...(row.meta ?? { post_type: "social" }), video_upload_id: up.id });
+    const updated = this.store.transact((tx, emit) => {
+      const r = tx.update(contentDrafts).set({ meta }).where(eq(contentDrafts.id, id)).returning().get()!;
+      emit({ type: "draft.updated", payload: { draft_id: id, video_upload_id: up.id } }, { agent_id: row.agent_id });
+      return r;
+    });
+    return toDraft(updated);
+  }
+
   decideDraft(id: string, decision: DraftDecision): ContentDraft {
     const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, id)).get();
     if (!row) throw new HttpError(404, "draft not found");

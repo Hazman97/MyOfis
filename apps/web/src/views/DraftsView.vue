@@ -32,7 +32,10 @@ onMounted(async () => {
 });
 watch([tab, projectId], load);
 // live: new drafts arrive while you look at the page
-watch(() => Object.keys(office.state.pending_drafts ?? {}).join(","), () => tab.value === "pending" && load());
+watch(
+  () => Object.values(office.state.pending_drafts ?? {}).map((d) => `${d.id}:${d.updated_at ?? ""}`).join(","),
+  () => tab.value === "pending" && load(),
+);
 
 function onDecided(d: ContentDraft) {
   if (tab.value === "pending") drafts.value = drafts.value.filter((x) => x.id !== d.id);

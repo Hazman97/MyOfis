@@ -32,7 +32,7 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     consult: (to, q, ms) => ctx.consult(to, q, ms),
     attachments: attachmentsOf(ctx.assignment.job.input),
     downloadAttachment: (id, dest) => ctx.downloadUpload(id, dest),
-    uploadVideo: (path, name) => ctx.uploadVideo(path, name),
+    uploadVideo: (path, name, render) => ctx.uploadVideo(path, name, render),
     renders: [],
     siteData: (p, r, params) => ctx.siteData(p, r, params),
     webPost: (a, id, edits) => ctx.webPost(a, id, edits),

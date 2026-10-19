@@ -1,5 +1,5 @@
 import type { RunAssignment, RunnerEventBody } from "@agent-office/shared";
-import type { FeatureNoteData, MemoryOp } from "@agent-office/shared";
+import type { FeatureNoteData, MemoryOp, RenderInfo } from "@agent-office/shared";
 import type { ApprovalRequest, ConsultAnswer, DraftRequest, HandoffRequest, WebSearchResult } from "@agent-office/tools";
 
 export interface RunContext {
@@ -28,7 +28,7 @@ export interface RunContext {
   /** Save an attached file (a video) to `dest`, streamed. */
   downloadUpload(id: string, dest: string): Promise<void>;
   /** Send a finished video to the hub in parts; returns the new upload. */
-  uploadVideo(path: string, name: string): Promise<{ id: string; size: number }>;
+  uploadVideo(path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }>;
   /** Data a project's website shares with Agent Office (through the hub, which holds its secret). */
   siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
   webPost(action: "update" | "take_down", draftId: string, edits: { title?: string; body?: string; meta?: Record<string, unknown> }): Promise<unknown>;

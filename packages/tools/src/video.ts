@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { VIDEO_PRESETS, VIDEO_TYPES, VideoPresetId, type VideoPreset } from "@agent-office/shared";
+import { EditPlan, VIDEO_PRESETS, VIDEO_TYPES, type VideoPreset } from "@agent-office/shared";
 import { scrubbedEnv } from "./safety.ts";
 import { ToolDenied, defineTool, type ToolContext } from "./types.ts";
 
@@ -51,32 +51,6 @@ export function parseProbe(json: unknown): VideoProbe {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // ---------------------------------------------------------------- edit plan → ffmpeg argv (pure)
-
-export const Clip = z.object({
-  video: z.number().int().min(1).max(10).describe("Which file the owner sent (1 = first), must be a video"),
-  start: z.number().min(0).default(0).describe("Seconds into that video"),
-  end: z.number().positive().optional().describe("Seconds into that video (default: its end)"),
-  speed: z.number().min(0.5).max(2).default(1).describe("0.5 = slow motion, 2 = twice as fast"),
-});
-
-export const Caption = z.object({
-  text: z.string().trim().min(1).max(200),
-  start: z.number().min(0).describe("Seconds in the FINISHED video"),
-  end: z.number().positive(),
-  position: z.enum(["bottom", "middle", "top"]).default("bottom"),
-});
-
-export const EditPlan = z.object({
-  clips: z.array(Clip).min(1).max(20).describe("Played one after another, in this order"),
-  preset: VideoPresetId.default("tiktok_fhd"),
-  fit: z.enum(["crop", "blur", "pad"]).default("crop").describe("crop = fill the frame (cuts the sides); blur = whole picture on a blurred copy; pad = whole picture on black"),
-  fps: z.union([z.literal(24), z.literal(25), z.literal(30), z.literal(50), z.literal(60)]).default(30),
-  captions: z.array(Caption).max(40).default([]).describe("Text burned into the picture"),
-  mute: z.boolean().default(false).describe("Drop the original sound"),
-  normalize_audio: z.boolean().default(true).describe("Even loudness (about -14 LUFS, what TikTok/YouTube expect)"),
-  name: z.string().trim().min(1).max(60).regex(/^[\w\- ]+$/).default("edit").describe("Output file name, no extension"),
-});
-export type EditPlan = z.infer<typeof EditPlan>;
 
 export type Encoder = "nvenc" | "x264";
 
@@ -318,7 +292,7 @@ export const videoEditTool = defineTool({
     }
     if (r.code !== 0) throw new ToolDenied(`ffmpeg failed: ${r.stderr.slice(-600)}`);
     const size = statSync(join(dir, out)).size;
-    const up = await ctx.uploadVideo(join(dir, out), out);
+    const up = await ctx.uploadVideo(join(dir, out), out, { plan, attachments: ctx.attachments });
     ctx.renders.push({ id: up.id, name: out, content_type: "video/mp4" });
     return {
       ok: true,

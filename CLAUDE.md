@@ -151,6 +151,22 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - `views/SystemView.vue` draws the architecture, ERD and flow with **mermaid** (`components/MermaidDiagram.vue`: lazy chunk, `securityLevel: "strict"`, follows light/dark, scrolls sideways on phones).
   - Next: Stage 2 Video Studio (plus the OpenCut button and watcher), then Stage 3 members and shared agents. Plan file: `~/.claude/plans/pasted-content-id-923a-agent-mellow-parrot.md`.
   - Gemini 009 polishes the page.
+- **Video Studio** (`/studio/:uploadId`, Stage 2 of the 2026-10-19 plan).
+  - **Stored plans.** `uploads.render` (migration 0008) stores `RenderInfo {plan, attachments}`:
+    - `video_edit` passes it to `ctx.uploadVideo`;
+    - the runner POSTs it to `/api/runner/uploads/:id/render` (only for its own run's upload).
+    - Older renders rebuild the plan from the run's `video_edit` tool_call; the owner's own clips start from a whole-video plan.
+    - `EditPlan`, `Clip`, `Caption` and `RenderInfo` now live in `packages/shared/src/video.ts`.
+  - **Render again** = job type `video_render` (`apps/hub/src/studio.ts`):
+    - it runs as the agent that made the video, else Editor;
+    - in `core.ts` it skips the provider, key and budget checks, gets only `["video_edit"]`, and prefers runners whose `programs` include ffmpeg;
+    - the runner runs `runtimes/direct.ts` (no LLM, 0 tokens);
+    - when done, `Studio.afterRender` → `Content.setDraftVideo` swaps the pending draft's video and emits the new **`draft.updated`** event (the reducer sets `pending_drafts[id].updated_at`; DraftsView reloads).
+  - **OpenCut** (owner's choice; it has no API yet):
+    - "Edit fully in OpenCut" downloads the video and opens opencut.app (`apps/web/src/opencut.ts`);
+    - "Use my own edit" uploads the export → `PATCH /api/drafts/:id/video`;
+    - `OpencutWatch` (`apps/hub/src/opencutWatch.ts`, `OPENCUT_API_BASE`) checks GitHub releases and the README's Editor API/MCP/headless lines once a day and sends changes to Telegram (`GET /api/opencut`). It never changes code.
+  - Gemini 010 polishes the studio UI.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

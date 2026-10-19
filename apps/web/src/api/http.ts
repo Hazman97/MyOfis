@@ -3,6 +3,7 @@ import type {
   AgentEvent,
   ContentDraft,
   DraftDecision,
+  EditPlan,
   FeatureNote,
   FeatureNoteInput,
   Job,
@@ -12,6 +13,7 @@ import type {
   ProjectBriefInput,
   ProviderPreset,
   ProviderPublic,
+  RenderInfo,
   Run,
   Runner,
   Schedule,
@@ -180,6 +182,19 @@ export interface ChatMessage {
   reply: string | null;
   /** Photos sent with the message (Publisher). */
   attachments?: ChatAttachment[];
+  /** Videos the agent made for this message (Editor): open them in the Video Studio. */
+  renders?: ChatAttachment[];
+}
+
+/** GET /api/videos/:id: the Video Studio's view of one video. */
+export interface VideoInfo {
+  upload: { id: string; name: string; content_type: string; size: number; run_id: string | null; created_at: string };
+  render: RenderInfo;
+  /** false = the owner's own clip: the plan is a starting point (the whole video) */
+  known: boolean;
+  drafts: ContentDraft[];
+  presets: Record<string, { label: string; width: number; height: number; max_seconds: number }>;
+  last_render_job: { id: string; status: string; created_at: string; result_upload_id: string | null } | null;
 }
 
 export class ApiError extends Error {
@@ -257,6 +272,9 @@ export const api = {
 
   tools: () => request<{ tools: ToolInfo[] }>("/tools"),
   system: () => request<SystemInfo>("/system"),
+  video: (id: string) => request<VideoInfo>(`/videos/${encodeURIComponent(id)}`),
+  renderVideo: (id: string, plan: EditPlan, draftId: string | null) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/render`, { body: { plan, draft_id: draftId } }),
+  setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),
 
   integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings }>("/settings/integrations"),
   saveWebSearch: (body: { provider: WebSearchProvider; searxng_url?: string; key_provider?: "tavily" | "brave"; api_key?: string }) =>

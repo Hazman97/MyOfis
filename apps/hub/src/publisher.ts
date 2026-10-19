@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { PublishInfo, VIDEO_TYPES, WebPost, fixEscapedNewlines, freshFetch, type WebPostEdit } from "@agent-office/shared";
+import { PublishInfo, VIDEO_TYPES, WebPost, fixEscapedNewlines, freshFetch, type RenderInfo, type WebPostEdit } from "@agent-office/shared";
 import { keyHint, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { contentDrafts, projects, uploads, type ProjectPublish } from "./db/schema.ts";
@@ -81,6 +81,11 @@ export class Publisher {
     const size = statSync(join(this.filesDir, path)).size;
     const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `video.${ext}`;
     return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size, path, run_id: runId }).returning().get();
+  }
+
+  /** Remember how a render was made (Video Studio). */
+  setRender(id: string, render: RenderInfo): void {
+    this.db.update(uploads).set({ render }).where(eq(uploads.id, id)).run();
   }
 
   /** Where an upload lives on disk (for streaming large files). */

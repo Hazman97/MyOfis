@@ -8,6 +8,8 @@ import StatusBadge from "./StatusBadge.vue";
 import { api } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtDateTime } from "../format.ts";
+import { openInOpenCut } from "../opencut.ts";
+import { RouterLink } from "vue-router";
 
 /** One Marketing draft: edit it in place, approve (with or without edits) or reject with feedback, copy it out. */
 const props = defineProps<{ draft: ContentDraft; projectName?: string }>();
@@ -256,7 +258,11 @@ async function decide(decision: "approve" | "reject") {
     </div>
     <div v-if="!isWebPost && draft.meta?.video_upload_id" class="px-4 pt-2.5 space-y-1.5">
       <video :src="api.uploadUrl(draft.meta.video_upload_id)" controls preload="metadata" playsinline class="max-h-96 w-auto max-w-full rounded-lg border border-line bg-black shadow-sm" aria-label="Video for this caption" />
-      <a :href="api.uploadUrl(draft.meta.video_upload_id, true)" class="btn btn-sm" download>Download video</a>
+      <div class="flex flex-wrap gap-2">
+        <RouterLink :to="{ name: 'studio', params: { id: draft.meta.video_upload_id }, query: draft.status === 'draft' ? { draft: draft.id } : {} }" class="btn btn-sm btn-primary">Open in Video Studio</RouterLink>
+        <a :href="api.uploadUrl(draft.meta.video_upload_id, true)" class="btn btn-sm" download>Download video</a>
+        <button type="button" class="btn btn-sm" @click="openInOpenCut(draft.meta.video_upload_id, `${draft.title}.mp4`)">Edit in OpenCut</button>
+      </div>
     </div>
     <div v-else-if="!isWebPost && draft.meta?.cover_upload_id" class="px-4 pt-2.5">
       <img :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Photo for this caption" class="max-h-52 w-auto max-w-full rounded-lg border border-line object-cover shadow-sm" />

@@ -11,9 +11,11 @@ import {
   type RunnerRunMessage,
   type RunnerToHub,
   UPLOAD_PART_BYTES,
+  type RenderInfo,
 } from "@agent-office/shared";
 import { aiSdkRuntime } from "./runtimes/aiSdk.ts";
 import { mockRuntime } from "./runtimes/mock.ts";
+import { directRuntime } from "./runtimes/direct.ts";
 import type { ApprovalRequest, ConsultAnswer } from "@agent-office/tools";
 import { RunError, type AgentRuntime } from "./runtimes/types.ts";
 import { resolveOpenCode } from "./opencode/binary.ts";
@@ -25,6 +27,8 @@ export const RUNNER_VERSION = "0.2.0";
 
 /** Mock echo models skip the LLM entirely; everything else (incl. `mock-script`) runs the AI SDK tool loop. */
 export const pickRuntime = (a: RunAssignment): AgentRuntime => {
+  // the Video Studio's "Render again": run video_edit with the owner's plan, no LLM
+  if (a.job.type === "video_render") return directRuntime;
   // feature notes are a short text job: never spin up OpenCode for them
   if (a.agent.config.runtime === "opencode" && a.job.type !== "feature_note") return opencodeRuntime;
   return a.provider.kind === "mock" && a.agent.model !== "mock-script" ? mockRuntime : aiSdkRuntime;
@@ -124,7 +128,7 @@ export class RunnerClient {
         capabilities: {
           os: platform(),
           arch: arch(),
-          runtimes: [mockRuntime.id, aiSdkRuntime.id, ...(resolveOpenCode() ? [opencodeRuntime.id] : [])],
+          runtimes: [mockRuntime.id, aiSdkRuntime.id, directRuntime.id, ...(resolveOpenCode() ? [opencodeRuntime.id] : [])],
           max_concurrent_runs: this.#opts.maxConcurrentRuns ?? 1,
           programs: detectPrograms(),
         },
@@ -289,7 +293,7 @@ export class RunnerClient {
   }
 
   /** Send a finished video to the hub in parts (Cloudflare refuses bodies over 100 MB). */
-  async #uploadVideo(runId: string, path: string, name: string): Promise<{ id: string; size: number }> {
+  async #uploadVideo(runId: string, path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }> {
     const file = Bun.file(path);
     const total = file.size;
     const key = randomUUID().replace(/-/g, "");
@@ -306,9 +310,25 @@ export class RunnerClient {
       });
       const body = (await res.json().catch(() => ({}))) as { received?: number; upload?: { id: string; size: number }; error?: string };
       if (!res.ok) throw new Error(`video upload failed (${res.status}): ${body.error ?? ""}`);
-      if (body.upload) return { id: body.upload.id, size: body.upload.size };
+      if (body.upload) {
+        // how it was made, for the studio; a failure here only loses the "edit again" data
+        if (render) await this.#saveRender(runId, body.upload.id, render).catch((err) => this.#log(`render info not saved: ${(err as Error).message}`));
+        return { id: body.upload.id, size: body.upload.size };
+      }
       offset = body.received ?? offset + part.length;
     }
+  }
+
+  async #saveRender(runId: string, uploadId: string, render: RenderInfo): Promise<void> {
+    const url = new URL(`/api/runner/uploads/${encodeURIComponent(uploadId)}/render`, this.#opts.hubUrl);
+    url.searchParams.set("run_id", runId);
+    const res = await freshFetch(url, {
+      method: "POST",
+      timeoutMs: 30_000,
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+      body: JSON.stringify(render),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }
 
   async #webSearch(runId: string, query: string, count: number) {
@@ -389,7 +409,7 @@ export class RunnerClient {
         webSearch: (query, count) => this.#webSearch(a.run_id, query, count),
         fetchUpload: (id) => this.#fetchUpload(a.run_id, id),
         downloadUpload: (id, dest) => this.#downloadUpload(a.run_id, id, dest),
-        uploadVideo: (path, name) => this.#uploadVideo(a.run_id, path, name),
+        uploadVideo: (path, name, render) => this.#uploadVideo(a.run_id, path, name, render),
         siteData: (projectId, resource, params) => this.#siteData(a.run_id, projectId, resource, params),
         webPost: (action, draftId, edits) => this.#webPost(a.run_id, action, draftId, edits),
         consult: (toAgent, question, timeoutMs) => this.#consult(a.run_id, toAgent, question, timeoutMs, run.abort.signal),

@@ -16,6 +16,8 @@ import { ReleaseWatcher } from "./releases.ts";
 import { TelegramBot } from "./telegram.ts";
 import { Backups } from "./backup.ts";
 import { UploadParts } from "./uploads.ts";
+import { Studio } from "./studio.ts";
+import { OpencutWatch } from "./opencutWatch.ts";
 import { Publisher } from "./publisher.ts";
 import { Social } from "./social.ts";
 import { Scheduler } from "./scheduler.ts";
@@ -41,7 +43,7 @@ export interface HubServer {
 
 export function startHub(
   config: HubConfig,
-  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number; tokenCheckMs?: number } = {},
+  opts: { timings?: Partial<typeof TIMINGS>; sweepMs?: number; releasePollMs?: number; backupCheckMs?: number; tokenCheckMs?: number; opencutCheckMs?: number } = {},
 ): HubServer {
   const { db, sqlite } = openDb(config.databasePath);
   const secrets = new Secrets(config.secretsKey);
@@ -60,6 +62,7 @@ export function startHub(
   hub.learning = new Learning(db, store, config.skillsDir);
   hub.publisher = new Publisher(db, store, secrets, config.filesDir);
   hub.uploadParts = new UploadParts(hub.publisher, config.filesDir);
+  hub.studio = new Studio(hub);
   hub.social = new Social(db, store, secrets, hub.publisher, config.facebookGraphBase, config.threadsGraphBase);
   hub.backups = new Backups(sqlite, { ...config.backup, projectsDir: config.projectsDir, skillsDir: config.skillsDir, filesDir: config.filesDir });
   hub.boot();
@@ -197,6 +200,16 @@ export function startHub(
     }
   };
   const tokenTimer = setInterval(() => void checkTokens(), opts.tokenCheckMs ?? 6 * 3600_000);
+  // OpenCut watcher: once a day, tell the owner when OpenCut releases or its API plans change
+  const opencut = new OpencutWatch(db, config.opencutApiBase);
+  hub.opencut = opencut;
+  const opencutTimer = setInterval(() => {
+    if (!opencut.due()) return;
+    opencut
+      .check()
+      .then((msgs) => Promise.all(msgs.map((m) => telegram.notify(m).catch(() => {}))))
+      .catch((err) => console.error(`[hub] OpenCut check failed: ${(err as Error).message}`));
+  }, opts.opencutCheckMs ?? 3 * 3600_000);
   const tokenFirst = setTimeout(() => void checkTokens(), opts.tokenCheckMs ? 0 : 60_000);
 
   return {
@@ -210,6 +223,7 @@ export function startHub(
       clearInterval(sweep);
       clearInterval(backupTimer);
       clearInterval(tokenTimer);
+      clearInterval(opencutTimer);
       clearTimeout(tokenFirst);
       scheduler.stop();
       releases.stop();

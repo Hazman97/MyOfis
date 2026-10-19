@@ -22,6 +22,7 @@ export function testConfig(dir: string): HubConfig {
     webDistDir: join(dir, "no-web"),
     mapsDir: join(import.meta.dir, "../../../maps"),
     manualPath: join(import.meta.dir, "../../../docs/manual.html"),
+    opencutApiBase: "http://127.0.0.1:9/github",
     systemDocPath: join(import.meta.dir, "../../../SYSTEM.md"),
     projectsDir: join(dir, "projects"),
     skillsDir: join(dir, "skills"),

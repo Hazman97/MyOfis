@@ -32,6 +32,8 @@ const EnvSchema = z
     /** Tests point Facebook posting at a fake Graph API. */
     FACEBOOK_GRAPH_BASE: z.string().default("https://graph.facebook.com/v21.0"),
     THREADS_GRAPH_BASE: z.string().default("https://graph.threads.net/v1.0"),
+    /** Tests point the OpenCut watcher at a fake GitHub API. */
+    OPENCUT_API_BASE: z.string().default("https://api.github.com"),
     BACKUP_DIR: z.string().default("./data/backups"),
     BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(14),
     BACKUP_HOUR: z.coerce.number().int().min(0).max(23).default(3),
@@ -85,6 +87,7 @@ export interface HubConfig {
   /** Office map + sprite art served to the office view (swap files here to re-skin it). */
   mapsDir: string;
   manualPath: string;
+  opencutApiBase: string;
   systemDocPath: string;
   /** projects/<slug>/brief.yaml and FEATURES.md (spec §4). */
   projectsDir: string;
@@ -132,6 +135,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     webDistDir: resolve(e.WEB_DIST_DIR),
     mapsDir: resolve(e.MAPS_DIR),
     manualPath: resolve(e.MANUAL_PATH),
+    opencutApiBase: e.OPENCUT_API_BASE,
     systemDocPath: resolve(e.SYSTEM_DOC_PATH),
     projectsDir: resolve(e.PROJECTS_DIR),
     skillsDir: resolve(e.SKILLS_DIR),

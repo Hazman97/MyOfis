@@ -295,6 +295,15 @@ Chat with **Editor** and attach videos:
 
 Say what you want ("compress untuk TikTok", "highlight 30 saat dari 1:20, slow motion, tulis …"). Editor cuts, reframes (crop / blur / pad) and exports with **ffmpeg on the runner PC**, using the NVIDIA GPU (h264_nvenc) when there is one. Presets: `tiktok_fhd` 1080×1920, `reels`, `youtube_shorts`, `youtube_1080p`, `square`. It then saves a video draft with a caption per platform. In **Drafts** you play it, **Download video**, and approve it. TikTok and YouTube posting are not connected yet. Guide: [docs/video-editor.md](docs/video-editor.md).
 
+**Video Studio.** Open it from a draft's video or from a video Editor made in Chat. It shows how the video was edited: a timeline, the clips (start, end, speed, order), the captions, the format, fit and frame rate. Change anything and press **Render again**: it renders on your PC without the AI and uses no tokens, and the draft switches to the new video.
+
+For heavier edits, **Edit fully in OpenCut**:
+1. The video downloads and opencut.app opens.
+2. Drag the video in, edit it and export it.
+3. Press **Use my own edit** to put the export on the draft.
+
+The hub checks OpenCut's GitHub once a day and tells you on Telegram when it releases something new or its API plans change.
+
 ## Telegram as your office phone
 
 Message the bot like a colleague:

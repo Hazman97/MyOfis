@@ -41,3 +41,39 @@ export const MAX_VIDEO_BYTES = 2 * 1024 ** 3;
 export const UPLOAD_PART_BYTES = 32 * 1024 ** 2;
 
 export const isVideoType = (type: string) => type in VIDEO_TYPES;
+
+// ---------------------------------------------------------------- Editor's edit plan (video_edit input; the studio edits it too)
+
+export const Clip = z.object({
+  video: z.number().int().min(1).max(10).describe("Which file the owner sent (1 = first), must be a video"),
+  start: z.number().min(0).default(0).describe("Seconds into that video"),
+  end: z.number().positive().optional().describe("Seconds into that video (default: its end)"),
+  speed: z.number().min(0.5).max(2).default(1).describe("0.5 = slow motion, 2 = twice as fast"),
+});
+
+export const Caption = z.object({
+  text: z.string().trim().min(1).max(200),
+  start: z.number().min(0).describe("Seconds in the FINISHED video"),
+  end: z.number().positive(),
+  position: z.enum(["bottom", "middle", "top"]).default("bottom"),
+});
+
+export const EditPlan = z.object({
+  clips: z.array(Clip).min(1).max(20).describe("Played one after another, in this order"),
+  preset: VideoPresetId.default("tiktok_fhd"),
+  fit: z.enum(["crop", "blur", "pad"]).default("crop").describe("crop = fill the frame (cuts the sides); blur = whole picture on a blurred copy; pad = whole picture on black"),
+  fps: z.union([z.literal(24), z.literal(25), z.literal(30), z.literal(50), z.literal(60)]).default(30),
+  captions: z.array(Caption).max(40).default([]).describe("Text burned into the picture"),
+  mute: z.boolean().default(false).describe("Drop the original sound"),
+  normalize_audio: z.boolean().default(true).describe("Even loudness (about -14 LUFS, what TikTok/YouTube expect)"),
+  name: z.string().trim().min(1).max(60).regex(/^[\w\- ]+$/).default("edit").describe("Output file name, no extension"),
+});
+export type EditPlan = z.infer<typeof EditPlan>;
+
+/** What a render remembers about how it was made (uploads.render), so the studio can show and change it. */
+export const RenderInfo = z.object({
+  plan: EditPlan,
+  /** The job's files in order: plan.clips[].video points into this list (1-based). */
+  attachments: z.array(z.object({ id: z.string(), name: z.string(), content_type: z.string() })).max(10),
+});
+export type RenderInfo = z.infer<typeof RenderInfo>;

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { AgentConfig, PublishInfo, SelfCheck, WebPost } from "@agent-office/shared";
+import type { AgentConfig, PublishInfo, RenderInfo, SelfCheck, WebPost } from "@agent-office/shared";
 
 export interface ProjectPublish {
   url: string;
@@ -263,5 +263,7 @@ export const uploads = sqliteTable("uploads", {
   path: text("path").notNull(),
   /** Set when a run made the file (Editor's render); null for the owner's own uploads. */
   run_id: text("run_id"),
+  /** For renders: the edit plan and source files, so the Video Studio can show and re-render it. */
+  render: json<RenderInfo>("render"),
   created_at: text("created_at").notNull().default(now),
 });

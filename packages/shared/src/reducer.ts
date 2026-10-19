@@ -30,6 +30,8 @@ export interface PendingDraft {
   platform: string;
   kind: string;
   created_at: string;
+  /** Set when the draft changed while pending (draft.updated), so open inboxes reload it. */
+  updated_at?: string;
 }
 
 export interface PendingApproval {
@@ -352,6 +354,11 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
     case "draft.decided":
       delete s.pending_drafts[event.payload.draft_id];
       break;
+    case "draft.updated": {
+      const d = s.pending_drafts[event.payload.draft_id];
+      if (d) d.updated_at = event.ts;
+      break;
+    }
     case "skill.proposed": {
       const p = event.payload;
       (s.pending_skills ??= {})[p.proposal_id] = { id: p.proposal_id, name: p.name, action: p.action, agent_id: event.agent_id, created_at: event.ts };
