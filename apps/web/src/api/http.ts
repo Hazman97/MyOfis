@@ -218,6 +218,12 @@ export interface ChatMessage {
   suggestions?: EditSuggestions | null;
 }
 
+/** GET /api/skills/assignments: who sees which skill. `skills: "all"` = every skill, also new ones. */
+export interface SkillAssignments {
+  skills: string[];
+  agents: { id: string; slug: string; name: string; sprite: string; enabled: boolean; skills: "all" | string[]; reads_skills: boolean }[];
+}
+
 /** GET /api/videos: the room's videos for the Video Studio home, newest first. */
 export interface VideoListItem {
   id: string;
@@ -313,6 +319,12 @@ export const api = {
   skills: () => request<{ skills: Skill[] }>("/skills"),
   importSkill: (content: string) => request<{ skill: Skill }>("/skills", { body: { content } }),
   deleteSkill: (name: string) => request<{ ok: true }>(`/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  /** Which agents (of this room) see which skills. */
+  skillAssignments: () => request<SkillAssignments>("/skills/assignments"),
+  /** One skill → exactly these agents (they also get the skill tools). */
+  setSkillAgents: (name: string, agentIds: string[]) => request<{ ok: true }>(`/skills/${encodeURIComponent(name)}/agents`, { method: "PUT", body: { agent_ids: agentIds } }),
+  /** One agent → "all" skills (new ones too) or exactly these. */
+  setAgentSkills: (agentId: string, skills: "all" | string[]) => request<{ ok: true }>(`/agents/${encodeURIComponent(agentId)}/skills`, { method: "PUT", body: { skills } }),
   proposals: (pendingOnly = false) => request<{ proposals: Proposal[] }>(`/proposals${pendingOnly ? "?status=pending" : ""}`),
   decideProposal: (id: string, decision: "approve" | "reject") => request<{ proposal: Proposal }>(`/proposals/${id}/decide`, { body: { decision } }),
   updateAgent: (id: string, body: Partial<Agent>) => request<{ agent: Agent }>(`/agents/${id}`, { method: "PATCH", body }),

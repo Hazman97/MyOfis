@@ -42,6 +42,8 @@ const blank = () => ({
   self_review: true,
   // set from the agent panel (office); kept as is here
   preferences: AgentPreferences.parse({}) as AgentPreferences,
+  // set on the Skills page; kept as is here
+  skills: "all" as "all" | string[],
 });
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 const form = reactive(blank());
@@ -89,6 +91,7 @@ function edit(a: Agent | null) {
       runtime: a.config.runtime,
       self_review: a.config.self_review ?? true,
       preferences: AgentPreferences.parse(a.config.preferences ?? {}),
+      skills: a.config.skills ?? "all",
     });
   }
   editing.value = a?.id ?? "new";
@@ -98,10 +101,10 @@ async function save() {
   error.value = "";
   saving.value = true;
   try {
-    const { shell_allowlist, read_paths, http_allowlist, max_steps, runtime, self_review, preferences, slug, ...rest } = form;
+    const { shell_allowlist, read_paths, http_allowlist, max_steps, runtime, self_review, preferences, skills, slug, ...rest } = form;
     const body = {
       ...rest,
-      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, runtime, self_review, preferences },
+      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, runtime, self_review, preferences, skills },
     };
     if (editing.value === "new") await api.createAgent({ ...body, slug });
     else await api.updateAgent(editing.value!, body);

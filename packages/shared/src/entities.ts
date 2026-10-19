@@ -109,8 +109,14 @@ export const AgentConfig = z.object({
   /** After big jobs (and every 5th chat message) ask the agent what is worth saving to memory or skills (Hermes-style review). */
   self_review: z.boolean().default(true),
   preferences: AgentPreferences.prefault({}),
+  /** Which skills from the library this agent sees: "all" (also new ones), or only these names. */
+  skills: z.union([z.literal("all"), z.array(z.string().max(64)).max(500)]).default("all"),
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
+
+/** The skills an agent gets from the library (its config.skills). */
+export const skillsFor = <T extends { name: string }>(config: { skills?: AgentConfig["skills"] }, all: T[]): T[] =>
+  !config.skills || config.skills === "all" ? all : all.filter((s) => (config.skills as string[]).includes(s.name));
 
 export const AgentInput = z.object({
   slug,

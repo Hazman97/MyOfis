@@ -6,6 +6,7 @@ import {
   dayKey,
   fixEscapedNewlines,
   requiredPrograms,
+  skillsFor,
   DIRECT_JOBS,
   type HubToRunner,
   type ContentDraft,
@@ -1109,7 +1110,7 @@ Error: ${r.error}` : ""}` });
       budget_left_tokens: minLeft(forMember && agent.workspace_id !== ws ? this.#shareLeft(agent.id, ws) : this.#budgetLeft(agent), roomBudgetLeft(this.db, ws)),
       memory: { memory: this.learning.entries("memory", agent.id, ws), user: this.learning.entries("user", agent.id, ws) },
       memory_write_approval: forMember ? false : this.learning.writeApproval,
-      skills: tools.some((t) => t.startsWith("skill")) ? this.learning.skills() : [],
+      skills: tools.some((t) => t.startsWith("skill")) ? skillsFor(config, this.learning.skills()) : [],
       projects: this.db
         .select({ id: projects.id, slug: projects.slug, name: projects.name, live_url: projects.live_url, repo_url: projects.repo_url })
         .from(projects)

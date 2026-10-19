@@ -22,6 +22,8 @@ import {
   ScheduleInput,
   TIMEZONE,
   RenderInfo,
+  AgentConfig,
+  type Agent,
   Transcript,
   UPLOAD_PART_BYTES,
   WebPostEdit,
@@ -528,6 +530,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const patch = AgentPatch.parse(raw);
     // Partial parse still fills defaults; keep only keys the client actually sent.
     const changes = Object.fromEntries(Object.entries(patch).filter(([k]) => k in raw));
+    // a config saved without "skills" (e.g. the Agents form) keeps the agent's skill choice
+    if (changes.config && !("skills" in (raw.config as object))) (changes.config as AgentConfig).skills = toAgent(current).config.skills;
     assertTools(changes.tools);
     if (typeof changes.provider === "string" || changes.runner_id !== undefined) {
       assertAgentRefs(changes.provider as string | undefined, changes.runner_id as string | null | undefined, ws);
@@ -622,6 +626,45 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
     const { content } = z.object({ content: z.string().min(10).max(MAX_SKILL_CHARS) }).parse(await c.req.json());
     return c.json({ skill: learning.writeSkill(content) }, 201);
+  });
+  // which agents see which skills (AgentConfig.skills: "all" or a list)
+  const skillAgents = (ws: string) => db.select().from(agents).where(eq(agents.workspace_id, ws)).all().map(toAgent);
+  const SKILL_TOOLS = ["skills_list", "skill_view"];
+  const setAgentSkills = (a: Agent, skills: AgentConfig["skills"]) => {
+    // an agent given skills also gets the tools to read them
+    const tools = skills === "all" || skills.length ? [...a.tools, ...SKILL_TOOLS.filter((t) => !a.tools.includes(t))] : a.tools;
+    db.update(agents).set({ config: { ...a.config, skills }, tools }).where(eq(agents.id, a.id)).run();
+  };
+  api.get("/skills/assignments", (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
+    return c.json({
+      skills: learning.skills().map((s) => s.name),
+      agents: skillAgents(W(c)).map((a) => ({ id: a.id, slug: a.slug, name: a.name, sprite: a.sprite, enabled: a.enabled, skills: a.config.skills, reads_skills: a.tools.includes("skill_view") })),
+    });
+  });
+  // one skill → exactly these agents (agents on "all" that are left out switch to a list without it)
+  api.put("/skills/:name/agents", async (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
+    const name = c.req.param("name");
+    if (!learning.skill(name)) throw new HttpError(404, "skill not found");
+    const { agent_ids } = z.object({ agent_ids: z.array(z.string()).max(500) }).parse(await c.req.json());
+    const all = learning.skills().map((s) => s.name);
+    for (const a of skillAgents(W(c))) {
+      const want = agent_ids.includes(a.id);
+      const cur = a.config.skills;
+      const has = cur === "all" || cur.includes(name);
+      if (want === has && (!want || a.tools.includes("skill_view"))) continue;
+      setAgentSkills(a, want ? (cur === "all" ? "all" : [...cur, name]) : (cur === "all" ? all : cur).filter((n) => n !== name));
+    }
+    return c.json({ ok: true });
+  });
+  // one agent → "all" or exactly these skills
+  api.put("/agents/:id/skills", async (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
+    const a = toAgent(ownAgent(db, c.req.param("id"), W(c)));
+    const { skills } = z.object({ skills: AgentConfig.shape.skills }).parse(await c.req.json());
+    setAgentSkills(a, skills === "all" ? "all" : [...new Set(skills)]);
+    return c.json({ ok: true });
   });
   api.delete("/skills/:name", (c) => {
     if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
