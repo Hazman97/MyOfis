@@ -17,18 +17,23 @@ import {
   RotateCcw,
   Scissors,
   Settings2,
+  Sparkles,
   Subtitles as SubtitlesIcon,
   Trash2,
   Type,
   Upload,
   Wand2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-vue-next";
 import {
   EditPlan,
+  finishedSeconds,
   isFiller,
   subtitleCues,
   tightCuts,
+  transitionSeconds,
   type EditSuggestion,
   type Transcript,
 } from "@agent-office/shared";
@@ -131,8 +136,7 @@ async function load() {
 
 function resetPlan() {
   if (!info.value) return;
-  const p = JSON.parse(JSON.stringify(info.value.render.plan)) as EditPlan;
-  if (!p.subtitles) p.subtitles = null;
+  const p = EditPlan.parse(info.value.render.plan);
   Object.assign(plan, p);
   selectedClipIndex.value = null;
   selectedCaptionIndex.value = null;
@@ -152,11 +156,16 @@ const clipLen = (c: EditPlan["clips"][number]) => {
   return end === undefined ? null : Math.max(0, (end - c.start) / c.speed);
 };
 const lengths = computed(() => plan.clips.map(clipLen));
-const total = computed(() =>
-  lengths.value.every((l) => l !== null)
-    ? Math.round(lengths.value.reduce<number>((a, b) => a + (b ?? 0), 0) * 10) / 10
-    : null,
-);
+const total = computed(() => {
+  const all = lengths.value;
+  if (!all.every((l): l is number => l !== null)) return null;
+  return finishedSeconds(plan, all);
+});
+const overlapPerCut = computed(() => {
+  const all = lengths.value;
+  if (!all.every((l): l is number => l !== null)) return plan.transition?.seconds ?? 0.5;
+  return transitionSeconds(plan, all);
+});
 const preset = computed(() => info.value?.presets[plan.preset]);
 const tooLong = computed(() => total.value !== null && !!preset.value && total.value > preset.value.max_seconds);
 const COLORS = ["bg-accent/70", "bg-info/70", "bg-review/70", "bg-signal/70", "bg-danger/60"];
@@ -301,6 +310,11 @@ function applySuggestion(option: EditSuggestion, attachments: { id: string }[]) 
   plan.normalize_audio = option.plan.normalize_audio;
   plan.captions = JSON.parse(JSON.stringify(option.plan.captions ?? []));
   plan.subtitles = option.plan.subtitles ? JSON.parse(JSON.stringify(option.plan.subtitles)) : null;
+  if (option.plan.transition) {
+    plan.transition = JSON.parse(JSON.stringify(option.plan.transition));
+  } else {
+    plan.transition = { type: "none", seconds: 0.5 };
+  }
   selectedClipIndex.value = null;
   selectedCaptionIndex.value = null;
   msg.value = `Applied suggestion "${option.title}" to timeline.`;
@@ -618,30 +632,48 @@ async function useOwnEdit(e: Event) {
           </div>
 
           <!-- Video Clip Bars -->
-          <div class="flex h-14 sm:h-16 w-full overflow-hidden rounded-lg border border-line bg-sunken p-1 gap-1" aria-label="Clips in order">
-            <button
-              v-for="(c, i) in plan.clips"
-              :key="i"
-              type="button"
-              class="relative flex min-w-10 flex-col items-center justify-center rounded transition-all cursor-pointer select-none text-white overflow-hidden p-1"
-              :class="[
-                COLORS[(c.video - 1) % COLORS.length],
-                selectedClipIndex === i ? 'ring-2 ring-white shadow-md scale-[1.01] z-10 font-bold' : 'opacity-90 hover:opacity-100 hover:brightness-105'
-              ]"
-              :style="{ flexGrow: lengths[i] ?? 1 }"
-              :title="`Clip ${i + 1}: file ${c.video}, ${c.start}s → ${c.end ?? 'end'}${c.speed !== 1 ? `, ${c.speed}×` : ''}`"
-              @click="selectClip(i)"
-            >
-              <div class="flex items-center gap-1 leading-none">
-                <span class="text-xs font-semibold">#{{ i + 1 }}</span>
-                <span v-if="c.speed !== 1" class="chip chip-sm px-1 py-0 text-[9px] bg-black/40 text-white border-0 font-mono">
-                  {{ c.speed }}×
-                </span>
+          <div class="flex h-14 sm:h-16 w-full overflow-hidden rounded-lg border border-line bg-sunken p-1 gap-1 items-center" aria-label="Clips in order">
+            <template v-for="(c, i) in plan.clips" :key="i">
+              <!-- Transition diamond between clips -->
+              <div
+                v-if="plan.transition && plan.transition.type !== 'none' && i > 0"
+                class="flex items-center justify-center shrink-0 -mx-1 z-20 pointer-events-none"
+                :title="`Transition: ${plan.transition.type} (${plan.transition.seconds}s)`"
+              >
+                <div class="size-3.5 rotate-45 rounded-[2px] bg-surface border border-accent shadow-sm flex items-center justify-center">
+                  <div class="size-1.5 rounded-full bg-accent" />
+                </div>
               </div>
-              <span class="text-[11px] font-mono opacity-90 leading-tight mt-0.5 tabular-nums">
-                {{ lengths[i] !== null && lengths[i] !== undefined ? `${Math.round(lengths[i]! * 10) / 10}s` : '…' }}
-              </span>
-            </button>
+
+              <button
+                type="button"
+                class="relative flex min-w-10 flex-col items-center justify-center rounded transition-all cursor-pointer select-none text-white overflow-hidden p-1 h-full"
+                :class="[
+                  COLORS[(c.video - 1) % COLORS.length],
+                  selectedClipIndex === i ? 'ring-2 ring-white shadow-md scale-[1.01] z-10 font-bold' : 'opacity-90 hover:opacity-100 hover:brightness-105'
+                ]"
+                :style="{ flexGrow: lengths[i] ?? 1 }"
+                :title="`Clip ${i + 1}: file ${c.video}, ${c.start}s → ${c.end ?? 'end'}${c.speed !== 1 ? `, ${c.speed}×` : ''}${c.zoom && c.zoom !== 'none' ? `, zoom ${c.zoom}` : ''}`"
+                @click="selectClip(i)"
+              >
+                <div class="flex items-center gap-1 leading-none">
+                  <span class="text-xs font-semibold">#{{ i + 1 }}</span>
+                  <span v-if="c.speed !== 1" class="chip chip-sm px-1 py-0 text-[9px] bg-black/40 text-white border-0 font-mono">
+                    {{ c.speed }}×
+                  </span>
+                  <span
+                    v-if="c.zoom && c.zoom !== 'none'"
+                    class="chip chip-sm px-1 py-0 text-[9px] bg-black/40 text-accent font-mono inline-flex items-center gap-0.5 font-bold"
+                    :title="`Zoom: ${c.zoom}`"
+                  >
+                    <span>{{ c.zoom === 'in' ? '↗' : '↘' }}</span>
+                  </span>
+                </div>
+                <span class="text-[11px] font-mono opacity-90 leading-tight mt-0.5 tabular-nums">
+                  {{ lengths[i] !== null && lengths[i] !== undefined ? `${Math.round(lengths[i]! * 10) / 10}s` : '…' }}
+                </span>
+              </button>
+            </template>
           </div>
 
           <!-- Time Ruler -->
@@ -683,6 +715,76 @@ async function useOwnEdit(e: Event) {
               </button>
             </div>
           </div>
+        </div>
+
+        <!-- Transitions Section -->
+        <div class="card p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <h2 class="flex items-center gap-2 font-semibold text-base">
+                <Sparkles :size="17" class="text-accent" /> Transitions
+              </h2>
+              <span
+                class="chip chip-sm text-[10px]"
+                :class="plan.transition.type !== 'none' ? 'bg-accent/15 text-accent border-accent/30 font-medium' : 'text-muted'"
+              >
+                {{ plan.transition.type === 'none' ? 'None' : `${plan.transition.type} (${plan.transition.seconds}s)` }}
+              </span>
+            </div>
+            <span v-if="plan.clips.length < 2" class="text-[11px] text-muted">
+              Needs 2+ clips
+            </span>
+          </div>
+
+          <!-- Type chips -->
+          <div class="space-y-1.5">
+            <span class="label text-xs">Transition style</span>
+            <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Transition type">
+              <button
+                v-for="t in (['none', 'fade', 'dissolve', 'slide', 'zoom'] as const)"
+                :key="t"
+                type="button"
+                class="chip min-h-10 sm:min-h-8 px-3.5 text-xs font-medium transition-all capitalize cursor-pointer select-none"
+                :class="plan.transition.type === t ? 'bg-accent text-accent-ink border-accent font-semibold shadow-xs' : 'bg-surface border-line text-muted hover:text-fg hover:border-line-strong'"
+                @click="plan.transition.type = t"
+              >
+                {{ t }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Seconds slider (shown only when type is not None) -->
+          <div v-if="plan.transition.type !== 'none'" class="space-y-2 pt-2 border-t border-line/60">
+            <div class="flex items-center justify-between text-xs">
+              <label for="trans-seconds" class="label text-xs !mb-0 cursor-pointer">Transition duration</label>
+              <span class="font-mono font-semibold text-fg tabular-nums">{{ plan.transition.seconds }}s</span>
+            </div>
+            <input
+              id="trans-seconds"
+              v-model.number="plan.transition.seconds"
+              type="range"
+              min="0.2"
+              max="1.5"
+              step="0.1"
+              class="w-full accent-accent h-2 bg-surface-2 rounded-lg cursor-pointer"
+            />
+            <div class="flex justify-between text-[10px] font-mono text-muted select-none">
+              <span>0.2s</span>
+              <span>0.5s</span>
+              <span>1.0s</span>
+              <span>1.5s</span>
+            </div>
+          </div>
+
+          <!-- Helper line -->
+          <p class="text-xs text-muted leading-relaxed">
+            <template v-if="plan.transition.type !== 'none'">
+              Each cut overlaps by <b class="text-fg font-mono">{{ overlapPerCut }} s</b>, so the video is about <b class="text-fg font-mono">{{ total ?? '…' }} s</b>.
+            </template>
+            <template v-else>
+              Smooth transitions between clips. Each transition overlaps two clips, shortening the finished video.
+            </template>
+          </p>
         </div>
 
         <!-- Clips Section -->
@@ -727,7 +829,7 @@ async function useOwnEdit(e: Event) {
               :class="selectedClipIndex === i ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-line bg-surface/40 hover:border-line-strong'"
             >
               <!-- Phone card layout -->
-              <div class="sm:hidden space-y-3">
+              <div class="2xl:hidden space-y-3">
                 <div class="flex items-center justify-between gap-2 border-b border-line/60 pb-2">
                   <div class="flex items-center gap-2">
                     <span class="flex size-6 items-center justify-center rounded-md bg-surface-2 font-mono text-xs font-semibold text-accent border border-line">
@@ -817,20 +919,52 @@ async function useOwnEdit(e: Event) {
                   </div>
                 </div>
 
-                <label class="block">
-                  <span class="label text-xs">Playback speed</span>
-                  <select v-model.number="c.speed" class="input text-sm min-h-10 w-full">
-                    <option :value="0.5">0.5× slow</option>
-                    <option :value="0.75">0.75×</option>
-                    <option :value="1">1× normal</option>
-                    <option :value="1.5">1.5×</option>
-                    <option :value="2">2× fast</option>
-                  </select>
-                </label>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="block">
+                    <span class="label text-xs">Playback speed</span>
+                    <select v-model.number="c.speed" class="input text-sm min-h-10 w-full">
+                      <option :value="0.5">0.5× slow</option>
+                      <option :value="0.75">0.75×</option>
+                      <option :value="1">1× normal</option>
+                      <option :value="1.5">1.5×</option>
+                      <option :value="2">2× fast</option>
+                    </select>
+                  </label>
+
+                  <div class="space-y-1">
+                    <span class="label text-xs">Zoom (Ken Burns)</span>
+                    <div class="flex rounded-lg border border-line bg-surface-2/60 p-0.5 select-none w-full items-center">
+                      <button
+                        type="button"
+                        class="flex-1 justify-center rounded-md px-2 py-2 text-xs font-medium transition-all cursor-pointer flex items-center gap-1 min-h-10"
+                        :class="c.zoom === 'none' ? 'bg-surface text-fg font-semibold shadow-xs' : 'text-muted hover:text-fg'"
+                        @click="c.zoom = 'none'"
+                      >
+                        None
+                      </button>
+                      <button
+                        type="button"
+                        class="flex-1 justify-center rounded-md px-2 py-2 text-xs font-medium transition-all cursor-pointer flex items-center gap-1 min-h-10"
+                        :class="c.zoom === 'in' ? 'bg-surface text-accent font-semibold shadow-xs' : 'text-muted hover:text-fg'"
+                        @click="c.zoom = 'in'"
+                      >
+                        <ZoomIn :size="13" /> In
+                      </button>
+                      <button
+                        type="button"
+                        class="flex-1 justify-center rounded-md px-2 py-2 text-xs font-medium transition-all cursor-pointer flex items-center gap-1 min-h-10"
+                        :class="c.zoom === 'out' ? 'bg-surface text-accent font-semibold shadow-xs' : 'text-muted hover:text-fg'"
+                        @click="c.zoom = 'out'"
+                      >
+                        <ZoomOut :size="13" /> Out
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <!-- Desktop compact row layout -->
-              <div class="hidden sm:grid sm:grid-cols-[2.5rem_1fr_6.5rem_6.5rem_6.5rem_auto] items-end gap-2.5">
+              <div class="hidden 2xl:grid 2xl:grid-cols-[2.25rem_minmax(8rem,1fr)_5.5rem_5.5rem_5.5rem_8.5rem_auto] items-end gap-2">
                 <span class="self-center font-mono text-xs font-semibold text-accent">#{{ i + 1 }}</span>
 
                 <label class="min-w-0">
@@ -890,6 +1024,39 @@ async function useOwnEdit(e: Event) {
                     <option :value="2">2×</option>
                   </select>
                 </label>
+
+                <div>
+                  <span class="label text-[11px]">Zoom</span>
+                  <div class="inline-flex rounded-lg border border-line bg-surface-2/60 p-0.5 select-none h-9.5 items-center w-full">
+                    <button
+                      type="button"
+                      class="flex-1 text-center rounded px-1.5 py-1 text-[11px] font-medium transition-all cursor-pointer h-full flex items-center justify-center"
+                      :class="c.zoom === 'none' ? 'bg-surface text-fg font-semibold shadow-xs' : 'text-muted hover:text-fg'"
+                      title="No zoom"
+                      @click="c.zoom = 'none'"
+                    >
+                      None
+                    </button>
+                    <button
+                      type="button"
+                      class="flex-1 text-center rounded px-1.5 py-1 text-[11px] font-medium transition-all cursor-pointer h-full flex items-center justify-center gap-0.5"
+                      :class="c.zoom === 'in' ? 'bg-surface text-accent font-semibold shadow-xs' : 'text-muted hover:text-fg'"
+                      title="Slow zoom in"
+                      @click="c.zoom = 'in'"
+                    >
+                      <ZoomIn :size="12" /> In
+                    </button>
+                    <button
+                      type="button"
+                      class="flex-1 text-center rounded px-1.5 py-1 text-[11px] font-medium transition-all cursor-pointer h-full flex items-center justify-center gap-0.5"
+                      :class="c.zoom === 'out' ? 'bg-surface text-accent font-semibold shadow-xs' : 'text-muted hover:text-fg'"
+                      title="Slow zoom out"
+                      @click="c.zoom = 'out'"
+                    >
+                      <ZoomOut :size="12" /> Out
+                    </button>
+                  </div>
+                </div>
 
                 <div class="flex gap-1 pb-0.5">
                   <button
@@ -1059,7 +1226,7 @@ async function useOwnEdit(e: Event) {
                   />
                 </label>
 
-                <div class="grid grid-cols-3 gap-2">
+                <div class="grid grid-cols-2 gap-2">
                   <label>
                     <span class="label text-xs">From (s)</span>
                     <input v-model.number="cap.start" type="number" min="0" step="0.1" class="input text-sm min-h-10 w-full" />
@@ -1076,11 +1243,19 @@ async function useOwnEdit(e: Event) {
                       <option value="bottom">Bottom</option>
                     </select>
                   </label>
+                  <label>
+                    <span class="label text-xs">Animation</span>
+                    <select v-model="cap.animation" class="input text-sm min-h-10 w-full">
+                      <option value="none">None</option>
+                      <option value="fade">Fade</option>
+                      <option value="pop">Pop</option>
+                    </select>
+                  </label>
                 </div>
               </div>
 
               <!-- Desktop compact row layout -->
-              <div class="hidden sm:grid sm:grid-cols-[1fr_5rem_5rem_6.5rem_auto] items-end gap-2.5">
+              <div class="hidden sm:grid sm:grid-cols-[1fr_5rem_5rem_6.5rem_6.5rem_auto] items-end gap-2.5">
                 <label class="min-w-0">
                   <span class="label text-xs">Caption text</span>
                   <input
@@ -1107,6 +1282,15 @@ async function useOwnEdit(e: Event) {
                     <option value="top">Top</option>
                     <option value="middle">Middle</option>
                     <option value="bottom">Bottom</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span class="label text-[11px]">Animation</span>
+                  <select v-model="cap.animation" class="input text-sm min-h-9.5 w-full">
+                    <option value="none">None</option>
+                    <option value="fade">Fade</option>
+                    <option value="pop">Pop</option>
                   </select>
                 </label>
 
