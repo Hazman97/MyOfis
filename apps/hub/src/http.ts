@@ -812,6 +812,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   app.route("/api", api);
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 
+  // The system overview (SYSTEM.md) as plain text, so the owner can give another AI one link.
+  // No login: it is the same text as the public repo, with no secrets. Behind Cloudflare Access,
+  // only this path is opened (a Bypass application for /aitext); the rest of the domain stays locked.
+  app.get("/aitext", async (c) => {
+    const file = Bun.file(config.systemDocPath);
+    if (!(await file.exists())) throw new HttpError(404, "not found");
+    return c.body(await file.text(), 200, { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff", "cache-control": "public, max-age=300", "x-robots-tag": "noindex" });
+  });
+
   // ------------------------------------------------------------ web app (production build)
 
   if (existsSync(join(config.webDistDir, "index.html"))) {

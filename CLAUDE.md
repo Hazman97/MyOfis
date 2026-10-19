@@ -146,6 +146,7 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - Each problem goes to Telegram once a day.
 - **Backups mirror `data/files`** into `BACKUP_DIR/files/` (see the Nightly backup note above).
 - The runner sends photos to the model as `file` parts (the AI SDK deprecated `image` parts).
+- **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.
