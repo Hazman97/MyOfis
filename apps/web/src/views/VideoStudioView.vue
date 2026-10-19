@@ -385,6 +385,28 @@ async function renderAgain() {
   }
 }
 
+// ---------------------------------------------------------------- live AI edit in OpenChatCut (agent Studio Pro)
+const studioPro = computed(() => office.agents.find((a) => a.slug === "studio-pro" && a.enabled));
+const occBrief = ref("");
+const occBusy = ref(false);
+async function editInOpenChatCut() {
+  if (!studioPro.value || !info.value) return;
+  occBusy.value = true;
+  error.value = "";
+  try {
+    const files = videoSources.value.map((v) => v.id);
+    const ask = occBrief.value.trim() || "Edit this into a short vertical video with a strong hook, a title and music.";
+    await api.chat({ agent_id: studioPro.value.id, text: `${ask}
+
+(Video: ${info.value.upload.name}. Open the project in OpenChatCut so I can watch.)`, attachments: files });
+    await router.push({ path: "/chat", query: { agent: "studio-pro" } });
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    occBusy.value = false;
+  }
+}
+
 // ---------------------------------------------------------------- own edit (OpenCut export)
 const ownInput = ref<HTMLInputElement>();
 async function useOwnEdit(e: Event) {
@@ -501,6 +523,23 @@ async function useOwnEdit(e: Event) {
           @seek="onSeek"
           @transcribe="onTranscribe"
         />
+
+        <!-- Live AI edit in OpenChatCut (Studio Pro agent drives the OpenChatCut app on this PC) -->
+        <div v-if="studioPro" class="card p-3.5 space-y-2.5 border-accent/30 bg-accent/5">
+          <span class="sign flex items-center gap-1.5 font-semibold text-xs">
+            <Clapperboard :size="14" class="text-accent" />
+            Edit live with AI in OpenChatCut
+          </span>
+          <p class="text-xs text-muted leading-relaxed">
+            Studio Pro edits this video inside the OpenChatCut app on your PC (motion graphics, effects, music). Open the editor link it sends to watch and approve. Export there, then use <strong>Use my own edit</strong> here.
+          </p>
+          <textarea v-model="occBrief" rows="2" class="input text-xs w-full" placeholder="e.g. 15 s TikTok, title 'SmashPoint Open', upbeat music" />
+          <button class="btn btn-sm btn-primary w-full min-h-10" :disabled="occBusy" @click="editInOpenChatCut">
+            <LoaderCircle v-if="occBusy" :size="14" class="motion-safe:animate-spin" />
+            <Clapperboard v-else :size="14" />
+            Send to Studio Pro
+          </button>
+        </div>
 
         <!-- OpenCut 3-Step Panel -->
         <div class="card p-3.5 space-y-3 border-line/80 bg-surface/50">
@@ -640,7 +679,7 @@ async function useOwnEdit(e: Event) {
                 class="flex items-center justify-center shrink-0 -mx-1 z-20 pointer-events-none"
                 :title="`Transition: ${plan.transition.type} (${plan.transition.seconds}s)`"
               >
-                <div class="size-3.5 rotate-45 rounded-[2px] bg-surface border border-accent shadow-sm flex items-center justify-center">
+                <div class="size-3.5 rotate-45 rounded-xs bg-surface border border-accent shadow-sm flex items-center justify-center">
                   <div class="size-1.5 rounded-full bg-accent" />
                 </div>
               </div>
@@ -756,7 +795,7 @@ async function useOwnEdit(e: Event) {
           <!-- Seconds slider (shown only when type is not None) -->
           <div v-if="plan.transition.type !== 'none'" class="space-y-2 pt-2 border-t border-line/60">
             <div class="flex items-center justify-between text-xs">
-              <label for="trans-seconds" class="label text-xs !mb-0 cursor-pointer">Transition duration</label>
+              <label for="trans-seconds" class="label text-xs mb-0! cursor-pointer">Transition duration</label>
               <span class="font-mono font-semibold text-fg tabular-nums">{{ plan.transition.seconds }}s</span>
             </div>
             <input
@@ -1482,7 +1521,7 @@ async function useOwnEdit(e: Event) {
       >
         <!-- On phone: bottom sheet (bottom-0 w-full max-h-[85vh]); on desktop: right side drawer (w-96 sm:w-[420px] h-full) -->
         <div
-          class="w-full sm:w-[440px] max-w-full h-[85vh] sm:h-full mt-auto sm:mt-0 flex flex-col shadow-2xl transition-transform"
+          class="w-full sm:w-110 max-w-full h-[85vh] sm:h-full mt-auto sm:mt-0 flex flex-col shadow-2xl transition-transform"
         >
           <AskEditorPanel
             :upload-id="info.upload.id"
