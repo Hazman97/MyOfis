@@ -9,6 +9,7 @@ import ProjectDocs from "./ProjectDocs.vue";
 import ProjectLog from "./ProjectLog.vue";
 import FacebookSettings from "./FacebookSettings.vue";
 import SocialSettings from "./SocialSettings.vue";
+import TikTokSettings from "./TikTokSettings.vue";
 import { api } from "../api/http.ts";
 import { fmtDateTime } from "../format.ts";
 
@@ -219,6 +220,7 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
       <PublishSettings :project="project" />
       <FacebookSettings :project="project" class="mt-6" />
       <SocialSettings :project="project" class="mt-6" />
+      <TikTokSettings :project="project" class="mt-6" />
     </template>
 
     <!-- BRIEF -->

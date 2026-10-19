@@ -368,22 +368,103 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
           </div>
 
           <!-- clip folder + posting without approval (TikTok agent); owner only -->
-          <div v-if="isOwner" class="space-y-3 border-t border-line pt-3">
-            <label class="block">
-              <span class="label">Clip folder (on the runner PC)</span>
-              <input v-model="form.clip_folder" class="input font-mono text-xs" placeholder="C:\MyOfis\tiktok-clips" />
-              <span class="text-[11px] text-faint">Videos the agent may use with the clip_library tool. A music\ folder inside holds royalty-free tracks.</span>
-            </label>
-            <label class="inline-flex items-center gap-2 text-xs font-medium text-fg">
-              <input v-model="form.auto_publish" type="checkbox" class="accent-accent size-4" />
-              Post without approval
-            </label>
-            <div v-if="form.auto_publish" class="space-y-1.5 rounded-md border border-signal/30 bg-signal-soft p-2.5 text-[11px] text-signal">
-              <p>Drafts this agent saves go out straight away (website / connected social accounts). You get a Telegram message after each post.</p>
-              <label class="flex items-center gap-2 text-fg">
-                Max posts a day
-                <input v-model.number="form.auto_publish_daily_max" type="number" min="1" max="15" class="input w-20 py-1 text-xs" />
+          <div v-if="isOwner" class="space-y-4 border-t border-line pt-4">
+            <!-- Clip folder sub-section -->
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                <svg class="size-4 shrink-0 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+                </svg>
+                <label for="ag-clip-folder" class="label text-xs font-semibold text-fg !mb-0 cursor-pointer">
+                  Clip folder (on the runner PC)
+                </label>
+              </div>
+              <input
+                id="ag-clip-folder"
+                v-model="form.clip_folder"
+                class="input font-mono text-xs min-h-10"
+                placeholder="C:\MyOfis\tiktok-clips"
+              />
+              <p class="text-[11px] text-faint leading-relaxed">
+                Drop videos here; a <code class="rounded bg-surface-2 px-1 py-0.5 font-mono text-[10px] border border-line">music</code> folder inside holds royalty-free songs. Videos the agent may use with the <code class="rounded bg-surface-2 px-1 py-0.5 font-mono text-[10px] border border-line">clip_library</code> tool.
+              </p>
+            </div>
+
+            <!-- Toggle switch for Post without approval -->
+            <div class="flex flex-col gap-1 pt-0.5">
+              <label
+                for="ag-auto-publish"
+                class="group inline-flex cursor-pointer items-center gap-2.5 select-none"
+              >
+                <span class="relative inline-flex items-center">
+                  <input
+                    id="ag-auto-publish"
+                    v-model="form.auto_publish"
+                    type="checkbox"
+                    class="peer sr-only"
+                  />
+                  <div class="h-5 w-9 rounded-full bg-surface-2 border border-line peer-checked:bg-accent peer-checked:border-accent transition-colors duration-200" />
+                  <div class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-fg peer-checked:bg-accent-ink peer-checked:translate-x-4 transition-transform duration-200 shadow-sm" />
+                </span>
+                <span class="text-xs font-medium text-fg">Post without approval</span>
               </label>
+            </div>
+
+            <!-- Warning box when auto_publish is on -->
+            <div
+              v-if="form.auto_publish"
+              class="space-y-3 rounded-xl border border-signal/40 bg-signal-soft/30 p-3.5 text-xs text-signal transition-all duration-200"
+              role="alert"
+            >
+              <div class="flex items-start gap-2.5">
+                <svg class="size-4 shrink-0 text-signal mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <div class="space-y-1 leading-relaxed">
+                  <p class="font-semibold text-fg">Posts go live automatically</p>
+                  <p class="text-[11px] text-signal/90 leading-relaxed">
+                    Drafts this agent saves go out straight away (website / connected social accounts). You get a Telegram message after each post.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Daily max number stepper (1–15) -->
+              <div class="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-signal/20">
+                <label for="ag-daily-max" class="text-xs font-medium text-fg">
+                  Daily max posts (1–15)
+                </label>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    class="btn btn-sm size-10 sm:size-8 p-0 flex items-center justify-center font-bold text-fg rounded-lg bg-surface border border-line shadow-xs hover:bg-surface-2 transition-colors disabled:opacity-40"
+                    :disabled="(form.auto_publish_daily_max ?? 3) <= 1"
+                    @click="form.auto_publish_daily_max = Math.max(1, (form.auto_publish_daily_max || 3) - 1)"
+                    aria-label="Decrease daily max"
+                  >
+                    -
+                  </button>
+                  <input
+                    id="ag-daily-max"
+                    v-model.number="form.auto_publish_daily_max"
+                    type="number"
+                    min="1"
+                    max="15"
+                    class="input w-16 h-10 sm:h-8 py-1 text-center font-mono text-xs tabular-nums"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-sm size-10 sm:size-8 p-0 flex items-center justify-center font-bold text-fg rounded-lg bg-surface border border-line shadow-xs hover:bg-surface-2 transition-colors disabled:opacity-40"
+                    :disabled="(form.auto_publish_daily_max ?? 3) >= 15"
+                    @click="form.auto_publish_daily_max = Math.min(15, (form.auto_publish_daily_max || 3) + 1)"
+                    aria-label="Increase daily max"
+                  >
+                    +
+                  </button>
+                  <span class="text-[11px] text-faint ml-1">/ day</span>
+                </div>
+              </div>
             </div>
           </div>
         </fieldset>
