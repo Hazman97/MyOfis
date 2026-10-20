@@ -323,24 +323,42 @@ export const aiSdkRuntime: AgentRuntime = {
       throw new Error(`the model (${model}) got stuck: ${STUCK_STEPS} steps in a row without an answer or a working tool call. Try a stronger model for this agent, or a simpler request.`);
     }
     const allSteps = (await result.steps) as unknown as StepCalls[];
+    const usage = await result.totalUsage;
+    const used = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+    const runLimit = runTokenLimit(agent.config.max_run_tokens, ctx.assignment.budget_left_tokens);
+    const overLimit = runLimit !== null && used >= runLimit;
+    const left = ctx.assignment.budget_left_tokens;
+    // a run cut short says so in the reply itself, not only in a passing status line (owner: "kenapa dia senyap")
+    let stopped = "";
     if (repeating(allSteps)) {
       const what = allSteps.at(-1)!.toolCalls.map((c) => c.toolName).join(", ");
       if (!full.trim()) throw new Error(`stopped a loop: the model made the same call (${what}) ${REPEAT_CALLS} times in a row. Try a stronger model, or rephrase the request.`);
       ctx.emit({ type: "agent.thinking", payload: { summary: `Stopped a loop: the same call (${what}) ${REPEAT_CALLS} times in a row` } });
-    }
-    if (allSteps.length >= agent.config.max_steps) {
+      stopped = `Stopped a loop: the same call (${what}) ${REPEAT_CALLS} times in a row.`;
+    } else if (left !== null && used >= left) {
+      ctx.emit({ type: "agent.thinking", payload: { summary: "Stopped early: today's token budget is used up." } });
+      stopped = "Stopped: today's token budget for this agent is used up. Raise it in Agents, or continue tomorrow.";
+    } else if (overLimit) {
+      ctx.emit({ type: "agent.thinking", payload: { summary: `Stopped early: this run used its token limit (${agent.config.max_run_tokens.toLocaleString()} tokens). Raise "Max tokens per run" in Agents if this job needs more.` } });
+      stopped = `Stopped: this run reached its token limit (${agent.config.max_run_tokens.toLocaleString("en")} tokens). Reply "continue" to carry on, or raise "Max tokens per run" in Agents.`;
+    } else if (allSteps.length >= agent.config.max_steps) {
       ctx.emit({ type: "agent.thinking", payload: { summary: `Stopped at the step limit (${agent.config.max_steps} steps). Raise "Max steps" in Agents if this job needs more.` } });
+      stopped = `Stopped: this run reached its step limit (${agent.config.max_steps} steps). Reply "continue" to carry on, or raise "Max steps" in Agents.`;
+    }
+    if (stopped) {
+      const text = `${full.trim() ? "\n\n" : ""}⏸ ${stopped}`;
+      const note = new MessageStreamer(ctx, `m${++step}`);
+      note.push(text);
+      note.flush(true);
+      full += text;
     }
 
     await writeFile(join(ctx.workspace, "output.md"), full);
     ctx.emit({ type: "artifact.created", payload: { kind: "file", title: "output.md", path: "output.md" } });
 
-    const usage = await result.totalUsage;
     let extraIn = 0;
     let extraOut = 0;
     const toolCalls = (await result.steps).reduce((n, s) => n + s.toolCalls.length, 0);
-    const runLimit = runTokenLimit(agent.config.max_run_tokens, ctx.assignment.budget_left_tokens);
-    const overLimit = runLimit !== null && (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) >= runLimit;
     // no learning pass after a run that hit its limits or looped
     if (wantsReview(ctx, toolCalls) && !ctx.signal.aborted && !overLimit && !repeating(allSteps)) {
       ctx.emit({ type: "agent.thinking", payload: { summary: "Looking back: anything worth remembering?" } });
@@ -364,12 +382,6 @@ export const aiSdkRuntime: AgentRuntime = {
       } catch {
         // a failed review never fails the job
       }
-    }
-    const left = ctx.assignment.budget_left_tokens;
-    if (left !== null && (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) >= left) {
-      ctx.emit({ type: "agent.thinking", payload: { summary: "Stopped early: today's token budget is used up." } });
-    } else if (overLimit) {
-      ctx.emit({ type: "agent.thinking", payload: { summary: `Stopped early: this run used its token limit (${agent.config.max_run_tokens.toLocaleString()} tokens). Raise "Max tokens per run" in Agents if this job needs more.` } });
     }
     const seen = visionUsage.get(ctx) ?? { in: 0, out: 0 };
     return { tokens_in: (usage.inputTokens ?? 0) + extraIn + seen.in, tokens_out: (usage.outputTokens ?? 0) + extraOut + seen.out };

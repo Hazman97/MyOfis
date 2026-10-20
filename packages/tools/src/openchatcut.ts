@@ -217,16 +217,30 @@ export const openchatcutTool = defineTool({
     "edit_item, split_item, set_item_timing, add_motion_graphic, add_audio, edit_captions, manage_effects (pass editSessionId every time) → review_edit_session → get_edit_session until applied.",
   category: "write",
   input: z.object({
-    tool: z.string().min(1).max(80).describe('An OpenChatCut tool name, or "tools/list"'),
+    tool: z.string().min(1).max(80).describe('An OpenChatCut tool name, "tools/list", or "tools/describe" {name}'),
     arguments: z.record(z.string(), z.unknown()).default({}),
   }),
   risk: () => "safe",
   describe: (i) => `OpenChatCut ${i.tool}`,
   async execute(i, ctx) {
+    if (i.tool === "tools/describe") {
+      await ensureSession(ctx);
+      const name = String(i.arguments.name ?? "");
+      const r = (await rpc(ctx, "tools/list", {})) as { tools?: { name: string; description?: string; inputSchema?: unknown }[] };
+      const t = (r.tools ?? []).find((x) => x.name === name);
+      if (!t) return { ok: false, summary: `no OpenChatCut tool ${name}`, output: `No tool named "${name}". tool "tools/list" lists them.` };
+      const text = JSON.stringify({ name: t.name, description: t.description, arguments: t.inputSchema });
+      return { ok: true, summary: `OpenChatCut ${name} arguments`, output: text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}…` : text };
+    }
     if (i.tool === "tools/list") {
       await ensureSession(ctx);
       const r = (await rpc(ctx, "tools/list", {})) as { tools?: { name: string; description?: string }[] };
-      const tools = (r.tools ?? []).map((t) => ({ name: t.name, does: (t.description ?? "").split(/(?<=\.)\s/)[0]?.slice(0, 160) }));
+      const all = r.tools ?? [];
+      // names only when the list is long (131 with an editor open): descriptions cost ~5k tokens on every later step
+      if (all.length > 20) {
+        return { ok: true, summary: `${all.length} OpenChatCut tools`, output: `${all.map((t) => t.name).join(", ")}\nCall a tool directly; for its arguments use tool "tools/describe" {name: "<tool name>"}.` };
+      }
+      const tools = all.map((t) => ({ name: t.name, does: (t.description ?? "").split(/(?<=\.)\s/)[0]?.slice(0, 160) }));
       return { ok: true, summary: `${tools.length} OpenChatCut tools`, output: tools };
     }
     // deleting projects is the owner's job, in the app

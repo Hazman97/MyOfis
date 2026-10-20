@@ -28,7 +28,7 @@ beforeAll(() => {
       const sse = (result: unknown) =>
         new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\n\n`, { headers: { "content-type": "text/event-stream", "mcp-session-id": "sess-1" } });
       if (msg.method === "initialize") return sse({ protocolVersion: "2025-06-18", serverInfo: { name: "openchatcut" } });
-      if (msg.method === "tools/list") return sse({ tools: [{ name: "list_projects", description: "List OpenChatCut projects, newest first. More text." }, { name: "import_asset", description: "Import ONE file." }] });
+      if (msg.method === "tools/list") return sse({ tools: [{ name: "list_projects", description: "List OpenChatCut projects, newest first. More text." }, { name: "import_asset", description: "Import ONE file.", inputSchema: { type: "object", properties: { path: { type: "string" } } } }] });
       if (msg.params?.name === "openchatcut_status") return sse({ content: [{ type: "text", text: JSON.stringify({ connectedProjectIds: fake.connected }) }] });
       if (msg.params?.name === "target_project") return sse({ content: [{ type: "text", text: '{"ok":true}' }] });
       if (msg.params?.name === "read_timeline" && fake.staleNext > 0) {
@@ -71,6 +71,9 @@ test("one MCP session per run: initialize once, then tool calls with the session
     { name: "list_projects", does: "List OpenChatCut projects, newest first." },
     { name: "import_asset", does: "Import ONE file." },
   ]);
+  const described = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "tools/describe", arguments: { name: "import_asset" } }, ctx);
+  expect(JSON.parse(String(described.output))).toEqual({ name: "import_asset", description: "Import ONE file.", arguments: { type: "object", properties: { path: { type: "string" } } } });
+  expect((await runTool(TOOL_REGISTRY.openchatcut!, { tool: "tools/describe", arguments: { name: "nope" } }, ctx)).ok).toBe(false);
   const projects = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "list_projects", arguments: {} }, ctx);
   expect(projects).toMatchObject({ ok: true, output: '{"result":[{"id":"p1","name":"Promo"}]}' });
   const imp = await runTool(TOOL_REGISTRY.openchatcut_import!, { video: 1, editSessionId: "es1" }, ctx);
