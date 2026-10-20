@@ -14,7 +14,7 @@ import {
 } from "lucide-vue-next";
 import PageHeader from "../components/PageHeader.vue";
 import { api, type VideoListItem } from "../api/http.ts";
-import { fmtDateTime } from "../format.ts";
+import { fmtBytes, fmtDateTime } from "../format.ts";
 
 /**
  * Video Studio home (owner request: "two ways in"): send a video here and open it in the studio,
@@ -208,7 +208,7 @@ async function add(e: Event) {
             <div class="pt-2 border-t border-line/50 flex items-center justify-between text-xs text-muted">
               <span class="text-[11px] font-mono">{{ fmtDateTime(v.created_at) }}</span>
               <div class="flex items-center gap-2">
-                <span class="text-[11px] font-mono">{{ Math.round(v.size / (1024 * 1024)) }} MB</span>
+                <span class="text-[11px] font-mono">{{ fmtBytes(v.size) }}</span>
                 <ArrowRight :size="13" class="text-faint group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
               </div>
             </div>

@@ -30,8 +30,8 @@ async function load(wait = false) {
     const r = await api.storage(wait);
     items.value = r.items;
     measuredAt.value = r.measured_at;
-    // the first answer comes before the sizes are measured: ask again once they are ready
-    if (!r.measured_at && !wait) await load(true);
+    // the first answer can be old (or not measured yet): show it, then ask again for fresh sizes
+    if ((r.measuring || !r.measured_at) && !wait) await load(true);
   } catch (e) {
     error.value = (e as Error).message;
   } finally {

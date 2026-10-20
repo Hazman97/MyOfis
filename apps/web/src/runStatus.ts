@@ -113,7 +113,7 @@ export function runStatus(state: OfficeState, jobId: string, now = Date.now()): 
     return { ...common, phase: "running", label, detail: null };
   }
 
-  if (job.status === "failed") return { ...base, phase: "failed", label: "Could not finish", detail: run?.error ?? "the run failed", run_id: runId, seconds: secs(run?.started_at, now), can_retry: true };
+  if (job.status === "failed") return { ...base, phase: "failed", label: "Could not finish", detail: run?.error ?? "the run failed", run_id: runId, seconds: secs(run?.started_at, run?.ended_at ? Date.parse(run.ended_at) : now), can_retry: true };
   if (job.status === "cancelled") {
     const why = job.cancel_reason ?? run?.error ?? null;
     return { ...base, phase: "cancelled", label: "Stopped", detail: why ? why.replace(/^stopped: /i, "") : null, run_id: runId, can_retry: true };

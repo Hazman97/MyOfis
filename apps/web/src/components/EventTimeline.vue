@@ -23,11 +23,13 @@ const rows = computed<Row[]>(() => {
   for (const e of props.events) {
     switch (e.type) {
       case "agent.message": {
-        const existing = msgRow.get(e.payload.message_id);
+        // message ids repeat in every run (m1, m2…): the run makes them unique
+        const key = `${e.run_id ?? ""}/${e.payload.message_id}`;
+        const existing = msgRow.get(key);
         if (existing) existing.text += e.payload.text;
         else if (e.payload.text.trim()) {
           const row: Row = { id: e.id, ts: e.ts, kind: "says", text: e.payload.text, tone: "text" };
-          msgRow.set(e.payload.message_id, row);
+          msgRow.set(key, row);
           out.push(row);
         }
         break;

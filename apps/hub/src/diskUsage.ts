@@ -102,17 +102,18 @@ export class DiskUsage {
   }
 
   /** The places with sizes (cached for a minute; the first call answers at once and measures in the background). */
-  async list(wait = false): Promise<{ items: DiskPlace[]; measured_at: string | null }> {
-    if (this.#cache && Date.now() - this.#cache.at < CACHE_MS) return { items: this.#cache.items, measured_at: new Date(this.#cache.at).toISOString() };
+  /** `measuring`: newer sizes are being worked out; ask again with wait to get them. */
+  async list(wait = false): Promise<{ items: DiskPlace[]; measured_at: string | null; measuring: boolean }> {
+    if (this.#cache && Date.now() - this.#cache.at < CACHE_MS) return { items: this.#cache.items, measured_at: new Date(this.#cache.at).toISOString(), measuring: false };
     // a failed walk (permissions, a folder removed meanwhile) must never become an unhandled rejection
     const run = (this.#measuring ??= this.#measure()
       .catch((err) => console.error(`[storage] measuring failed: ${(err as Error).message}`))
       .finally(() => (this.#measuring = null)));
     if (wait || this.#cache) {
       if (wait) await run;
-      if (this.#cache) return { items: this.#cache.items, measured_at: new Date(this.#cache.at).toISOString() };
+      if (this.#cache) return { items: this.#cache.items, measured_at: new Date(this.#cache.at).toISOString(), measuring: !wait };
     }
-    return { items: this.places().map((p) => ({ ...p, exists: existsSync(p.path), bytes: null, files: null, partial: false })), measured_at: null };
+    return { items: this.places().map((p) => ({ ...p, exists: existsSync(p.path), bytes: null, files: null, partial: false })), measured_at: null, measuring: true };
   }
 
   async #measure(): Promise<void> {

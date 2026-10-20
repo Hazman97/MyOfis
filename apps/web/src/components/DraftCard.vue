@@ -103,7 +103,7 @@ const eventLine = computed(() => {
   return m ? [m.event_date, m.event_time, m.location].filter(Boolean).join(" · ") : "";
 });
 // "Schedule…": approve now, post later (website posts and connected social accounts)
-const canSchedule = computed(() => props.draft.kind === "web_post" || ["facebook", "instagram", "threads", "tiktok"].includes(props.draft.platform));
+const canSchedule = computed(() => props.draft.can_publish ?? (props.draft.kind === "web_post" || ["facebook", "instagram", "threads", "tiktok"].includes(props.draft.platform)));
 const scheduling = ref(false);
 const pad = (n: number) => String(n).padStart(2, "0");
 /** A Date as the value of <input type="datetime-local"> (the browser's own time zone). */

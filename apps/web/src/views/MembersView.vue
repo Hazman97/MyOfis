@@ -280,7 +280,7 @@ function getInitials(text: string) {
                   v-model.number="draft[m.id]![a.id]"
                   type="number"
                   min="1000"
-                  step="5000"
+                  step="any"
                   class="input h-7 w-24 px-1.5 py-0 text-right font-mono text-xs tabular-nums"
                   aria-label="Daily token limit"
                 />

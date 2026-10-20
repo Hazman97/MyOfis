@@ -54,7 +54,7 @@ const pendingCount = computed(() => Object.keys(office.state.pending_drafts ?? {
     <PageHeader
       sign="Whiteboard"
       title="Drafts"
-      description="Posts and copy Marketing wrote for you. Nothing is ever posted for you: approve or edit what you like, then copy it out. Your edits and feedback teach Marketing your style."
+      description="Posts, captions and videos your agents made. Nothing goes out without you: approving posts it where it is connected (website, Facebook, Instagram, Threads, TikTok), otherwise copy it out. Your edits and feedback teach the agents your style."
     >
       <RouterLink v-if="marketing" :to="{ path: '/jobs/new', query: { agent: marketing.slug } }" class="btn btn-primary shadow-sm">New brief for Marketing</RouterLink>
     </PageHeader>

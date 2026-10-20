@@ -152,6 +152,8 @@ export const ContentDraft = z.object({
   publish_error: z.string().nullable().default(null),
   /** Approved and scheduled: it goes out at this time (ISO). */
   publish_at: z.string().nullable().default(null),
+  /** Set by the drafts list: approving would post it somewhere (website or a connected account). */
+  can_publish: z.boolean().optional(),
 });
 export type ContentDraft = z.infer<typeof ContentDraft>;
 

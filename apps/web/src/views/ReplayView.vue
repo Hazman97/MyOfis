@@ -91,6 +91,10 @@ async function load() {
       // a little after the run ends, so the walk to your desk or the next handoff is included
       window = { fromId: events[0]!.id, toId: events.at(-1)!.id + 30 };
       all = await eventsUpTo(window.toId);
+      // only the few seconds after the run (the walk back), not the next job's events
+      const end = events.at(-1)!;
+      const tailUntil = Date.parse(end.ts) + 5000;
+      window.toId = all.filter((e) => e.id <= window!.toId && (e.id <= end.id || Date.parse(e.ts) <= tailUntil)).reduce((m, e) => Math.max(m, e.id), end.id);
     } else {
       if (!from.value || !to.value) throw new Error("Pick a start and an end time.");
       all = await eventsUpTo(Number.MAX_SAFE_INTEGER);

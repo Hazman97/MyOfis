@@ -414,7 +414,7 @@ export const api = {
   transcribeVideo: (id: string) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/transcribe`, { method: "POST" }),
   renderVideo: (id: string, plan: EditPlan, draftId: string | null) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/render`, { body: { plan, draft_id: draftId } }),
   tiktokHdList: () => request<{ items: TikTokHdItem[] }>("/tiktok-hd"),
-  storage: (wait = false) => request<{ items: StoragePlace[]; measured_at: string | null }>(`/storage${wait ? "?wait=1" : ""}`),
+  storage: (wait = false) => request<{ items: StoragePlace[]; measured_at: string | null; measuring?: boolean }>(`/storage${wait ? "?wait=1" : ""}`),
   openStorage: (key: string) => request<{ opened: string }>("/storage/open", { body: { key } }),
   tiktokHd: (id: string, mode: "auto" | "remux" | "reencode" = "auto") => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/tiktok-hd`, { body: { mode } }),
   setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),

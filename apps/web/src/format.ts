@@ -32,3 +32,10 @@ export function fmtAgo(iso: string, now = Date.now()): string {
   if (s < 86_400) return `${Math.round(s / 3600)} h ago`;
   return `${Math.round(s / 86_400)} d ago`;
 }
+
+/** "512 KB", "3.4 MB", "1.2 GB" (videos under 1 MB showed as "0 MB"). */
+export function fmtBytes(n: number): string {
+  if (n < 1024 ** 2) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  if (n < 1024 ** 3) return `${Math.round((n / 1024 ** 2) * 10) / 10} MB`;
+  return `${Math.round((n / 1024 ** 3) * 100) / 100} GB`;
+}

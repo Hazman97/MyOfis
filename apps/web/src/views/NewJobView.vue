@@ -34,7 +34,12 @@ watchEffect(() => {
   if (pick) agentId.value = pick.id;
 });
 const agent = computed(() => office.agentById[agentId.value]);
-const isMarketing = computed(() => !!agent.value?.tools.includes("save_draft"));
+// the Marketing-style job form (caption, script, calendar…) is for copywriters: they draft from the
+// brief and feature log. Editor, Publisher, TikTok Poster and Misi 1K also save drafts but take free text.
+const isMarketing = computed(() => {
+  const t = agent.value?.tools ?? [];
+  return t.includes("save_draft") && t.includes("read_feature_log") && !t.some((x) => x.startsWith("video_") || x === "draft_web_post" || x === "clip_library");
+});
 const marketingType = computed(() => MARKETING_JOB_TYPES.find((t) => t.type === jobType.value));
 const needsRepo = computed(() => agent.value?.config.runtime === "opencode");
 const project = computed(() => projects.value.find((p) => p.id === projectId.value));
@@ -60,7 +65,10 @@ const plan = computed(() => {
   }
   return [
     `${a.name} works with ${a.tools.length ? `${a.tools.length} tools` : "no tools (text only)"}`,
-    a.permission_level === "safe" ? "Asks you before writing files" : "Writes in its own workspace without asking",
+    // only agents that can write files are asked about it
+    ...(a.tools.some((t) => ["write_file", "run_command", "edit_file"].includes(t))
+      ? [a.permission_level === "safe" ? "Asks you before writing files" : "Writes in its own workspace without asking"]
+      : []),
     "Dangerous actions always wait in Approvals",
     "You can watch it live and cancel at any time",
   ];

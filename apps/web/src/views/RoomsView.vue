@@ -118,7 +118,7 @@ function getInitials(text: string) {
       </label>
       <label class="block">
         <span class="label">Daily limit on your AI (tokens)</span>
-        <input v-model.number="form.daily_token_budget" type="number" min="1000" step="10000" class="input font-mono" />
+        <input v-model.number="form.daily_token_budget" type="number" min="1000" step="any" class="input font-mono" />
       </label>
       <button class="btn btn-primary h-9" :disabled="busy || !form.name.trim()">
         <Plus :size="15" />
@@ -263,7 +263,7 @@ function getInitials(text: string) {
                   v-model.number="budgets[r.id]"
                   type="number"
                   min="1000"
-                  step="10000"
+                  step="any"
                   class="input font-mono text-sm"
                 />
                 <span v-if="r.left_today !== null" class="mt-1 block text-[11px] text-muted font-mono">

@@ -54,6 +54,8 @@ describe("run status in plain words", () => {
     ev(s, "run.started", { run_id: "u1", job_id: "j1", agent_id: "editor", runner_id: "r1" }, 1, { run_id: "u1", agent_id: "editor" });
     ev(s, "run.failed", { run_id: "u1", job_id: "j1", error: "runner restarted and lost the run", tokens_in: 0, tokens_out: 0, cost_usd: 0, cost_unknown: false }, 9, { run_id: "u1" });
     expect(runStatus(s, "j1")).toMatchObject({ phase: "failed", detail: "runner restarted and lost the run", can_retry: true });
+    // the clock stops when the run failed (8 s), however long you look at it
+    expect(runStatus(s, "j1", T0 + 600_000).seconds).toBe(8);
     job(s, "j2", "editor", "y", 10);
     ev(s, "job.cancelled", { job_id: "j2", reason: "stopped: the run went over its time limit (60 min)." }, 11);
     expect(runStatus(s, "j2")).toMatchObject({ phase: "cancelled", label: "Stopped", detail: "the run went over its time limit (60 min).", can_retry: true });

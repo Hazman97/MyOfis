@@ -43,7 +43,7 @@ import TranscriptPanel from "../components/studio/TranscriptPanel.vue";
 import AskEditorPanel from "../components/studio/AskEditorPanel.vue";
 import { api, type VideoInfo } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
-import { fmtDateTime } from "../format.ts";
+import { fmtBytes, fmtDateTime } from "../format.ts";
 import { openInOpenCut } from "../opencut.ts";
 
 /**
@@ -436,8 +436,8 @@ async function useOwnEdit(e: Event) {
 <template>
   <div class="mx-auto max-w-6xl pb-28 lg:pb-8">
     <div class="mb-3 flex items-center justify-between">
-      <RouterLink to="/drafts" class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg min-h-10">
-        <ArrowLeft :size="15" /> Drafts
+      <RouterLink to="/studio" class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg min-h-10">
+        <ArrowLeft :size="15" /> Video Studio
       </RouterLink>
 
       <button
@@ -612,7 +612,7 @@ async function useOwnEdit(e: Event) {
         <!-- Video Metadata Card -->
         <div class="card space-y-1.5 p-3.5 text-xs text-muted">
           <div class="flex items-center justify-between text-fg font-medium">
-            <span>{{ Math.round(info.upload.size / 1024 / 102.4) / 10 }} MB</span>
+            <span>{{ fmtBytes(info.upload.size) }}</span>
             <span class="text-faint">{{ fmtDateTime(info.upload.created_at) }}</span>
           </div>
           <p v-if="!info.known" class="text-muted">

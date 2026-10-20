@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import { FileText, FolderGit2, Globe, ListChecks, Pencil, Plus } from "lucide-vue-next";
 import type { Project } from "@agent-office/shared";
 import BriefPanel from "../components/BriefPanel.vue";
@@ -13,6 +13,21 @@ const projects = ref<Project[]>([]);
 const editing = ref<string | null>(null); // project id, "new", or null
 const error = ref("");
 const form = reactive({ slug: "", name: "", live_url: "", repo_url: "", enabled: true });
+/** The slug follows the name for a new project until the owner types one himself. */
+const slugTouched = ref(false);
+const slugOf = (name: string) =>
+  name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+watch(
+  () => form.name,
+  (name) => {
+    if (editing.value === "new" && !slugTouched.value) form.slug = slugOf(name);
+  },
+);
 /** Project whose brief / feature log is open. */
 const briefOf = ref<{ project: Project; tab: "brief" | "features" } | null>(null);
 
@@ -23,6 +38,7 @@ function edit(p: Project | null) {
   error.value = "";
   Object.assign(form, p ? { ...p, live_url: p.live_url ?? "", repo_url: p.repo_url ?? "" } : { slug: "", name: "", live_url: "", repo_url: "", enabled: true });
   editing.value = p?.id ?? "new";
+  slugTouched.value = false;
 }
 
 async function save() {
@@ -139,7 +155,8 @@ const host = (u: string) => {
           <div><label class="label" for="pj-name">Name</label><input id="pj-name" v-model="form.name" class="input" required /></div>
           <div>
             <label class="label" for="pj-slug">Slug</label>
-            <input id="pj-slug" v-model="form.slug" class="input font-mono" :disabled="editing !== 'new'" pattern="[a-z0-9][a-z0-9\-]*" required />
+            <input id="pj-slug" v-model="form.slug" class="input font-mono" :disabled="editing !== 'new'" pattern="[a-z0-9][a-z0-9\-]*" required @input="slugTouched = true" />
+            <p v-if="editing === 'new'" class="mt-1 text-xs text-faint">Short id used in links and by agents (lowercase, numbers, dashes). Filled from the name.</p>
           </div>
         </div>
         <div>

@@ -328,7 +328,7 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
           <div class="grid gap-3 sm:grid-cols-3">
             <div>
               <label class="label" for="ag-budget">Daily token budget · 0 = no limit</label>
-              <input id="ag-budget" v-model.number="form.daily_token_budget" type="number" min="0" step="1000" class="input font-mono text-xs" />
+              <input id="ag-budget" v-model.number="form.daily_token_budget" type="number" min="0" step="any" class="input font-mono text-xs" />
               <p class="mt-1 text-[11px] text-faint">When it runs out the agent goes home; its jobs wait until tomorrow (Malaysia time).</p>
             </div>
             <div>
@@ -342,7 +342,7 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
             </div>
             <div>
               <label class="label" for="ag-run-tokens">Max tokens per run</label>
-              <input id="ag-run-tokens" v-model.number="form.max_run_tokens" type="number" min="5000" step="10000" class="input font-mono text-xs" />
+              <input id="ag-run-tokens" v-model.number="form.max_run_tokens" type="number" min="5000" step="any" class="input font-mono text-xs" />
               <p class="mt-1 text-[11px] text-faint">One job never uses more than this, even if the daily budget allows.</p>
             </div>
             <label class="flex items-center gap-2 self-end pb-2 text-xs font-medium cursor-pointer">

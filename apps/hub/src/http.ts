@@ -807,7 +807,9 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   // content drafts: approved by their owner; website / social posts go out on approval
   api.get("/drafts", (c) => {
     const status = c.req.query("status");
-    return c.json({ drafts: hub.content.listDrafts({ status: status === "pending" || status === "decided" ? status : undefined, project_id: c.req.query("project_id") || undefined, workspace_id: W(c) }) });
+    const drafts = hub.content.listDrafts({ status: status === "pending" || status === "decided" ? status : undefined, project_id: c.req.query("project_id") || undefined, workspace_id: W(c) });
+    // the web shows "Schedule…" / "posts when approved" only where a post can really go
+    return c.json({ drafts: drafts.map((d) => ({ ...d, can_publish: hub.canPublish(d) })) });
   });
   api.post("/drafts/:id/decide", async (c) => {
     const decision = DraftDecision.parse(await c.req.json());

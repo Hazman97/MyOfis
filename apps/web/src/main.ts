@@ -18,8 +18,11 @@ app.use(createPinia());
 app.use(router);
 
 setUnauthorizedHandler(() => {
-  if (router.currentRoute.value.name !== "login") {
-    void router.push({ name: "login", query: { next: router.currentRoute.value.fullPath } });
+  const cur = router.currentRoute.value;
+  if (cur.name !== "login") {
+    // before the first navigation finishes the route is the empty start route: use the address bar
+    const next = cur.name ? cur.fullPath : `${location.pathname}${location.search}${location.hash}`;
+    void router.push({ name: "login", query: { next } });
   }
 });
 
