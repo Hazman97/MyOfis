@@ -327,6 +327,10 @@ export const openchatcutTool = defineTool({
       r = await callOpenChatCut(ctx, i.tool, i.arguments);
       note = `(The editor had reconnected; the office re-bound it and retried.) ${note}`.trim();
     }
+    // an applied session is closed: the next edit needs a new one (models kept editing into the old one)
+    if (/^(review_edit_session|get_edit_session)$/.test(i.tool) && /"status"\s*:\s*"applied"/.test(r.text)) {
+      note = `${note} This edit session is applied and closed: start the next step with begin_edit_session {reuseExisting: true} and use its new editSessionId.`.trim();
+    }
     return { ok: !r.isError, summary: `${i.tool}${r.isError ? " failed" : ""}`, output: note ? `${r.text}\n${note}` : r.text };
   },
 });
