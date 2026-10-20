@@ -22,6 +22,8 @@ const DRAG_PX = 6;
 const PAN_PX = 4;
 const LONG_PRESS_MS = 500;
 const BLUR_FPS = 30;
+/** The opening view and the centre button: 1.25² = two zoom-in steps from fitting the whole office. */
+const DEFAULT_ZOOM = 1.25 ** 2;
 const KEYS: Record<string, "up" | "down" | "left" | "right"> = {
   ArrowUp: "up", KeyW: "up", ArrowDown: "down", KeyS: "down", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right",
 };
@@ -80,7 +82,8 @@ export function createOffice3d(parent: HTMLElement, o: OfficeGameOptions): Offic
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
   const viewDir = new THREE.Vector3(1, 1.25, 1.35).normalize();
   const target = center.clone();
-  let zoom = 0; // 0 = fit
+  // 0 = the default view: two zoom steps in from "whole office" (owner's choice: desks big enough to see)
+  let zoom = 0;
   let fitZoom = 1;
 
   scene.add(new THREE.HemisphereLight("#fffaf2", "#d8c9b4", 1.6));
@@ -246,7 +249,7 @@ export function createOffice3d(parent: HTMLElement, o: OfficeGameOptions): Offic
     const spanX = (maxX - minX) * 1.06;
     const spanY = (maxY - minY) * 1.1;
     fitZoom = Math.min(w / spanX, h / spanY);
-    const z = zoom || fitZoom;
+    const z = zoom || fitZoom * DEFAULT_ZOOM;
     camera.left = -w / 2 / z;
     camera.right = w / 2 / z;
     camera.top = h / 2 / z;
@@ -383,7 +386,7 @@ export function createOffice3d(parent: HTMLElement, o: OfficeGameOptions): Offic
   canvas.style.cursor = "grab";
 
   function zoomBy(step: number) {
-    zoom = Math.min(fitZoom * 5, Math.max(fitZoom * 0.7, (zoom || fitZoom) * 1.25 ** step));
+    zoom = Math.min(fitZoom * 5, Math.max(fitZoom * 0.7, (zoom || fitZoom * DEFAULT_ZOOM) * 1.25 ** step));
     placeCamera();
   }
 
