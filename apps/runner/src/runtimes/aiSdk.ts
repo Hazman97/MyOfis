@@ -94,6 +94,62 @@ export const budgetStop =
   ({ steps }) =>
     left !== null && tokensUsed(steps) >= left;
 
+interface StepLike {
+  text: string;
+  toolResults: unknown[];
+  content: { type: string; toolName?: string; error?: unknown }[];
+}
+/** A step that said nothing and got no tool to work (an unknown tool, bad input). */
+const fruitless = (s: StepLike) => !s.text.trim() && s.toolResults.length === 0;
+/** Steps in a row like that before the run stops (some local models loop forever on a bad call). */
+export const STUCK_STEPS = 3;
+
+/** Stop when the model is stuck: STUCK_STEPS steps in a row with no text and no working tool call. */
+export const stuckStop =
+  (): StopCondition<ToolSet> =>
+  ({ steps }) =>
+    steps.length >= STUCK_STEPS && (steps.slice(-STUCK_STEPS) as unknown as StepLike[]).every(fruitless);
+
+/** Why the last step's tool calls failed, for the owner to read (e.g. "get_editor_url: no such tool"). */
+export function toolErrors(step: StepLike): string[] {
+  return step.content
+    .filter((c) => c.type === "tool-error")
+    .map((c) => `${c.toolName ?? "?"}: ${c.error instanceof Error ? c.error.message : String(c.error)}`.slice(0, 200));
+}
+
+/**
+ * Small models often call an OpenChatCut tool by its own name (get_editor_url) instead of through
+ * the openchatcut bridge: turn such a call into openchatcut {tool, arguments}.
+ */
+export function repairForBridge(names: string[]) {
+  return async ({ toolCall, error }: { toolCall: { type: "tool-call"; toolCallId: string; toolName: string; input: string }; error: { name?: string } }) => {
+    if (!names.includes("openchatcut")) return null;
+    let args: Record<string, unknown> = {};
+    try {
+      const parsed = toolCall.input ? JSON.parse(toolCall.input) : {};
+      args = parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return null;
+    }
+    if (error?.name === "AI_NoSuchToolError") return { ...toolCall, toolName: "openchatcut", input: JSON.stringify({ tool: toolCall.toolName, arguments: args }) };
+    // openchatcut with its arguments as a JSON string, or the tool under "name"
+    if (toolCall.toolName === "openchatcut" && error?.name === "AI_InvalidToolInputError") {
+      let inner = args.arguments ?? args.args ?? {};
+      if (typeof inner === "string") {
+        try {
+          inner = JSON.parse(inner);
+        } catch {
+          inner = {};
+        }
+      }
+      const tool = args.tool ?? args.name;
+      if (typeof tool !== "string") return null;
+      return { ...toolCall, input: JSON.stringify({ tool, arguments: inner && typeof inner === "object" ? inner : {} }) };
+    }
+    return null;
+  };
+}
+
 /**
  * Hermes-style frozen snapshot: the agent's notes, the shared owner profile and the
  * skills index (names + when to use; the content is loaded with skill_view).
@@ -150,6 +206,7 @@ export const aiSdkRuntime: AgentRuntime = {
     let step = 0;
     let out = new MessageStreamer(ctx, `m${step}`);
     let full = "";
+    let stuckRun = 0;
 
     // Photos the owner sent with a chat message go to the model as images (Publisher).
     const images = await loadImages(ctx);
@@ -165,10 +222,16 @@ export const aiSdkRuntime: AgentRuntime = {
         instructions: `${agent.system_prompt}\n${SAFETY_PREAMBLE}${projectsNote(ctx)}${contentNote(ctx)}${memoryNote(ctx)}${handoffNote(ctx)}${preferencesPrompt(agent.config.preferences)}`,
         ...input,
         tools,
-        stopWhen: [isStepCount(agent.config.max_steps), budgetStop(ctx.assignment.budget_left_tokens)],
+        stopWhen: [isStepCount(agent.config.max_steps), budgetStop(ctx.assignment.budget_left_tokens), stuckStop()],
+        repairToolCall: repairForBridge(agent.tools) as never,
         abortSignal: ctx.signal,
         maxOutputTokens: 8000,
-        onStepEnd: () => {
+        onStepEnd: (s: unknown) => {
+          // a tool call that never reached the tool (unknown name, bad input): say why, once per step
+          const errs = toolErrors(s as StepLike);
+          if (errs.length) ctx.emit({ type: "agent.thinking", payload: { summary: `Tool call failed: ${errs.join("; ")}`.slice(0, 500) } });
+          if (fruitless(s as StepLike)) stuckRun++;
+          else stuckRun = 0;
           // One agent.message per model step, so tool calls sit between messages in the timeline.
           out.flush(true);
           out = new MessageStreamer(ctx, `m${++step}`);
@@ -196,6 +259,10 @@ export const aiSdkRuntime: AgentRuntime = {
     }
     if (ctx.signal.aborted) throw ctx.signal.reason;
     if (streamError) throw streamError instanceof Error ? streamError : new Error(String(streamError));
+    // the model went round in circles: fail clearly instead of finishing with an empty answer
+    if (stuckRun >= STUCK_STEPS && !full.trim()) {
+      throw new Error(`the model (${agent.model}) got stuck: ${STUCK_STEPS} steps in a row without an answer or a working tool call. Try a stronger model for this agent, or a simpler request.`);
+    }
 
     await writeFile(join(ctx.workspace, "output.md"), full);
     ctx.emit({ type: "artifact.created", payload: { kind: "file", title: "output.md", path: "output.md" } });
