@@ -12,4 +12,5 @@ export * from "./skills.ts";
 export * from "./video.ts";
 export * from "./docs.ts";
 export * from "./programs.ts";
+export * from "./models.ts";
 export * from "./transcript.ts";

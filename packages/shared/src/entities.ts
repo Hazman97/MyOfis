@@ -296,5 +296,7 @@ export const ProviderRuntimeConfig = z.object({
   kind: ProviderKind,
   base_url: z.string().nullable(),
   api_key: z.string().nullable(),
+  /** The provider's model list (best first after a scan): what an "auto" agent picks from. */
+  models: z.array(z.string()).optional(),
 });
 export type ProviderRuntimeConfig = z.infer<typeof ProviderRuntimeConfig>;

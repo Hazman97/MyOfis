@@ -300,6 +300,11 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - **Free models that work** (checked 2026-10-20): **Kilo Code via 9Router** `kc/<id>` with Kilo's free ids (public list `https://api.kilo.ai/api/gateway/models`, priced 0).
     - These call tools in 2–4 s: `kc/kilo-auto/free`, `kc/minimax/minimax-m3.1-flash:free`, `kc/nvidia/nemotron-3-ultra-550b-a55b:free`, `kc/nvidia/nemotron-3.5-super-vl:free`, `kc/poolside/laguna-s-2.1:free`.
     - The 8 `kc/…` ids that 9Router itself lists are paid (402).
+  - **Model "auto"** (owner choice, the default when a provider has a list).
+    - `modelCandidates()` (shared `models.ts`) tries up to 5 of the provider's models, best first by `modelRank()` (Claude Opus/Sonnet, GPT-5, Gemini Pro … tiny models last).
+    - The runner moves to the next model when one fails **before any text or tool result** (429/402/unavailable/stuck); retries are off while a fallback exists. A run that already used a tool is not restarted, so work is never repeated.
+    - `ProviderRuntimeConfig.models` carries the list, and scans save it ranked. Vision and the review pass use the model that worked (`activeModels`).
+    - ModelPicker is a real dropdown: Auto, the ranked list, then "Other…".
   - **Scan:** `POST /api/providers/:id/scan` tests each model (streaming, 8 at a time). For gateways with more than 3 upstream groups it first probes one model per `owned_by` group and skips "No active credentials". It adds Kilo free ids when `kc` is connected, keeps only models that call tools in `provider.models`, and caps at 120 models.
     - `POST /api/providers/check {kind, base_url, api_key|provider_id}` tests reachability before saving, so outside endpoints work too.
     - ProvidersView: picking a keyless local preset checks it at once; saving a new provider with no models scans it; every provider row has "Scan models".

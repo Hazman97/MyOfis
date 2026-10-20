@@ -6,7 +6,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { visionUsage } from "./vision.ts";
 import { generateText, isStepCount, streamText, tool, type LanguageModel, type StopCondition, type ToolSet } from "ai";
-import { MARKETING_JOB_TYPES, MEMORY_LIMITS, freshFetchImpl, tolerantFetchImpl, memoryPromptSection, preferencesPrompt, type ProviderRuntimeConfig } from "@agent-office/shared";
+import { AUTO_MODEL, MARKETING_JOB_TYPES, MEMORY_LIMITS, freshFetchImpl, modelCandidates, tolerantFetchImpl, memoryPromptSection, preferencesPrompt, type ProviderRuntimeConfig } from "@agent-office/shared";
 import { TOOL_REGISTRY, runTool } from "@agent-office/tools";
 import { Script, scriptedModel } from "./scripted.ts";
 import { MessageStreamer, jobText } from "./text.ts";
@@ -141,6 +141,9 @@ export function toolErrors(step: StepLike): string[] {
     .map((c) => `${c.toolName ?? "?"}: ${c.error instanceof Error ? c.error.message : String(c.error)}`.slice(0, 200));
 }
 
+/** The model a run is using now ("auto" resolves to one); vision and the review pass use it too. */
+export const activeModels = new WeakMap<RunContext, string>();
+
 /**
  * Small models often call an OpenChatCut tool by its own name (get_editor_url) instead of through
  * the openchatcut bridge: turn such a call into openchatcut {tool, arguments}.
@@ -224,7 +227,14 @@ export const aiSdkRuntime: AgentRuntime = {
   async execute(ctx: RunContext): Promise<RunResult> {
     const { agent, provider, job } = ctx.assignment;
     const tools = buildTools(ctx);
-    ctx.emit({ type: "agent.thinking", payload: { summary: `Working on "${job.title}" with ${agent.model}` } });
+    // "auto" = the provider's best models, one after another when one fails (limit, payment, down)
+    const candidates = modelCandidates(agent.model, provider.models);
+    if (!candidates.length) throw new Error(`model "auto" needs a model list: open Settings → AI providers and press "Scan models" for ${provider.slug}`);
+    let tryNo = 0;
+    let model = candidates[0]!;
+    activeModels.set(ctx, model);
+    ctx.emit({ type: "agent.thinking", payload: { summary: `Working on "${job.title}" with ${model}${agent.model === AUTO_MODEL ? " (auto)" : ""}` } });
+    let toolsRan = 0;
 
     let streamError: unknown = null;
     let step = 0;
@@ -242,7 +252,7 @@ export const aiSdkRuntime: AgentRuntime = {
           ? { messages: [{ role: "user" as const, content: [{ type: "text" as const, text: promptText }, ...images.map((im) => ({ type: "file" as const, data: im.bytes, mediaType: im.type }))] }] }
           : { prompt: images.length ? `${promptText}\n(This model cannot see the photos: ask the owner what they show if it matters.)` : promptText };
       return streamText({
-        model: languageModel(provider, agent.model, job.input),
+        model: languageModel(provider, model, job.input),
         instructions: `${agent.system_prompt}\n${SAFETY_PREAMBLE}${projectsNote(ctx)}${contentNote(ctx)}${memoryNote(ctx)}${handoffNote(ctx)}${preferencesPrompt(agent.config.preferences)}`,
         ...input,
         tools,
@@ -250,12 +260,15 @@ export const aiSdkRuntime: AgentRuntime = {
         repairToolCall: repairForBridge(agent.tools) as never,
         abortSignal: ctx.signal,
         maxOutputTokens: 8000,
+        // with another model to fall back on, move on at once instead of retrying a used-up one
+        ...(tryNo + 1 < candidates.length ? { maxRetries: 0 } : {}),
         onStepEnd: (s: unknown) => {
           // a tool call that never reached the tool (unknown name, bad input): say why, once per step
           const errs = toolErrors(s as StepLike);
           if (errs.length) ctx.emit({ type: "agent.thinking", payload: { summary: `Tool call failed: ${errs.join("; ")}`.slice(0, 500) } });
           if (fruitless(s as StepLike)) stuckRun++;
           else stuckRun = 0;
+          toolsRan += (s as StepLike).toolResults.length;
           // One agent.message per model step, so tool calls sit between messages in the timeline.
           out.flush(true);
           out = new MessageStreamer(ctx, `m${++step}`);
@@ -276,16 +289,28 @@ export const aiSdkRuntime: AgentRuntime = {
     let result = start(true);
     await drain(result);
     // a model without vision usually fails before saying anything: try once more without the photos
-    if (streamError && images.length && !full && !ctx.signal.aborted) {
+    if (streamError && images.length && !full && !toolsRan && !ctx.signal.aborted) {
       ctx.emit({ type: "agent.thinking", payload: { summary: "This model could not read the photos; continuing without them" } });
       result = start(false);
+      await drain(result);
+    }
+    // auto: a model that failed before doing anything (limit, payment, unavailable) → the next one.
+    // Never after a tool ran: starting over could repeat work (a render, a post).
+    while ((streamError || (stuckRun >= STUCK_STEPS && !full.trim())) && !full && !toolsRan && !ctx.signal.aborted && tryNo + 1 < candidates.length) {
+      const why = streamError ? (streamError instanceof Error ? streamError.message : String(streamError)) : "it got stuck";
+      const next = candidates[++tryNo]!;
+      ctx.emit({ type: "agent.thinking", payload: { summary: `${model} did not work (${why.slice(0, 160)}); trying ${next}` } });
+      model = next;
+      activeModels.set(ctx, model);
+      stuckRun = 0;
+      result = start(images.length > 0);
       await drain(result);
     }
     if (ctx.signal.aborted) throw ctx.signal.reason;
     if (streamError) throw streamError instanceof Error ? streamError : new Error(String(streamError));
     // the model went round in circles: fail clearly instead of finishing with an empty answer
     if (stuckRun >= STUCK_STEPS && !full.trim()) {
-      throw new Error(`the model (${agent.model}) got stuck: ${STUCK_STEPS} steps in a row without an answer or a working tool call. Try a stronger model for this agent, or a simpler request.`);
+      throw new Error(`the model (${model}) got stuck: ${STUCK_STEPS} steps in a row without an answer or a working tool call. Try a stronger model for this agent, or a simpler request.`);
     }
     const allSteps = (await result.steps) as unknown as StepCalls[];
     if (repeating(allSteps)) {
@@ -312,7 +337,7 @@ export const aiSdkRuntime: AgentRuntime = {
       try {
         const learnTools = Object.fromEntries(Object.entries(tools).filter(([n]) => [...LEARNING, "skills_list", "skill_view"].includes(n)));
         const review = await generateText({
-          model: languageModel(provider, agent.model, job.input),
+          model: languageModel(provider, model, job.input),
           instructions: `${agent.system_prompt}\n${SAFETY_PREAMBLE}${memoryNote(ctx)}${preferencesPrompt(agent.config.preferences)}`,
           messages: [
             { role: "user", content: `Job: ${job.title}\n\n<job_input>\n${jobText(ctx)}\n</job_input>` },

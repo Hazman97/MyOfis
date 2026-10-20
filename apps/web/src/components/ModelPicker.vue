@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { CircleAlert, CircleCheck, Download, FlaskConical, LoaderCircle, TriangleAlert } from "lucide-vue-next";
-import type { ProviderPublic } from "@agent-office/shared";
+import { AUTO_MODEL, rankModels, type ProviderPublic } from "@agent-office/shared";
 import { api, type ModelTest } from "../api/http.ts";
 
 /**
@@ -29,9 +29,31 @@ onMounted(async () => {
 });
 
 const current = computed(() => providers.value.find((p) => p.slug === provider.value));
-const options = computed(() => [...new Set([...(loaded.value[provider.value] ?? []), ...(current.value?.models ?? [])])]);
+/** The provider's models, best first (scanned lists are already in that order). */
+const options = computed(() => rankModels([...new Set([...(current.value?.models ?? []), ...(loaded.value[provider.value] ?? [])])]));
+// a model not in the list (typed by hand, or from another provider) shows the free-text box
+const custom = ref(false);
+const choice = computed({
+  get: () => (custom.value || (model.value && model.value !== AUTO_MODEL && !options.value.includes(model.value)) ? "__other" : model.value),
+  set: (v: string) => {
+    if (v === "__other") {
+      custom.value = true;
+      return;
+    }
+    custom.value = false;
+    model.value = v;
+  },
+});
 // a different model or provider: the old test result no longer applies
 watch([provider, model], () => (result.value = null));
+// switching provider: "auto" when it has a model list, else its first model
+watch(provider, (_now, before) => {
+  if (!before || !current.value) return;
+  custom.value = false;
+  model.value = current.value.models.length ? AUTO_MODEL : "";
+});
+/** What "auto" will use first (shown under the picker). */
+const autoFirst = computed(() => (model.value === AUTO_MODEL ? options.value.slice(0, 3) : []));
 
 async function loadModels() {
   if (!current.value) return;
@@ -48,11 +70,14 @@ async function loadModels() {
 
 async function test() {
   if (!current.value || !model.value.trim()) return;
+  // "auto": test the model it would use first
+  const target = model.value === AUTO_MODEL ? options.value[0] : model.value.trim();
+  if (!target) return;
   testing.value = true;
   error.value = "";
   result.value = null;
   try {
-    result.value = (await api.testModel(current.value.id, model.value.trim())).test;
+    result.value = (await api.testModel(current.value.id, target)).test;
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -60,7 +85,6 @@ async function test() {
   }
 }
 
-const listId = `models-${Math.random().toString(36).slice(2, 8)}`;
 </script>
 
 <template>
@@ -75,8 +99,12 @@ const listId = `models-${Math.random().toString(36).slice(2, 8)}`;
       </label>
       <label class="block min-w-0">
         <span class="label">Model</span>
-        <input v-model="model" class="input w-full font-mono text-xs" :list="listId" placeholder="model id" spellcheck="false" />
-        <datalist :id="listId"><option v-for="m in options" :key="m" :value="m" /></datalist>
+        <select v-model="choice" class="input w-full font-mono text-xs">
+          <option v-if="options.length" :value="AUTO_MODEL">Auto · best available, falls back when one fails</option>
+          <option v-for="m in options" :key="m" :value="m">{{ m }}</option>
+          <option value="__other">Other (type a model id)…</option>
+        </select>
+        <input v-if="choice === '__other'" v-model="model" class="input mt-1.5 w-full font-mono text-xs" placeholder="model id" spellcheck="false" />
       </label>
     </div>
 
@@ -93,6 +121,10 @@ const listId = `models-${Math.random().toString(36).slice(2, 8)}`;
       </button>
       <span v-if="loaded[provider]" class="text-[11px] text-faint">{{ loaded[provider]!.length }} models</span>
     </div>
+    <p v-if="autoFirst.length" class="text-[11px] text-muted">
+      Auto tries, in order: <span class="font-mono">{{ autoFirst.join(" → ") }}</span>{{ options.length > 3 ? " …" : "" }}. A model that hits its limit is skipped for the next.
+    </p>
+    <p v-if="current && !options.length" class="text-[11px] text-signal">No model list yet: press Load models, or Scan models in Settings → AI providers.</p>
 
     <div v-if="result" class="rounded-md border px-2.5 py-2 text-xs" :class="!result.ok ? 'border-danger/40 bg-danger-soft text-danger' : result.tool_calls ? 'border-accent/30 bg-accent/5' : 'border-signal/40 bg-signal-soft'">
       <p class="flex items-center gap-1.5 font-medium">

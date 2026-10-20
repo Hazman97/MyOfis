@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { generateText } from "ai";
-import { languageModel } from "./aiSdk.ts";
+import { modelCandidates } from "@agent-office/shared";
+import { activeModels, languageModel } from "./aiSdk.ts";
 import type { RunContext } from "./types.ts";
 
 /** Tokens spent on picture descriptions during a run (added to the run's total by the AI SDK runtime). */
@@ -17,7 +18,7 @@ export async function describeImages(ctx: RunContext, paths: string[], prompt: s
   try {
     const images = await Promise.all(paths.slice(0, 4).map(async (p) => ({ type: "file" as const, data: new Uint8Array(await readFile(p)), mediaType: "image/jpeg" })));
     const r = await generateText({
-      model: languageModel(provider, agent.model, job.input),
+      model: languageModel(provider, activeModels.get(ctx) ?? modelCandidates(agent.model, provider.models)[0] ?? agent.model, job.input),
       messages: [{ role: "user", content: [{ type: "text", text: prompt }, ...images] }],
       maxOutputTokens: 300,
       abortSignal: ctx.signal,

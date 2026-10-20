@@ -1146,7 +1146,7 @@ Error: ${r.error}` : ""}` });
         config: featureNote ? { ...config, max_steps: Math.min(config.max_steps, 8) } : config,
         permission_level: agent.permission_level,
       },
-      provider: provider ? { slug: provider.slug, kind: provider.kind, base_url: provider.base_url, api_key: apiKey } : { slug: "none", kind: "mock", base_url: null, api_key: null },
+      provider: provider ? { slug: provider.slug, kind: provider.kind, base_url: provider.base_url, api_key: apiKey, models: provider.models } : { slug: "none", kind: "mock", base_url: null, api_key: null, models: [] },
       gitea: tools.some((t) => NEEDS_GITEA.has(t)) || (config.runtime === "opencode" && !featureNote) ? this.#giteaForRun() : null,
       project_context: projectContext,
       budget_left_tokens: minLeft(forMember && agent.workspace_id !== ws ? this.#shareLeft(agent.id, ws) : this.#budgetLeft(agent), roomBudgetLeft(this.db, ws)),

@@ -23,6 +23,7 @@ import {
   TIMEZONE,
   RenderInfo,
   AgentConfig,
+  rankModels,
   type Agent,
   Transcript,
   UPLOAD_PART_BYTES,
@@ -1166,7 +1167,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const ws = aiWorkspace(db, W(c));
     const row = ownProvider(db, c.req.param("id"), ws);
     const results = await scanModels(providerForCheck(row));
-    const working = results.filter((r) => r.tool_calls).map((r) => r.model);
+    const working = rankModels(results.filter((r) => r.tool_calls).map((r) => r.model));
     if (ws === W(c) && working.length) db.update(providers).set({ models: working }).where(eq(providers.id, row.id)).run();
     return c.json({ results, working });
   });
