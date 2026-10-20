@@ -58,6 +58,8 @@ bun run dev:no-runner # the same without the runner (when it runs elsewhere, e.g
 - Use PM2 or `bun run dev`, not both: they share port 8788 and the runner token.
 - For development: `pm2 stop myofis-hub myofis-runner`, then `bun run dev`.
 
+**In the background without PM2 (no terminal windows):** `scripts\background.ps1 start | stop | restart | status | logs | autostart`. It starts the hub and runner hidden, writes `data/logs/*.log` and, with `autostart`, adds a hidden Startup-folder entry (no admin). The same rule applies: not together with `bun run dev` or PM2.
+
 **Production-ish:**
 
 ```sh
