@@ -10,6 +10,7 @@ import { api, type ToolInfo } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtTokens } from "../format.ts";
 import { isOwner } from "../me.ts";
+import ModelPicker from "../components/ModelPicker.vue";
 import MoveToRoom from "../components/MoveToRoom.vue";
 
 const office = useOffice();
@@ -54,7 +55,6 @@ const blank = () => ({
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 const form = reactive(blank());
 
-const modelOptions = computed(() => providers.value.find((p) => p.slug === form.provider)?.models ?? []);
 const today = () => dayKey(new Date().toISOString());
 const toolsByCategory = computed(() => {
   const g = new Map<string, ToolInfo[]>();
@@ -243,18 +243,9 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
         <!-- Section: Brain -->
         <fieldset class="card p-4 space-y-3.5 bg-surface/70 border-line">
           <legend class="sign text-[10px] tracking-wider text-accent px-1">Brain</legend>
+          <!-- provider + model, with Load models and Test model (does it call tools?) -->
+          <ModelPicker v-model:provider="form.provider" v-model:model="form.model" />
           <div class="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label class="label" for="ag-prov">Provider</label>
-              <select id="ag-prov" v-model="form.provider" class="input">
-                <option v-for="p in providers" :key="p.id" :value="p.slug" :disabled="!p.enabled">{{ p.name }}{{ p.enabled ? "" : " (off)" }}</option>
-              </select>
-            </div>
-            <div>
-              <label class="label" for="ag-model">Model</label>
-              <input id="ag-model" v-model="form.model" class="input font-mono text-xs" list="model-options" required />
-              <datalist id="model-options"><option v-for="m in modelOptions" :key="m" :value="m" /></datalist>
-            </div>
             <div>
               <label class="label" for="ag-engine">Engine</label>
               <select id="ag-engine" v-model="form.runtime" class="input">
@@ -389,7 +380,7 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
                 <svg class="size-4 shrink-0 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 8 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
                 </svg>
-                <label for="ag-clip-folder" class="label text-xs font-semibold text-fg !mb-0 cursor-pointer">
+                <label for="ag-clip-folder" class="label text-xs font-semibold text-fg mb-0! cursor-pointer">
                   Clip folder (on the runner PC)
                 </label>
               </div>

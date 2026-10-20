@@ -37,6 +37,7 @@ import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
 import { fileResponse } from "./uploads.ts";
+import { listModels, testModel } from "./modelCheck.ts";
 import { systemInfo } from "./systemInfo.ts";
 import { Members } from "./members.ts";
 import { Rooms } from "./rooms.ts";
@@ -1145,6 +1146,20 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     }
     const row = db.update(providers).set(changes).where(eq(providers.id, id)).returning().get();
     return c.json({ provider: toProviderPublic(row!) });
+  });
+  // list a provider's models, and test one: does it answer, and does it call tools? (keys stay here)
+  const providerForCheck = (row: typeof providers.$inferSelect) => ({ kind: row.kind, base_url: row.base_url, api_key: row.api_key_enc ? secrets.decrypt(row.api_key_enc) : null });
+  api.post("/providers/:id/models", async (c) => {
+    const row = ownProvider(db, c.req.param("id"), aiWorkspace(db, W(c)));
+    const { save } = z.object({ save: z.boolean().default(false) }).parse(await c.req.json().catch(() => ({})));
+    const models = await listModels(providerForCheck(row));
+    if (save && aiWorkspace(db, W(c)) === W(c)) db.update(providers).set({ models: models.slice(0, 500) }).where(eq(providers.id, row.id)).run();
+    return c.json({ models });
+  });
+  api.post("/providers/:id/test", async (c) => {
+    const row = ownProvider(db, c.req.param("id"), aiWorkspace(db, W(c)));
+    const { model } = z.object({ model: z.string().trim().min(1).max(200) }).parse(await c.req.json());
+    return c.json({ test: await testModel(providerForCheck(row), model) });
   });
   api.delete("/providers/:id", (c) => {
     const id = c.req.param("id");

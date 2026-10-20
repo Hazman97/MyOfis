@@ -290,6 +290,14 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   5. **Repeat:** the same tool call 3 times in a row → stop.
   - **Visibility:** failed tool calls show in the run log ("Tool call failed: …"); unknown OpenChatCut tool names are repaired into the bridge.
   - **UI:** Chat has a **Stop** button on a pending reply and shows why a run was stopped. AgentsView has the limit fields.
+- **Switching models** (owner, 2026-10-20).
+  - **Hub routes** (`apps/hub/src/modelCheck.ts`):
+    - `POST /api/providers/:id/models {save}` lists the provider's `/models` (OpenAI-compatible, OpenAI, Anthropic, Google);
+    - `POST /api/providers/:id/test {model}` sends one request with a `get_time` tool and reports `{ok, tool_calls, ms, reply, error}`.
+    - Keys stay on the hub; local base URLs are reached from this PC.
+  - **Web:** `components/ModelPicker.vue` (provider, model list, Load models, Test model) is in the Agents form and in the Chat header ("model" chip, owner only).
+  - **9Router preset:** `http://localhost:20128/v1`, no key needed locally. It runs on this PC (`9router --tray`); providers are connected in its dashboard.
+  - **Free models that do not work** (checked 2026-10-20): OpenCode's free tier ("only from within OpenCode") is refused through 9Router, and its other free models are unavailable or deprecated. Kiro and others need a login in the 9Router dashboard first.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)

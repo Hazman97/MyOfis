@@ -230,6 +230,15 @@ export interface ChatMessage {
   suggestions?: EditSuggestions | null;
 }
 
+/** POST /api/providers/:id/test */
+export interface ModelTest {
+  ok: boolean;
+  tool_calls: boolean;
+  ms: number;
+  reply: string;
+  error: string | null;
+}
+
 /** GET /api/skills/assignments: who sees which skill. `skills: "all"` = every skill, also new ones. */
 export interface SkillAssignments {
   skills: string[];
@@ -471,6 +480,10 @@ export const api = {
 
   presets: () => request<{ presets: ProviderPreset[] }>("/providers/presets"),
   providers: () => request<{ providers: ProviderPublic[] }>("/providers"),
+  /** The provider's model list (from its /models); save = remember it on the provider. */
+  providerModels: (id: string, save = false) => request<{ models: string[] }>(`/providers/${id}/models`, { body: { save } }),
+  /** One tiny request with one tool: does this model answer and call tools? */
+  testModel: (id: string, model: string) => request<{ test: ModelTest }>(`/providers/${id}/test`, { body: { model } }),
   createProvider: (body: Record<string, unknown>) => request<{ provider: ProviderPublic }>("/providers", { body }),
   updateProvider: (id: string, body: Record<string, unknown>) =>
     request<{ provider: ProviderPublic }>(`/providers/${id}`, { method: "PATCH", body }),

@@ -57,6 +57,15 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     hint: "Run `ollama pull <model>` first. The base URL is resolved on the runner's machine.",
   },
   {
+    id: "9router",
+    name: "9Router (local, free models)",
+    kind: "openai_compatible",
+    base_url: "http://localhost:20128/v1",
+    needs_api_key: false,
+    models: [],
+    hint: "Run `9router` on this PC, open http://localhost:20128/dashboard and connect a provider (e.g. Kiro or Gemini CLI, free with a login). Then press Load models and Test.",
+  },
+  {
     id: "lmstudio",
     name: "LM Studio (local)",
     kind: "openai_compatible",

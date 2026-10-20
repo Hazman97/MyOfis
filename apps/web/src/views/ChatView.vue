@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { ImagePlus, LoaderCircle, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
+import { Cpu, ImagePlus, LoaderCircle, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
 import type { Agent, Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import EditSuggestionCards from "../components/EditSuggestionCards.vue";
 import RunStatusCard from "../components/RunStatusCard.vue";
+import ModelPicker from "../components/ModelPicker.vue";
+import { isOwner } from "../me.ts";
 import PageHeader from "../components/PageHeader.vue";
 import { api, type ChatAttachment, type ChatMessage, type ChatThread } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
@@ -57,6 +59,33 @@ const STARTERS: Record<string, string[]> = {
 const starters = computed(() => STARTERS[agent.value?.slug ?? ""] ?? (isMarketing.value ? STARTERS.marketing! : ["What can you help me with?"]));
 
 /** Live reply for a message: the run's streamed text from the event store. */
+// switch the agent's model from the chat header
+const modelOpen = ref(false);
+const modelForm = reactive({ provider: "", model: "" });
+const modelSaving = ref(false);
+const modelError = ref("");
+function openModel() {
+  if (!agent.value) return;
+  modelForm.provider = agent.value.provider;
+  modelForm.model = agent.value.model;
+  modelError.value = "";
+  modelOpen.value = !modelOpen.value;
+}
+async function saveModel() {
+  if (!agent.value) return;
+  modelSaving.value = true;
+  modelError.value = "";
+  try {
+    await api.updateAgent(agent.value.id, { provider: modelForm.provider, model: modelForm.model.trim() });
+    await office.loadAgents();
+    modelOpen.value = false;
+  } catch (e) {
+    modelError.value = (e as Error).message;
+  } finally {
+    modelSaving.value = false;
+  }
+}
+
 /** Stop a reply that takes too long (cancels its job; the run ends within seconds). */
 const stopping = ref<string | null>(null);
 async function stopReply(jobId: string) {
@@ -330,6 +359,16 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
             <div class="truncate text-sm font-semibold tracking-tight text-fg">{{ agent.name }}</div>
             <div class="truncate text-xs text-muted">{{ agent.role }}</div>
           </div>
+          <!-- the agent's model: switch it here (owner) -->
+          <button
+            v-if="isOwner && !agent.shared"
+            type="button"
+            class="chip min-h-8 max-w-48 gap-1 truncate font-mono text-[11px]"
+            :title="`Model: ${agent.provider} / ${agent.model}. Click to change.`"
+            @click="openModel"
+          >
+            <Cpu :size="12" class="shrink-0" /> <span class="truncate">{{ agent.model }}</span>
+          </button>
           <select v-if="isMarketing" v-model="projectId" class="input w-auto text-xs py-1" aria-label="Project" :disabled="!!threadId && messages.length > 0">
             <option value="">Any project</option>
             <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
@@ -339,6 +378,15 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
           </label>
           <button class="btn btn-ghost btn-sm h-7 lg:hidden" title="New conversation" @click="openThread(null)"><Plus :size="13" /> New</button>
         </header>
+        <div v-if="modelOpen" class="border-b border-line bg-surface-2/60 px-4 py-3 space-y-2">
+          <p class="text-xs text-muted">Change the model {{ agent.name }} uses. Test it first: agents with tools need a model that calls tools.</p>
+          <ModelPicker v-model:provider="modelForm.provider" v-model:model="modelForm.model" />
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" class="btn btn-sm btn-primary min-h-9" :disabled="modelSaving || !modelForm.model.trim()" @click="saveModel">Save model</button>
+            <button type="button" class="btn btn-sm btn-ghost min-h-9" @click="modelOpen = false">Close</button>
+            <span v-if="modelError" class="text-xs text-danger">{{ modelError }}</span>
+          </div>
+        </div>
 
         <div ref="scroller" class="flex-1 space-y-4 overflow-y-auto px-4 py-5" @scroll.passive="onScroll">
           <!-- Starters / Empty state -->
