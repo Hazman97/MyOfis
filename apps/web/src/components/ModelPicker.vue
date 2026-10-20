@@ -60,7 +60,10 @@ async function loadModels() {
   loading.value = true;
   error.value = "";
   try {
-    loaded.value = { ...loaded.value, [provider.value]: (await api.providerModels(current.value.id, true)).models };
+    // save the raw list only when the provider has none: it must never replace the ranked, tested
+    // list a scan saved (auto would then try paid / non-tool models first)
+    const save = !current.value.models?.length;
+    loaded.value = { ...loaded.value, [provider.value]: (await api.providerModels(current.value.id, save)).models };
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -89,55 +92,110 @@ async function test() {
 
 <template>
   <div class="space-y-2">
-    <div class="grid gap-2" :class="compact ? 'grid-cols-1' : 'sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]'">
+    <!-- Provider and Model: side by side on desktop, stacked on phone -->
+    <div class="grid grid-cols-1 gap-2" :class="compact ? 'grid-cols-1' : 'sm:grid-cols-2'">
       <label class="block min-w-0">
         <span class="label">Provider</span>
-        <select v-model="provider" class="input w-full text-sm">
+        <select v-model="provider" class="input w-full min-h-10 sm:min-h-8 text-sm">
           <option v-for="p in providers" :key="p.id" :value="p.slug">{{ p.name }}</option>
           <option v-if="provider && !current" :value="provider">{{ provider }} (unavailable)</option>
         </select>
       </label>
       <label class="block min-w-0">
         <span class="label">Model</span>
-        <select v-model="choice" class="input w-full font-mono text-xs">
+        <select v-model="choice" class="input w-full min-h-10 sm:min-h-8 font-mono text-xs">
           <option v-if="options.length" :value="AUTO_MODEL">Auto · best available, falls back when one fails</option>
           <option v-for="m in options" :key="m" :value="m">{{ m }}</option>
           <option value="__other">Other (type a model id)…</option>
         </select>
-        <input v-if="choice === '__other'" v-model="model" class="input mt-1.5 w-full font-mono text-xs" placeholder="model id" spellcheck="false" />
+        <input v-if="choice === '__other'" v-model="model" class="input mt-1.5 w-full min-h-10 sm:min-h-8 font-mono text-xs" placeholder="model id" spellcheck="false" />
       </label>
     </div>
 
+    <!-- Actions: Load and Test buttons -->
     <div class="flex flex-wrap items-center gap-2">
-      <button type="button" class="btn btn-sm min-h-9" :disabled="!current || loading" title="Ask the provider which models it has" @click="loadModels">
+      <button
+        type="button"
+        class="btn btn-sm min-h-10 sm:min-h-8 font-medium cursor-pointer"
+        :disabled="!current || loading"
+        title="Ask the provider which models it has"
+        @click="loadModels"
+      >
         <LoaderCircle v-if="loading" :size="13" class="motion-safe:animate-spin" />
         <Download v-else :size="13" />
         Load models
       </button>
-      <button type="button" class="btn btn-sm min-h-9" :disabled="!current || !model || testing" title="Send one small request with a tool" @click="test">
+      <button
+        type="button"
+        class="btn btn-sm min-h-10 sm:min-h-8 font-medium cursor-pointer"
+        :disabled="!current || !model || testing"
+        title="Send one small request with a tool"
+        @click="test"
+      >
         <LoaderCircle v-if="testing" :size="13" class="motion-safe:animate-spin" />
         <FlaskConical v-else :size="13" />
         Test model
       </button>
-      <span v-if="loaded[provider]" class="text-[11px] text-faint">{{ loaded[provider]!.length }} models</span>
+      <span v-if="loaded[provider]" class="text-[11px] text-faint font-mono">{{ loaded[provider]!.length }} models</span>
     </div>
-    <p v-if="autoFirst.length" class="text-[11px] text-muted">
-      Auto tries, in order: <span class="font-mono">{{ autoFirst.join(" → ") }}</span>{{ options.length > 3 ? " …" : "" }}. A model that hits its limit is skipped for the next.
-    </p>
-    <p v-if="current && !options.length" class="text-[11px] text-signal">No model list yet: press Load models, or Scan models in Settings → AI providers.</p>
 
-    <div v-if="result" class="rounded-md border px-2.5 py-2 text-xs" :class="!result.ok ? 'border-danger/40 bg-danger-soft text-danger' : result.tool_calls ? 'border-accent/30 bg-accent/5' : 'border-signal/40 bg-signal-soft'">
-      <p class="flex items-center gap-1.5 font-medium">
-        <CircleAlert v-if="!result.ok" :size="13" />
-        <CircleCheck v-else-if="result.tool_calls" :size="13" class="text-accent" />
-        <TriangleAlert v-else :size="13" class="text-signal" />
-        <template v-if="!result.ok">Not working: {{ result.error }}</template>
-        <template v-else-if="result.tool_calls">Works and calls tools ({{ (result.ms / 1000).toFixed(1) }} s). Good for agents.</template>
-        <template v-else>Answers, but did not call the tool ({{ (result.ms / 1000).toFixed(1) }} s). Fine for chat, weak for agents that use tools.</template>
-      </p>
-      <p v-if="result.reply" class="mt-1 break-words font-mono text-[11px] text-muted">{{ result.reply }}</p>
+    <!-- When Model = Auto, show a small "Auto" badge plus try-order line -->
+    <div
+      v-if="model === AUTO_MODEL && autoFirst.length"
+      class="flex items-start gap-2 rounded-lg border border-line bg-surface-2/50 p-2 text-[11.5px] leading-relaxed text-muted"
+    >
+      <span class="chip chip-sm shrink-0 border-accent/40 bg-accent/10 font-mono font-bold text-accent text-[10px]">Auto</span>
+      <div class="min-w-0 flex-1">
+        <span>Auto tries, in order: </span>
+        <span class="font-mono font-semibold text-fg">{{ autoFirst.join(" → ") }}</span>
+        <span v-if="options.length > 3"> …</span>
+        <p class="mt-0.5 text-[10.5px] text-faint">A model that hits its limit is skipped for the next.</p>
+      </div>
     </div>
-    <p v-if="error" class="text-xs text-danger break-words">{{ error }}</p>
-    <p v-if="current && !current.has_api_key && current.kind !== 'openai_compatible'" class="text-[11px] text-signal">This provider has no API key yet: add it in Settings → Providers.</p>
+    <p v-if="current && !options.length" class="text-[11px] text-signal font-medium">No model list yet: press Load models, or Scan models in Settings → AI providers.</p>
+
+    <!-- Test result small card: ✅ works with tools / ⚠️ answers but no tools / ❌ error -->
+    <div
+      v-if="result"
+      class="rounded-xl border p-2.5 text-xs transition-all space-y-1.5"
+      :class="!result.ok
+        ? 'border-danger/45 bg-danger-soft/70 text-danger'
+        : result.tool_calls
+          ? 'border-accent/40 bg-accent/10 text-fg'
+          : 'border-signal/50 bg-signal-soft/70 text-fg'"
+    >
+      <div class="flex items-center gap-1.5 font-medium leading-snug">
+        <CircleAlert v-if="!result.ok" :size="14" class="text-danger shrink-0" />
+        <CircleCheck v-else-if="result.tool_calls" :size="14" class="text-accent shrink-0" />
+        <TriangleAlert v-else :size="14" class="text-signal shrink-0" />
+
+        <span v-if="!result.ok" class="font-semibold text-danger">
+          Error: {{ result.error }}
+        </span>
+        <span v-else-if="result.tool_calls" class="font-semibold text-accent">
+          Works with tools ({{ (result.ms / 1000).toFixed(1) }}s)
+        </span>
+        <span v-else class="font-semibold text-signal">
+          Answers, but no tools ({{ (result.ms / 1000).toFixed(1) }}s)
+        </span>
+      </div>
+
+      <p v-if="result.ok && result.tool_calls" class="text-[11px] text-muted">
+        Successfully called tool. Good for agents.
+      </p>
+      <p v-else-if="result.ok && !result.tool_calls" class="text-[11px] text-muted">
+        Fine for chat, weak for agents that use tools.
+      </p>
+
+      <div
+        v-if="result.reply"
+        class="mt-1 rounded-md border border-line/60 bg-surface/80 p-2 font-mono text-[11px] leading-relaxed text-fg break-words whitespace-pre-wrap select-text"
+      >
+        {{ result.reply }}
+      </div>
+    </div>
+
+    <p v-if="error" class="text-xs text-danger font-medium break-words">{{ error }}</p>
+    <p v-if="current && !current.has_api_key && current.kind !== 'openai_compatible'" class="text-[11px] text-signal font-medium">This provider has no API key yet: add it in Settings → Providers.</p>
   </div>
 </template>

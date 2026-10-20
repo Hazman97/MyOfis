@@ -10,6 +10,8 @@ import { api, type ScanResult } from "../api/http.ts";
 
 const providers = ref<ProviderPublic[]>([]);
 const presets = ref<ProviderPreset[]>([]);
+/** A room on HQ's AI: the providers are HQ's and cannot be changed from here. */
+const readOnly = ref(false);
 const editing = ref<string | null>(null); // provider id, "new", or null
 const preset = ref<ProviderPreset | null>(null);
 const error = ref("");
@@ -28,7 +30,10 @@ const form = reactive({
 });
 
 async function load() {
-  [providers.value, presets.value] = await Promise.all([api.providers().then((r) => r.providers), api.presets().then((r) => r.presets)]);
+  const [list, pre] = await Promise.all([api.providers(), api.presets().then((r) => r.presets)]);
+  providers.value = list.providers;
+  readOnly.value = !!list.read_only;
+  presets.value = pre;
 }
 onMounted(load);
 
@@ -162,6 +167,7 @@ async function remove(p: ProviderPublic) {
     <section class="mt-5">
       <p class="mb-3 max-w-[65ch] text-sm text-muted">The AI brains your agents can use. Keys are encrypted on the hub and never sent back to the browser.</p>
       <p v-if="listError" class="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ listError }}</p>
+      <p v-if="readOnly" class="mb-3 rounded-md bg-surface-2 px-3 py-2 text-sm text-muted">This room uses HQ's AI providers. Change them from HQ.</p>
       <div class="card divide-y divide-line">
         <div v-for="p in providers" :key="p.id" class="flex flex-wrap items-center gap-3 px-4 py-3" :class="!p.enabled && 'opacity-60'">
           <div class="min-w-0 flex-1 max-sm:basis-full">
@@ -177,41 +183,83 @@ async function remove(p: ProviderPublic) {
               <span v-if="p.base_url" class="chip max-w-64 truncate font-mono">{{ p.base_url }}</span>
             </div>
             <!-- scan results: which models really work with tools -->
-            <div v-if="scans[p.id]?.busy" class="mt-2 text-xs text-muted">Testing each model with a small tool call (about a minute)…</div>
-            <p v-if="scans[p.id]?.error" class="mt-2 text-xs text-danger">{{ scans[p.id]!.error }}</p>
-            <div v-if="scans[p.id]?.results" class="mt-2 space-y-1.5">
-              <p class="text-xs font-medium" :class="working(p.id).length ? 'text-accent' : 'text-danger'">
-                {{ working(p.id).length }} of {{ scans[p.id]!.results!.length }} models work with tools{{ working(p.id).length ? " · saved to this provider" : "" }}
-              </p>
-              <div class="flex flex-wrap gap-1.5">
-                <span v-for="r in working(p.id)" :key="r.model" class="chip border-accent/30 font-mono text-[11px]" :title="`${(r.ms / 1000).toFixed(1)} s`">
-                  <CircleCheck :size="11" class="text-accent" /> {{ r.model }}
+            <div v-if="scans[p.id]?.busy" class="mt-2.5 rounded-lg border border-accent/30 bg-accent/5 p-2.5 space-y-2">
+              <div class="flex items-center gap-2 text-xs text-fg font-medium">
+                <LoaderCircle :size="14" class="motion-safe:animate-spin text-accent shrink-0" />
+                <span>Testing each model with a small tool call… this takes up to a minute</span>
+              </div>
+              <div class="h-1 w-full overflow-hidden rounded-full bg-accent/20" aria-hidden="true">
+                <div class="h-full w-2/5 rounded-full bg-accent motion-safe:animate-pulse" />
+              </div>
+            </div>
+
+            <p v-if="scans[p.id]?.error" class="mt-2 text-xs text-danger font-medium">{{ scans[p.id]!.error }}</p>
+
+            <div v-if="scans[p.id]?.results" class="mt-2.5 rounded-xl border border-line bg-surface-2/40 p-2.5 space-y-2">
+              <div class="flex items-center justify-between gap-2 text-xs">
+                <span class="font-medium" :class="working(p.id).length ? 'text-accent' : 'text-danger'">
+                  {{ working(p.id).length }} of {{ scans[p.id]!.results!.length }} models work with tools · saved
+                </span>
+                <span
+                  class="chip chip-sm text-[10px] font-mono font-semibold"
+                  :class="working(p.id).length ? 'border-accent/40 bg-accent/10 text-accent' : 'border-danger/40 bg-danger/10 text-danger'"
+                >
+                  {{ working(p.id).length ? 'saved' : 'none working' }}
                 </span>
               </div>
-              <details v-if="scans[p.id]!.results!.length > working(p.id).length" class="text-[11px] text-faint">
-                <summary class="cursor-pointer">Not working ({{ scans[p.id]!.results!.length - working(p.id).length }})</summary>
-                <ul class="mt-1 space-y-0.5">
-                  <li v-for="r in scans[p.id]!.results!.filter((x) => !x.tool_calls)" :key="r.model" class="break-words font-mono">
-                    <CircleX :size="10" class="inline text-danger" /> {{ r.model }}: {{ (r.error ?? "answers but does not call tools").slice(0, 90) }}
+
+              <!-- Working models as chips with their seconds, best first -->
+              <div v-if="working(p.id).length" class="flex flex-wrap gap-1.5">
+                <span
+                  v-for="r in working(p.id)"
+                  :key="r.model"
+                  class="chip border-accent/40 bg-accent/10 font-mono text-[11px] text-fg inline-flex items-center gap-1.5"
+                  :title="`${(r.ms / 1000).toFixed(1)} s`"
+                >
+                  <CircleCheck :size="12" class="text-accent shrink-0" />
+                  <span>{{ r.model }}</span>
+                  <span class="font-mono tabular-nums text-faint text-[10px]">{{ (r.ms / 1000).toFixed(1) }}s</span>
+                </span>
+              </div>
+
+              <!-- Collapsible Not working list with short reason -->
+              <details v-if="scans[p.id]!.results!.length > working(p.id).length" class="group text-[11px] pt-1 border-t border-line/50">
+                <summary class="cursor-pointer font-medium text-muted hover:text-fg select-none transition-colors py-0.5">
+                  Not working ({{ scans[p.id]!.results!.length - working(p.id).length }})
+                </summary>
+                <ul class="mt-1.5 space-y-1 pl-1">
+                  <li
+                    v-for="r in scans[p.id]!.results!.filter((x) => !x.tool_calls)"
+                    :key="r.model"
+                    class="break-words font-mono text-muted flex items-start gap-1.5"
+                  >
+                    <CircleX :size="12" class="text-danger shrink-0 mt-0.5" />
+                    <span><strong class="text-fg">{{ r.model }}</strong>: {{ (r.error ?? "answers but does not call tools").slice(0, 90) }}</span>
                   </li>
                 </ul>
               </details>
             </div>
           </div>
-          <div class="flex gap-2 max-sm:w-full max-sm:justify-end">
-            <ConfirmButton v-if="p.has_api_key" small confirm-label="Remove key?" @confirm="clearKey(p)">Remove key</ConfirmButton>
-            <button v-if="p.kind !== 'mock'" class="btn btn-sm" :disabled="scans[p.id]?.busy" title="Test every model and keep the ones that work with tools" @click="scan(p.id)">
+          <div v-if="!readOnly" class="flex flex-wrap items-center gap-2 max-sm:w-full max-sm:justify-end">
+            <ConfirmButton v-if="p.has_api_key" small class="min-h-10 sm:min-h-7" confirm-label="Remove key?" @confirm="clearKey(p)">Remove key</ConfirmButton>
+            <button
+              v-if="p.kind !== 'mock'"
+              class="btn btn-sm min-h-10 sm:min-h-7"
+              :disabled="scans[p.id]?.busy"
+              title="Test every model and keep the ones that work with tools"
+              @click="scan(p.id)"
+            >
               <LoaderCircle v-if="scans[p.id]?.busy" :size="13" class="motion-safe:animate-spin" />
               <ScanSearch v-else :size="13" /> {{ scans[p.id]?.busy ? "Scanning…" : "Scan models" }}
             </button>
-            <button class="btn btn-sm" @click="startEdit(p)"><Pencil :size="13" /> Edit</button>
-            <ConfirmButton v-if="p.slug !== 'mock'" small confirm-label="Delete?" @confirm="remove(p)">Delete</ConfirmButton>
+            <button class="btn btn-sm min-h-10 sm:min-h-7" @click="startEdit(p)"><Pencil :size="13" /> Edit</button>
+            <ConfirmButton v-if="p.slug !== 'mock'" small class="min-h-10 sm:min-h-7" confirm-label="Delete?" @confirm="remove(p)">Delete</ConfirmButton>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="mt-8">
+    <section v-if="!readOnly" class="mt-8">
       <h2 class="sign mb-2">Add a provider</h2>
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <button
@@ -239,10 +287,10 @@ async function remove(p: ProviderPublic) {
         <div v-if="form.kind === 'openai_compatible' || form.base_url">
           <label class="label" for="pv-url">Base URL</label>
           <input id="pv-url" v-model="form.base_url" class="input font-mono" placeholder="https://…/v1" :required="form.kind === 'openai_compatible'" />
-          <p class="mt-1 text-xs text-faint">
-            Local addresses (127.0.0.1, localhost) are on this PC. Running it elsewhere (another PC or a server)? Put that address here, e.g.
-            <code>http://192.168.1.20:20128/v1</code> or <code>https://router.example.com/v1</code>.
-          </p>
+          <div class="mt-1.5 space-y-0.5 text-xs text-faint leading-relaxed">
+            <p>Local addresses (127.0.0.1, localhost) run on this PC.</p>
+            <p>Running elsewhere (server/LAN)? Use e.g. <code>http://192.168.1.20:20128/v1</code> or <code>https://router.example.com/v1</code>.</p>
+          </div>
         </div>
         <div>
           <label class="label" for="pv-key">API key</label>
@@ -255,13 +303,28 @@ async function remove(p: ProviderPublic) {
             :placeholder="editing === 'new' ? (preset?.needs_api_key ? 'Required' : 'Optional') : 'Leave empty to keep the current key'"
           />
         </div>
-        <div v-if="form.kind !== 'mock'" class="flex flex-wrap items-center gap-2">
-          <button type="button" class="btn btn-sm min-h-9" :disabled="checking" @click="checkNow">
-            <LoaderCircle v-if="checking" :size="13" class="motion-safe:animate-spin" />
-            <Plug v-else :size="13" /> Check connection
-          </button>
-          <span v-if="check?.ok" class="text-xs text-accent"><CircleCheck :size="12" class="inline" /> Connected · {{ check.models }} models listed</span>
-          <span v-else-if="check" class="min-w-0 flex-1 break-words text-xs text-danger"><CircleX :size="12" class="inline" /> {{ check.error }}</span>
+        <div v-if="form.kind !== 'mock'" class="space-y-2">
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn btn-sm min-h-10 sm:min-h-8" :disabled="checking" @click="checkNow">
+              <LoaderCircle v-if="checking" :size="13" class="motion-safe:animate-spin" />
+              <Plug v-else :size="13" /> Check connection
+            </button>
+          </div>
+          <!-- Clear green / red line with model count or error -->
+          <div
+            v-if="check?.ok"
+            class="flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-accent"
+          >
+            <CircleCheck :size="14" class="shrink-0 text-accent" />
+            <span>Connected · {{ check.models }} model{{ check.models === 1 ? '' : 's' }} listed</span>
+          </div>
+          <div
+            v-else-if="check"
+            class="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs font-medium text-danger break-words"
+          >
+            <CircleX :size="14" class="shrink-0 text-danger mt-0.5" />
+            <span>{{ check.error }}</span>
+          </div>
         </div>
         <p v-if="editing === 'new'" class="text-xs text-faint">Leave Models empty: after you save, every model is tested and the ones that work with tools are kept.</p>
         <div>

@@ -342,28 +342,49 @@
 
 /* 3D office: name labels and bubbles drawn over the canvas (office/scene3d/office3d.ts). Gemini 021 styles these. */
 .office3d-label {
-  font: 600 11px/1.2 system-ui, sans-serif;
-  color: #2c2a27;
-  background: rgb(255 255 255 / 0.92);
-  padding: 3px 7px;
-  border-radius: 999px;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+  font: 600 11px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--fg);
+  background-color: var(--surface);
+  border: 1px solid var(--line-strong);
+  padding: 3px 8px;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
   white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  backdrop-filter: blur(6px);
 }
 .office3d-bubble {
-  font: 16px/1 system-ui;
-  background: #fff;
-  padding: 5px 6px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--fg);
+  background-color: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 9999px;
+  box-shadow: 0 3px 10px -2px rgba(0, 0, 0, 0.16), 0 1px 4px rgba(0, 0, 0, 0.1);
   cursor: pointer;
+  user-select: none;
+  backdrop-filter: blur(6px);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.office3d-bubble:hover {
+  transform: scale(1.08);
+  border-color: var(--accent);
 }
 .office3d-bubble.needs-you {
-  outline: 2px solid #f2b04f;
-  animation: office3d-bob 0.7s ease-in-out infinite alternate;
+  border-color: var(--signal);
+  box-shadow: 0 0 0 2px var(--signal-soft), 0 4px 14px -2px rgba(245, 158, 11, 0.35);
+  animation: office3d-bob 0.75s ease-in-out infinite alternate;
 }
 @keyframes office3d-bob {
   to {
     translate: 0 -4px;
   }
 }
+

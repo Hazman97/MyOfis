@@ -9,6 +9,7 @@ import StatusBadge from "../components/StatusBadge.vue";
 import AgentPanel from "../components/office/AgentPanel.vue";
 import AgentRadialMenu from "../components/office/AgentRadialMenu.vue";
 import OfficePlayHint from "../components/office/OfficePlayHint.vue";
+import WorkFeed from "../components/office/WorkFeed.vue";
 import { api } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { boardJobs, isChatJob } from "../jobs.ts";
@@ -192,49 +193,55 @@ async function cancel(j: JobView) {
     </div>
 
     <!-- Office View -->
-    <section v-if="view === 'office'" aria-label="Office" class="relative">
-      <OfficePlayHint />
-      <OfficeCanvas
-        ref="canvas"
-        :selected="inspected"
-        @select="inspected = $event"
-        @approval="inspected = $event"
-        @menu="(id, x, y) => (menu = { id, x, y })"
-        @action="onDrop"
-        @near="nearAgent = $event"
-      />
-      <AgentRadialMenu
-        v-if="menu"
-        :agent-id="menu.id"
-        :x="menu.x"
-        :y="menu.y"
-        @close="menu = null"
-        @memory="(id) => (inspected = id)"
-        @poke="(id) => canvas?.poke(id)"
-      />
-      <Transition
-        enter-active-class="transition-all duration-300 ease-out"
-        enter-from-class="opacity-0 translate-y-3 scale-90"
-        enter-to-class="opacity-100 translate-y-0 scale-100"
-        leave-active-class="transition-all duration-200 ease-in"
-        leave-from-class="opacity-100 translate-y-0 scale-100"
-        leave-to-class="opacity-0 translate-y-2 scale-95"
-      >
-        <button
-          v-if="nearName"
-          type="button"
-          class="group absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-surface/95 px-3.5 py-1.5 text-xs font-semibold text-fg shadow-card backdrop-blur-md transition-all duration-150 hover:scale-105 hover:border-accent hover:shadow-lg active:scale-95"
-          @click="chatNear"
+    <section v-if="view === 'office'" aria-label="Office" class="grid grid-cols-1 gap-4 xl:grid-cols-3 xl:items-stretch">
+      <div class="relative min-w-0 xl:col-span-2">
+        <OfficePlayHint />
+        <OfficeCanvas
+          ref="canvas"
+          :selected="inspected"
+          @select="inspected = $event"
+          @approval="inspected = $event"
+          @menu="(id, x, y) => (menu = { id, x, y })"
+          @action="onDrop"
+          @near="nearAgent = $event"
+        />
+        <AgentRadialMenu
+          v-if="menu"
+          :agent-id="menu.id"
+          :x="menu.x"
+          :y="menu.y"
+          @close="menu = null"
+          @memory="(id) => (inspected = id)"
+          @poke="(id) => canvas?.poke(id)"
+        />
+        <Transition
+          enter-active-class="transition-all duration-300 ease-out"
+          enter-from-class="opacity-0 translate-y-3 scale-90"
+          enter-to-class="opacity-100 translate-y-0 scale-100"
+          leave-active-class="transition-all duration-200 ease-in"
+          leave-from-class="opacity-100 translate-y-0 scale-100"
+          leave-to-class="opacity-0 translate-y-2 scale-95"
         >
-          <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent font-mono text-[10px] font-bold text-accent-ink shadow-xs">
-            {{ nearName.charAt(0).toUpperCase() }}
-          </span>
-          <span class="flex items-center gap-1.5 whitespace-nowrap">
-            <span>Chat with <strong class="font-bold text-accent group-hover:underline">{{ nearName }}</strong></span>
-            <span class="text-xs">💬</span>
-          </span>
-        </button>
-      </Transition>
+          <button
+            v-if="nearName"
+            type="button"
+            class="group absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-surface/95 px-3.5 py-1.5 text-xs font-semibold text-fg shadow-card backdrop-blur-md transition-all duration-150 hover:scale-105 hover:border-accent hover:shadow-lg active:scale-95"
+            @click="chatNear"
+          >
+            <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent font-mono text-[10px] font-bold text-accent-ink shadow-xs">
+              {{ nearName.charAt(0).toUpperCase() }}
+            </span>
+            <span class="flex items-center gap-1.5 whitespace-nowrap">
+              <span>Chat with <strong class="font-bold text-accent group-hover:underline">{{ nearName }}</strong></span>
+              <span class="text-xs">💬</span>
+            </span>
+          </button>
+        </Transition>
+      </div>
+
+      <div class="min-w-0 xl:col-span-1 flex flex-col">
+        <WorkFeed class="h-full" />
+      </div>
     </section>
 
     <!-- Team (Board View) -->
