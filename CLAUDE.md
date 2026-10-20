@@ -297,6 +297,10 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
     - Keys stay on the hub; local base URLs are reached from this PC.
   - **Web:** `components/ModelPicker.vue` (provider, model list, Load models, Test model) is in the Agents form and in the Chat header ("model" chip, owner only).
   - **9Router preset:** `http://localhost:20128/v1`, no key needed locally. It runs on this PC (`9router --tray`); providers are connected in its dashboard.
+  - **Free models that work** (checked 2026-10-20): **Kilo Code via 9Router** `kc/<id>` with Kilo's free ids (public list `https://api.kilo.ai/api/gateway/models`, priced 0).
+    - These call tools in 2–4 s: `kc/kilo-auto/free`, `kc/minimax/minimax-m3.1-flash:free`, `kc/nvidia/nemotron-3-ultra-550b-a55b:free`, `kc/nvidia/nemotron-3.5-super-vl:free`, `kc/poolside/laguna-s-2.1:free`.
+    - The 8 `kc/…` ids that 9Router itself lists are paid (402).
+  - **9Router answers non-streaming calls with JSON + `data: [DONE]`**, sometimes typed `text/event-stream`. `tolerantFetchImpl` + `cleanJsonText` (shared `net.ts`) clean it for the runner's OpenAI-compatible providers; the hub's model check reads text.
   - **Free models that do not work** (checked 2026-10-20): OpenCode's free tier ("only from within OpenCode") is refused through 9Router, and its other free models are unavailable or deprecated. Kiro and others need a login in the 9Router dashboard first.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 

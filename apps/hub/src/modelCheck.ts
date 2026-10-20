@@ -1,4 +1,7 @@
-import { freshFetch } from "@agent-office/shared";
+import { cleanJsonText, freshFetch } from "@agent-office/shared";
+
+/** The JSON of an answer, tolerating a gateway's trailing "data: [DONE]". */
+const jsonOf = async <T>(res: Response): Promise<T> => JSON.parse(cleanJsonText(await res.text())) as T;
 import { HttpError } from "./repo.ts";
 
 /**
@@ -63,7 +66,7 @@ export async function listModels(p: ProviderForCheck): Promise<string[]> {
       res = await freshFetch(`${base}/models`, { timeoutMs: 30_000, headers: p.api_key ? { authorization: `Bearer ${p.api_key}` } : {} });
     }
     if (!res.ok) throw new HttpError(400, `the provider answered ${res.status}: ${await errText(res)}`);
-    const j = (await res.json()) as { data?: { id?: string }[]; models?: { id?: string; name?: string }[] };
+    const j = await jsonOf<{ data?: { id?: string }[]; models?: { id?: string; name?: string }[] }>(res);
     const ids = [...(j.data ?? []), ...(j.models ?? [])].map((m) => (m.id ?? (m as { name?: string }).name ?? "").replace(/^models\//, "")).filter(Boolean);
     return [...new Set(ids)].sort();
   } catch (err) {
@@ -88,7 +91,7 @@ export async function testModel(p: ProviderForCheck, model: string): Promise<Mod
         body: JSON.stringify({ model, max_tokens: 300, messages: [{ role: "user", content: TEST_PROMPT }], tools: [{ name: TEST_TOOL.name, description: TEST_TOOL.description, input_schema: TEST_TOOL.parameters }] }),
       });
       if (!res.ok) return done({ ok: false, tool_calls: false, reply: "", error: await errText(res) });
-      const j = (await res.json()) as { content?: { type: string; text?: string; name?: string; input?: { city?: string } }[] };
+      const j = await jsonOf<{ content?: { type: string; text?: string; name?: string; input?: { city?: string } }[] }>(res);
       const call = j.content?.find((c) => c.type === "tool_use" && c.name === "get_time");
       const text = j.content?.filter((c) => c.type === "text").map((c) => c.text).join(" ") ?? "";
       return done({ ok: true, tool_calls: !!call && /kuala lumpur/i.test(call.input?.city ?? ""), reply: call ? `get_time(${JSON.stringify(call.input)})` : text.slice(0, 200), error: null });
@@ -102,7 +105,7 @@ export async function testModel(p: ProviderForCheck, model: string): Promise<Mod
       body: JSON.stringify({ model, max_tokens: 300, messages: [{ role: "user", content: TEST_PROMPT }], tools: [{ type: "function", function: TEST_TOOL }] }),
     });
     if (!res.ok) return done({ ok: false, tool_calls: false, reply: "", error: await errText(res) });
-    const j = (await res.json()) as { error?: { message?: string }; choices?: { message?: { content?: string | null; tool_calls?: { function?: { name?: string; arguments?: string } }[] } }[] };
+    const j = await jsonOf<{ error?: { message?: string }; choices?: { message?: { content?: string | null; tool_calls?: { function?: { name?: string; arguments?: string } }[] } }[] }>(res);
     if (j.error) return done({ ok: false, tool_calls: false, reply: "", error: j.error.message ?? "error" });
     const msg = j.choices?.[0]?.message;
     const call = msg?.tool_calls?.find((c) => c.function?.name === "get_time");

@@ -6,7 +6,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { visionUsage } from "./vision.ts";
 import { generateText, isStepCount, streamText, tool, type LanguageModel, type StopCondition, type ToolSet } from "ai";
-import { MARKETING_JOB_TYPES, MEMORY_LIMITS, freshFetchImpl, memoryPromptSection, preferencesPrompt, type ProviderRuntimeConfig } from "@agent-office/shared";
+import { MARKETING_JOB_TYPES, MEMORY_LIMITS, freshFetchImpl, tolerantFetchImpl, memoryPromptSection, preferencesPrompt, type ProviderRuntimeConfig } from "@agent-office/shared";
 import { TOOL_REGISTRY, runTool } from "@agent-office/tools";
 import { Script, scriptedModel } from "./scripted.ts";
 import { MessageStreamer, jobText } from "./text.ts";
@@ -34,7 +34,8 @@ export function languageModel(provider: ProviderRuntimeConfig, model: string, in
       return createGoogle({ apiKey, baseURL, fetch: freshFetchImpl })(model);
     case "openai_compatible":
       if (!baseURL) throw new Error(`provider "${provider.slug}" has no base URL`);
-      return createOpenAICompatible({ name: provider.slug, baseURL, apiKey, includeUsage: true, fetch: freshFetchImpl })(model);
+      // gateways like 9Router spoil non-streaming JSON with "data: [DONE]": clean it
+      return createOpenAICompatible({ name: provider.slug, baseURL, apiKey, includeUsage: true, fetch: tolerantFetchImpl })(model);
     case "mock": {
       if (model !== "mock-script") throw new Error(`mock model "${model}" is handled by the mock runtime`);
       const script = Script.safeParse(input.script);

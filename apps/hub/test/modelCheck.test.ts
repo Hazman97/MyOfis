@@ -20,8 +20,14 @@ beforeAll(() => {
       if (path === "/v1/models") return Response.json({ object: "list", data: [{ id: "smart" }, { id: "chatty" }, { id: "smart" }] });
       const body = (await req.json()) as { model: string; tools?: unknown[] };
       expect(body.tools).toHaveLength(1);
+      // like 9Router: a non-streaming answer followed by a stray "data: [DONE]"
       if (body.model === "smart")
-        return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "get_time", arguments: '{"city":"Kuala Lumpur"}' } }] } }] });
+        return new Response(
+          `${JSON.stringify({ choices: [{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "get_time", arguments: '{"city":"Kuala Lumpur"}' } }] } }] })}
+
+data: [DONE]`,
+          { headers: { "content-type": "application/json" } },
+        );
       return Response.json({ choices: [{ message: { content: "It is probably afternoon." } }] });
     },
   });
