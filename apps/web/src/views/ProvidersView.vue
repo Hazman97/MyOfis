@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { KeyRound, Pencil, Plus } from "lucide-vue-next";
+import { CircleCheck, CircleX, KeyRound, LoaderCircle, Pencil, Plug, Plus, ScanSearch } from "lucide-vue-next";
 import type { ProviderPreset, ProviderPublic } from "@agent-office/shared";
 import ConfirmButton from "../components/ConfirmButton.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SettingsTabs from "../components/SettingsTabs.vue";
 import SidePanel from "../components/SidePanel.vue";
-import { api } from "../api/http.ts";
+import { api, type ScanResult } from "../api/http.ts";
 
 const providers = ref<ProviderPublic[]>([]);
 const presets = ref<ProviderPreset[]>([]);
@@ -55,6 +55,8 @@ function startNew(p: ProviderPreset) {
   for (let i = 2; taken.has(slug); i++) slug = `${p.id}-${i}`;
   Object.assign(form, { slug, name: p.name, kind: p.kind, base_url: p.base_url ?? "", api_key: "", models: p.models.join("\n"), pricing: "", enabled: true });
   editing.value = "new";
+  check.value = null;
+  if (!p.needs_api_key && p.base_url) void checkNow();
 }
 
 function startEdit(p: ProviderPublic) {
@@ -71,7 +73,43 @@ function startEdit(p: ProviderPublic) {
     enabled: p.enabled,
   });
   editing.value = p.id;
+  check.value = null;
 }
+
+// check the endpoint (local or outside) before saving
+const check = ref<{ ok: boolean; models: number; error: string | null } | null>(null);
+const checking = ref(false);
+async function checkNow() {
+  checking.value = true;
+  check.value = null;
+  try {
+    check.value = (
+      await api.checkProvider({
+        kind: form.kind,
+        base_url: form.base_url.trim() || null,
+        api_key: form.api_key || null,
+        provider_id: editing.value && editing.value !== "new" ? editing.value : undefined,
+      })
+    ).check;
+  } catch (e) {
+    check.value = { ok: false, models: 0, error: (e as Error).message };
+  } finally {
+    checking.value = false;
+  }
+}
+
+// scan: test every model and keep the ones that work with tools
+const scans = reactive<Record<string, { busy: boolean; results: ScanResult[] | null; error: string }>>({});
+async function scan(id: string) {
+  scans[id] = { busy: true, results: null, error: "" };
+  try {
+    scans[id] = { busy: false, results: (await api.scanProvider(id)).results, error: "" };
+    await load();
+  } catch (e) {
+    scans[id] = { busy: false, results: null, error: (e as Error).message };
+  }
+}
+const working = (id: string) => scans[id]?.results?.filter((r) => r.tool_calls) ?? [];
 
 async function save() {
   error.value = "";
@@ -86,10 +124,15 @@ async function save() {
     };
     // Only send the key when typed: empty means "keep the current key".
     if (form.api_key) body.api_key = form.api_key;
-    if (editing.value === "new") await api.createProvider({ ...body, slug: form.slug });
-    else await api.updateProvider(editing.value!, body);
+    let scanId: string | null = null;
+    if (editing.value === "new") {
+      const { provider } = await api.createProvider({ ...body, slug: form.slug });
+      // a gateway with many models (9Router, a custom endpoint): find the ones that work right away
+      if (provider.kind !== "mock" && !(body.models as string[]).length) scanId = provider.id;
+    } else await api.updateProvider(editing.value!, body);
     editing.value = null;
     await load();
+    if (scanId) void scan(scanId);
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -133,9 +176,34 @@ async function remove(p: ProviderPublic) {
               <span v-if="p.models.length" class="chip">{{ p.models.length }} model{{ p.models.length > 1 ? "s" : "" }}</span>
               <span v-if="p.base_url" class="chip max-w-64 truncate font-mono">{{ p.base_url }}</span>
             </div>
+            <!-- scan results: which models really work with tools -->
+            <div v-if="scans[p.id]?.busy" class="mt-2 text-xs text-muted">Testing each model with a small tool call (about a minute)…</div>
+            <p v-if="scans[p.id]?.error" class="mt-2 text-xs text-danger">{{ scans[p.id]!.error }}</p>
+            <div v-if="scans[p.id]?.results" class="mt-2 space-y-1.5">
+              <p class="text-xs font-medium" :class="working(p.id).length ? 'text-accent' : 'text-danger'">
+                {{ working(p.id).length }} of {{ scans[p.id]!.results!.length }} models work with tools{{ working(p.id).length ? " · saved to this provider" : "" }}
+              </p>
+              <div class="flex flex-wrap gap-1.5">
+                <span v-for="r in working(p.id)" :key="r.model" class="chip border-accent/30 font-mono text-[11px]" :title="`${(r.ms / 1000).toFixed(1)} s`">
+                  <CircleCheck :size="11" class="text-accent" /> {{ r.model }}
+                </span>
+              </div>
+              <details v-if="scans[p.id]!.results!.length > working(p.id).length" class="text-[11px] text-faint">
+                <summary class="cursor-pointer">Not working ({{ scans[p.id]!.results!.length - working(p.id).length }})</summary>
+                <ul class="mt-1 space-y-0.5">
+                  <li v-for="r in scans[p.id]!.results!.filter((x) => !x.tool_calls)" :key="r.model" class="break-words font-mono">
+                    <CircleX :size="10" class="inline text-danger" /> {{ r.model }}: {{ (r.error ?? "answers but does not call tools").slice(0, 90) }}
+                  </li>
+                </ul>
+              </details>
+            </div>
           </div>
           <div class="flex gap-2 max-sm:w-full max-sm:justify-end">
             <ConfirmButton v-if="p.has_api_key" small confirm-label="Remove key?" @confirm="clearKey(p)">Remove key</ConfirmButton>
+            <button v-if="p.kind !== 'mock'" class="btn btn-sm" :disabled="scans[p.id]?.busy" title="Test every model and keep the ones that work with tools" @click="scan(p.id)">
+              <LoaderCircle v-if="scans[p.id]?.busy" :size="13" class="motion-safe:animate-spin" />
+              <ScanSearch v-else :size="13" /> {{ scans[p.id]?.busy ? "Scanning…" : "Scan models" }}
+            </button>
             <button class="btn btn-sm" @click="startEdit(p)"><Pencil :size="13" /> Edit</button>
             <ConfirmButton v-if="p.slug !== 'mock'" small confirm-label="Delete?" @confirm="remove(p)">Delete</ConfirmButton>
           </div>
@@ -171,7 +239,10 @@ async function remove(p: ProviderPublic) {
         <div v-if="form.kind === 'openai_compatible' || form.base_url">
           <label class="label" for="pv-url">Base URL</label>
           <input id="pv-url" v-model="form.base_url" class="input font-mono" placeholder="https://…/v1" :required="form.kind === 'openai_compatible'" />
-          <p class="mt-1 text-xs text-faint">Local addresses (127.0.0.1) are resolved on the runner's machine.</p>
+          <p class="mt-1 text-xs text-faint">
+            Local addresses (127.0.0.1, localhost) are on this PC. Running it elsewhere (another PC or a server)? Put that address here, e.g.
+            <code>http://192.168.1.20:20128/v1</code> or <code>https://router.example.com/v1</code>.
+          </p>
         </div>
         <div>
           <label class="label" for="pv-key">API key</label>
@@ -184,6 +255,15 @@ async function remove(p: ProviderPublic) {
             :placeholder="editing === 'new' ? (preset?.needs_api_key ? 'Required' : 'Optional') : 'Leave empty to keep the current key'"
           />
         </div>
+        <div v-if="form.kind !== 'mock'" class="flex flex-wrap items-center gap-2">
+          <button type="button" class="btn btn-sm min-h-9" :disabled="checking" @click="checkNow">
+            <LoaderCircle v-if="checking" :size="13" class="motion-safe:animate-spin" />
+            <Plug v-else :size="13" /> Check connection
+          </button>
+          <span v-if="check?.ok" class="text-xs text-accent"><CircleCheck :size="12" class="inline" /> Connected · {{ check.models }} models listed</span>
+          <span v-else-if="check" class="min-w-0 flex-1 break-words text-xs text-danger"><CircleX :size="12" class="inline" /> {{ check.error }}</span>
+        </div>
+        <p v-if="editing === 'new'" class="text-xs text-faint">Leave Models empty: after you save, every model is tested and the ones that work with tools are kept.</p>
         <div>
           <label class="label" for="pv-models">Models · one per line</label>
           <textarea id="pv-models" v-model="form.models" class="input min-h-28 font-mono text-xs" />

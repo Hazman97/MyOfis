@@ -48,6 +48,16 @@ test("load a provider's models and test which ones really call tools; keys stay 
   const chatty = (await env.api(`/api/providers/${p.id}/test`, { body: { model: "chatty" } })).body.test;
   expect(chatty).toMatchObject({ ok: true, tool_calls: false, reply: "It is probably afternoon." });
 
+  // check before saving (outside endpoints too), and a scan that keeps only the models that call tools
+  expect((await env.api("/api/providers/check", { body: { kind: "openai_compatible", base_url: base, api_key: "good-key" } })).body.check).toEqual({ ok: true, models: 2, error: null });
+  expect((await env.api("/api/providers/check", { body: { kind: "openai_compatible", base_url: "http://127.0.0.1:1/v1", api_key: null } })).body.check.ok).toBe(false);
+  // editing without retyping the key uses the saved one
+  expect((await env.api("/api/providers/check", { body: { kind: "openai_compatible", base_url: base, api_key: null, provider_id: p.id } })).body.check.ok).toBe(true);
+  const scan = (await env.api(`/api/providers/${p.id}/scan`, { method: "POST" })).body;
+  expect(scan.working).toEqual(["smart"]);
+  expect(scan.results.map((r: { model: string; tool_calls: boolean }) => [r.model, r.tool_calls])).toEqual([["smart", true], ["chatty", false]]);
+  expect((await env.api("/api/providers")).body.providers.find((x: { id: string }) => x.id === p.id).models).toEqual(["smart"]);
+
   // a wrong key: a clear error, not a crash; the key never shows up in answers
   await env.api(`/api/providers/${p.id}`, { method: "PATCH", body: { api_key: "bad-key" } });
   const bad = (await env.api(`/api/providers/${p.id}/test`, { body: { model: "smart" } })).body.test;

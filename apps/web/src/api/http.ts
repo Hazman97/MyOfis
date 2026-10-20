@@ -230,6 +230,15 @@ export interface ChatMessage {
   suggestions?: EditSuggestions | null;
 }
 
+/** POST /api/providers/:id/scan: one tested model. */
+export interface ScanResult {
+  model: string;
+  ok: boolean;
+  tool_calls: boolean;
+  ms: number;
+  error: string | null;
+}
+
 /** POST /api/providers/:id/test */
 export interface ModelTest {
   ok: boolean;
@@ -482,6 +491,11 @@ export const api = {
   providers: () => request<{ providers: ProviderPublic[] }>("/providers"),
   /** The provider's model list (from its /models); save = remember it on the provider. */
   providerModels: (id: string, save = false) => request<{ models: string[] }>(`/providers/${id}/models`, { body: { save } }),
+  /** Before saving: is the endpoint reachable, how many models does it list? */
+  checkProvider: (body: { kind: string; base_url: string | null; api_key: string | null; provider_id?: string }) =>
+    request<{ check: { ok: boolean; models: number; error: string | null } }>("/providers/check", { body }),
+  /** Test every model (9Router: only the upstreams you connected); keeps the ones that call tools. */
+  scanProvider: (id: string) => request<{ results: ScanResult[]; working: string[] }>(`/providers/${id}/scan`, { method: "POST" }),
   /** One tiny request with one tool: does this model answer and call tools? */
   testModel: (id: string, model: string) => request<{ test: ModelTest }>(`/providers/${id}/test`, { body: { model } }),
   createProvider: (body: Record<string, unknown>) => request<{ provider: ProviderPublic }>("/providers", { body }),

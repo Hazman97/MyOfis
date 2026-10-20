@@ -37,7 +37,7 @@ import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
 import { fileResponse } from "./uploads.ts";
-import { listModels, testModel } from "./modelCheck.ts";
+import { checkConnection, listModels, scanModels, testModel } from "./modelCheck.ts";
 import { systemInfo } from "./systemInfo.ts";
 import { Members } from "./members.ts";
 import { Rooms } from "./rooms.ts";
@@ -1160,6 +1160,26 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const row = ownProvider(db, c.req.param("id"), aiWorkspace(db, W(c)));
     const { model } = z.object({ model: z.string().trim().min(1).max(200) }).parse(await c.req.json());
     return c.json({ test: await testModel(providerForCheck(row), model) });
+  });
+  // test every model and keep the ones that work with tools (9Router: only upstreams you connected)
+  api.post("/providers/:id/scan", async (c) => {
+    const ws = aiWorkspace(db, W(c));
+    const row = ownProvider(db, c.req.param("id"), ws);
+    const results = await scanModels(providerForCheck(row));
+    const working = results.filter((r) => r.tool_calls).map((r) => r.model);
+    if (ws === W(c) && working.length) db.update(providers).set({ models: working }).where(eq(providers.id, row.id)).run();
+    return c.json({ results, working });
+  });
+  // before saving: is the endpoint there? (works for local and outside endpoints)
+  api.post("/providers/check", async (c) => {
+    const body = z.object({ kind: z.enum(["openai", "openai_compatible", "anthropic", "google"]), base_url: z.string().url().nullable().default(null), api_key: z.string().max(400).nullable().default(null), provider_id: z.string().optional() }).parse(await c.req.json());
+    // editing an existing provider without retyping the key: use the saved one
+    let key = body.api_key;
+    if (!key && body.provider_id) {
+      const row = ownProvider(db, body.provider_id, aiWorkspace(db, W(c)));
+      key = row.api_key_enc ? secrets.decrypt(row.api_key_enc) : null;
+    }
+    return c.json({ check: await checkConnection({ kind: body.kind, base_url: body.base_url, api_key: key }) });
   });
   api.delete("/providers/:id", (c) => {
     const id = c.req.param("id");
