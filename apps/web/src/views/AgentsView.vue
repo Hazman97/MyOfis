@@ -6,7 +6,7 @@ import AgentAvatar from "../components/AgentAvatar.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SidePanel from "../components/SidePanel.vue";
 import StatusBadge from "../components/StatusBadge.vue";
-import { api, type ToolInfo } from "../api/http.ts";
+import { api, type SocialTarget, type ToolInfo } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtTokens } from "../format.ts";
 import { isOwner } from "../me.ts";
@@ -51,6 +51,7 @@ const blank = () => ({
   clip_folder: "",
   auto_publish: false,
   auto_publish_daily_max: 3,
+  tiktok_account: "" as string,
 });
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 const form = reactive(blank());
@@ -62,7 +63,14 @@ const toolsByCategory = computed(() => {
   return [...g.entries()].sort(([a], [b]) => a.localeCompare(b));
 });
 
+/** TikTok accounts from Settings → Social accounts (the agent's default for TikTok drafts). */
+const tiktokTargets = ref<SocialTarget[]>([]);
+
 onMounted(async () => {
+  void api
+    .socialAccounts()
+    .then((r) => (tiktokTargets.value = r.tiktok))
+    .catch(() => {});
   [providers.value, runners.value, toolCatalog.value] = await Promise.all([
     api.providers().then((r) => r.providers),
     // runners are the owner's; members' agents never pin one
@@ -103,6 +111,7 @@ function edit(a: Agent | null) {
       clip_folder: a.config.clip_folder ?? "",
       auto_publish: a.config.auto_publish ?? false,
       auto_publish_daily_max: a.config.auto_publish_daily_max ?? 3,
+      tiktok_account: a.config.tiktok_account ?? "",
     });
   }
   editing.value = a?.id ?? "new";
@@ -112,10 +121,10 @@ async function save() {
   error.value = "";
   saving.value = true;
   try {
-    const { shell_allowlist, read_paths, http_allowlist, max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder, auto_publish, auto_publish_daily_max, slug, ...rest } = form;
+    const { shell_allowlist, read_paths, http_allowlist, max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder, auto_publish, auto_publish_daily_max, tiktok_account, slug, ...rest } = form;
     const body = {
       ...rest,
-      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder: clip_folder.trim(), auto_publish, auto_publish_daily_max },
+      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder: clip_folder.trim(), auto_publish, auto_publish_daily_max, tiktok_account: tiktok_account || null },
     };
     if (editing.value === "new") await api.createAgent({ ...body, slug });
     else await api.updateAgent(editing.value!, body);
@@ -392,6 +401,18 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
               />
               <p class="text-[11px] text-faint leading-relaxed">
                 Drop videos here; a <code class="rounded bg-surface-2 px-1 py-0.5 font-mono text-[10px] border border-line">music</code> folder inside holds royalty-free songs. Videos the agent may use with the <code class="rounded bg-surface-2 px-1 py-0.5 font-mono text-[10px] border border-line">clip_library</code> tool.
+              </p>
+            </div>
+
+            <!-- Default TikTok account for this agent's TikTok drafts (schedules and drafts can pick another) -->
+            <div class="space-y-1.5">
+              <label for="ag-tiktok-account" class="label text-xs font-semibold text-fg">TikTok account</label>
+              <select id="ag-tiktok-account" v-model="form.tiktok_account" class="input text-sm min-h-10">
+                <option value="">{{ tiktokTargets.length === 1 ? `The only one (${tiktokTargets[0]!.label})` : "None set (pick it on each draft)" }}</option>
+                <option v-for="t in tiktokTargets" :key="t.id" :value="t.id">{{ t.label }} · @{{ t.username }}</option>
+              </select>
+              <p class="text-[11px] text-faint leading-relaxed">
+                Where this agent's TikTok drafts go. Add accounts in <RouterLink to="/settings/social" class="text-accent hover:underline">Settings → Social accounts</RouterLink>; a schedule can choose another one.
               </p>
             </div>
 

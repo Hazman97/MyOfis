@@ -9,6 +9,7 @@ import {
   skillsFor,
   DIRECT_JOBS,
   DIRECT_JOB_MIN_MINUTES,
+  WebPost,
   type HubToRunner,
   type ContentDraft,
   type Agent,
@@ -306,7 +307,10 @@ Error: ${r.error}` : ""}` });
    */
   /** Whether approving this draft sends it somewhere (its website, or a connected social account). */
   canPublish(draft: ContentDraft): boolean {
-    return draft.kind === "web_post" || this.social.configured(draft.platform, draft.project_id);
+    if (draft.kind === "web_post") return true;
+    // TikTok: the draft's own account (or the only one / the project's older setting)
+    if (draft.platform === "tiktok") return this.social.canPostTikTok(draft);
+    return this.social.configured(draft.platform, draft.project_id);
   }
 
   async afterApprove(draft: ContentDraft): Promise<ContentDraft> {
@@ -813,6 +817,13 @@ Error: ${r.error}` : ""}` });
     const video = msg.meta?.video_upload_id ? this.publisher.upload(msg.meta.video_upload_id) : null;
     const attached = Array.isArray(job?.input.attachments) && (job.input.attachments as { id?: unknown }[]).some((a) => a.id === video?.id);
     const videoOk = !!video && (video.run_id === run.id || attached);
+    // which TikTok account it goes to: the schedule's / job's choice, else the agent's default
+    const agentRow = getAgent(this.db, run.agent_id);
+    const account =
+      msg.platform === "tiktok"
+        ? (typeof job?.input.tiktok_account === "string" && job.input.tiktok_account) || (agentRow ? toAgent(agentRow).config.tiktok_account : null) || null
+        : null;
+    const withAccount = (m: WebPost | null): WebPost | null => (account ? { ...(m ?? WebPost.parse({ post_type: "social" })), social_account: account } : m);
     const saved = this.store.transact((tx, emit) => {
       tx.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
       if (refusal) {
@@ -829,7 +840,7 @@ Error: ${r.error}` : ""}` });
         title: fixEscapedNewlines(msg.title),
         body: fixEscapedNewlines(msg.body),
         self_check: msg.self_check,
-        meta: msg.meta ? { ...msg.meta, excerpt: fixEscapedNewlines(msg.meta.excerpt), video_upload_id: videoOk ? video!.id : null } : null,
+        meta: withAccount(msg.meta ? { ...msg.meta, excerpt: fixEscapedNewlines(msg.meta.excerpt), video_upload_id: videoOk ? video!.id : null } : null),
         feature_id: featureId,
       });
     });

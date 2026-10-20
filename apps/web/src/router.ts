@@ -29,6 +29,7 @@ export const router = createRouter({
     { path: "/settings/providers", name: "providers", component: () => import("./views/ProvidersView.vue") },
     { path: "/settings/integrations", name: "integrations", component: () => import("./views/IntegrationsView.vue") },
     { path: "/settings/storage", name: "storage", component: () => import("./views/StorageView.vue") },
+    { path: "/settings/social", name: "social-accounts", component: () => import("./views/SocialAccountsView.vue") },
     { path: "/settings", redirect: "/settings/providers" },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],

@@ -26,6 +26,19 @@ It runs when you ask (Chat or Telegram) and, if you switch it on, every day at 2
 5. **Daily schedule.** Schedules → "Video TikTok harian" (20:00): turn it on or change the time.
 6. **Restart** the runner after updating.
 
+## Several TikTok accounts (Settings → Social accounts)
+
+1. Connect every TikTok account inside Zernio (one Zernio workspace can hold many; you can also use more than one Zernio key).
+2. In Agent Office open **Settings → Social accounts → Connect a Zernio key**: give it a name and paste the API key. Its TikTok accounts appear at once.
+3. Give each account a name you recognise ("Healing", "Kedai") and switch off any the agents must never post to.
+4. Choose where posts go:
+   - **Agents → (agent) → TikTok account**: the agent's default.
+   - **Schedules → (schedule) → Post to TikTok account**: overrides the default for that schedule (e.g. Misi 1K at 20:00 → "Healing", at 12:00 → "Quotes").
+   - **Drafts**: every TikTok draft shows "Posts to …"; change it before approving.
+5. A draft with no account posts to the only enabled account; with several and none chosen, pick one on the draft. An account that is switched off is never replaced by another one.
+
+The older per-project TikTok card (Projects → TikTok) still works for drafts that have no account here.
+
 ## Use it
 - **Chat / Telegram** (`/agent tiktok`): "buat video pasal rindu kampung", "3 video motivasi kerja", "guna klip pantai".
 - **Every day at 20:00** it picks its own theme and never repeats a recent hook or caption.

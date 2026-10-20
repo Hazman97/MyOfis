@@ -121,6 +121,8 @@ export const AgentConfig = z.object({
   auto_publish: z.boolean().default(false),
   /** At most this many auto-published posts a day; more wait for approval as usual. */
   auto_publish_daily_max: z.number().int().min(1).max(15).default(3),
+  /** The TikTok account (a Zernio account id from Settings → Social accounts) this agent's TikTok drafts post to. A schedule's input.tiktok_account wins. */
+  tiktok_account: z.string().max(100).nullable().default(null),
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 

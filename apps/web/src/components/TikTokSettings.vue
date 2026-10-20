@@ -111,6 +111,9 @@ async function testConnection() {
     <p class="text-xs leading-relaxed text-muted">
       Post approved TikTok videos through your Zernio account. Get the API key in <b>Zernio → Settings → API keys</b>.
     </p>
+    <p class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs text-muted">
+      Several TikTok accounts? Use <RouterLink to="/settings/social" class="text-accent hover:underline">Settings → Social accounts</RouterLink> instead: connect Zernio once, then pick the account per agent, schedule or draft. This per-project setting is only used when a draft has no account there.
+    </p>
 
     <!-- Connected confirmation banner if account is chosen and ready -->
     <div v-if="tk?.has_key && tk?.account_id && tk?.username" class="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-xs text-accent">

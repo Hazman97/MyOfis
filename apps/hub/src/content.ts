@@ -234,6 +234,20 @@ export class Content {
     return toDraft(updated);
   }
 
+  /** Change which social account a draft posts to (before it is posted; a failed post can be retried there). */
+  setDraftAccount(id: string, account: string | null, workspaceId: string): ContentDraft {
+    const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, id)).get();
+    if (!row || row.workspace_id !== workspaceId) throw new HttpError(404, "draft not found");
+    if (row.status === "published" || row.status === "rejected") throw new HttpError(409, `draft is already ${row.status}`);
+    const meta = WebPost.parse({ ...(row.meta ?? { post_type: "social" }), social_account: account });
+    const updated = this.store.transact((tx, emit) => {
+      const r = tx.update(contentDrafts).set({ meta }).where(eq(contentDrafts.id, id)).returning().get()!;
+      emit({ type: "draft.updated", payload: { draft_id: id, video_upload_id: meta.video_upload_id } }, { agent_id: row.agent_id });
+      return r;
+    });
+    return toDraft(updated);
+  }
+
   decideDraft(id: string, decision: DraftDecision): ContentDraft {
     const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, id)).get();
     if (!row) throw new HttpError(404, "draft not found");

@@ -93,6 +93,8 @@ export const WebPost = z.object({
   cover_upload_id: z.string().max(64).nullable().default(null),
   /** A finished video (Editor's render or the owner's own clip) to post with a caption. */
   video_upload_id: z.string().max(64).nullable().default(null),
+  /** Which social account it posts to (TikTok: a Zernio account id); null = the default one. */
+  social_account: z.string().max(100).nullable().default(null),
 });
 export type WebPost = z.infer<typeof WebPost>;
 
@@ -107,6 +109,7 @@ export const WebPostEdit = z.object({
   video_url: z.string().url().or(z.literal("")).optional(),
   cover_upload_id: z.string().max(64).nullable().optional(),
   video_upload_id: z.string().max(64).nullable().optional(),
+  social_account: z.string().max(100).nullable().optional(),
 });
 export type WebPostEdit = z.infer<typeof WebPostEdit>;
 

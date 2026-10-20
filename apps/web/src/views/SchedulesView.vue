@@ -7,7 +7,7 @@ import AgentAvatar from "../components/AgentAvatar.vue";
 import ConfirmButton from "../components/ConfirmButton.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SidePanel from "../components/SidePanel.vue";
-import { api } from "../api/http.ts";
+import { api, type SocialTarget } from "../api/http.ts";
 import { describeCron } from "../cron.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtDateTime } from "../format.ts";
@@ -26,10 +26,19 @@ const PRESETS = [
   { label: "Every hour", cron: "0 * * * *" },
 ];
 
-const form = reactive({ agent_id: "", cron: "0 8 * * 1-5", title: "", input: "{}", project_id: "", enabled: true });
+const form = reactive({ agent_id: "", cron: "0 8 * * 1-5", title: "", input: "{}", project_id: "", enabled: true, tiktok_account: "" });
+/** TikTok accounts (Settings → Social accounts): a schedule can post to its own one. */
+const tiktokTargets = ref<SocialTarget[]>([]);
+const formAgent = computed(() => office.agentById[form.agent_id]);
+/** Only agents that save drafts can post anywhere. */
+const showAccount = computed(() => tiktokTargets.value.length > 0 && !!formAgent.value?.tools.includes("save_draft"));
 const formDescription = computed(() => describeCron(form.cron));
 
 const load = async () => {
+  void api
+    .socialAccounts()
+    .then((r) => (tiktokTargets.value = r.tiktok))
+    .catch(() => {});
   [schedules.value, projects.value] = await Promise.all([api.schedules().then((r) => r.schedules), api.projects().then((r) => r.projects)]);
 };
 onMounted(load);
@@ -44,9 +53,10 @@ function edit(s: Schedule | null) {
       input: JSON.stringify(s.job_template.input, null, 2),
       project_id: s.job_template.project_id ?? "",
       enabled: s.enabled,
+      tiktok_account: typeof s.job_template.input.tiktok_account === "string" ? s.job_template.input.tiktok_account : "",
     });
   } else {
-    Object.assign(form, { agent_id: office.agents.find((a) => a.enabled)?.id ?? "", cron: "0 8 * * 1-5", title: "", input: "{}", project_id: "", enabled: true });
+    Object.assign(form, { agent_id: office.agents.find((a) => a.enabled)?.id ?? "", cron: "0 8 * * 1-5", title: "", input: "{}", project_id: "", enabled: true, tiktok_account: "" });
   }
   editing.value = s?.id ?? "new";
 }
@@ -59,6 +69,12 @@ async function save() {
       input = JSON.parse(form.input || "{}");
     } catch {
       throw new Error("Job input must be valid JSON");
+    }
+    // the account picker writes input.tiktok_account ("" = the agent's default)
+    if (input && typeof input === "object" && !Array.isArray(input)) {
+      const obj = input as Record<string, unknown>;
+      if (form.tiktok_account) obj.tiktok_account = form.tiktok_account;
+      else delete obj.tiktok_account;
     }
     const body = { cron: form.cron.trim(), enabled: form.enabled, job_template: { title: form.title, input, project_id: form.project_id || null } };
     if (editing.value === "new") await api.createSchedule({ ...body, agent_id: form.agent_id });
@@ -111,6 +127,7 @@ const projectName = (id: string | null) => (id ? projects.value.find((p) => p.id
             <h2 class="font-semibold">{{ s.job_template.title }}</h2>
             <span class="text-sm text-muted">{{ office.agentById[s.agent_id]?.name }}</span>
             <span v-if="projectName(s.job_template.project_id)" class="chip text-[11px]">{{ projectName(s.job_template.project_id) }}</span>
+            <span v-if="typeof s.job_template.input.tiktok_account === 'string'" class="chip text-[11px]">→ {{ tiktokTargets.find((t) => t.id === s.job_template.input.tiktok_account)?.label ?? "TikTok account (off)" }}</span>
           </div>
           <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <span class="inline-flex items-center gap-1 font-medium" :class="s.enabled ? 'text-fg' : 'text-muted'">
@@ -167,6 +184,13 @@ const projectName = (id: string | null) => (id ? projects.value.find((p) => p.id
           <select id="sc-proj" v-model="form.project_id" class="input">
             <option value="">No project</option>
             <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </div>
+        <div v-if="showAccount">
+          <label class="label" for="sc-account">Post to TikTok account</label>
+          <select id="sc-account" v-model="form.tiktok_account" class="input">
+            <option value="">The agent's default</option>
+            <option v-for="t in tiktokTargets" :key="t.id" :value="t.id">{{ t.label }} · @{{ t.username }}</option>
           </select>
         </div>
         <div>

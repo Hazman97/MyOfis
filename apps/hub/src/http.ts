@@ -811,6 +811,24 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     // the web shows "Schedule…" / "posts when approved" only where a post can really go
     return c.json({ drafts: drafts.map((d) => ({ ...d, can_publish: hub.canPublish(d) })) });
   });
+  // which TikTok account a draft goes to (Settings → Social accounts)
+  api.patch("/drafts/:id/account", async (c) => {
+    const body = z.object({ account: z.string().max(100).nullable() }).parse(await c.req.json());
+    if (body.account && !hub.social.tiktokTargets(W(c)).some((t) => t.id === body.account)) throw new HttpError(400, "that account is not connected (or is switched off) in Settings → Social accounts");
+    const d = hub.content.setDraftAccount(c.req.param("id"), body.account, W(c));
+    return c.json({ draft: { ...d, can_publish: hub.canPublish(d) } });
+  });
+
+  // Settings → Social accounts: Zernio connections and their TikTok accounts (per room)
+  api.get("/social-accounts", (c) => c.json({ connections: hub.social.zernioConnections(W(c)), tiktok: hub.social.tiktokTargets(W(c)) }));
+  api.post("/social-accounts/zernio", async (c) => c.json({ connection: await hub.social.addZernio(W(c), await c.req.json()) }, 201));
+  api.post("/social-accounts/:id/refresh", async (c) => c.json({ connection: await hub.social.refreshZernio(W(c), c.req.param("id")) }));
+  api.patch("/social-accounts/:id", async (c) => c.json({ connection: hub.social.patchZernio(W(c), c.req.param("id"), await c.req.json()) }));
+  api.delete("/social-accounts/:id", (c) => {
+    hub.social.removeZernio(W(c), c.req.param("id"));
+    return c.json({ ok: true });
+  });
+
   api.post("/drafts/:id/decide", async (c) => {
     const decision = DraftDecision.parse(await c.req.json());
     if (decision.decision === "approve" && decision.publish_at) {

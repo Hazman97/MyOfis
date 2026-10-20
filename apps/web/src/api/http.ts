@@ -254,6 +254,33 @@ export interface SkillAssignments {
   agents: { id: string; slug: string; name: string; sprite: string; enabled: boolean; skills: "all" | string[]; reads_skills: boolean }[];
 }
 
+/** Settings → Social accounts: a Zernio API key and the TikTok accounts it manages. */
+export interface ZernioAccount {
+  id: string;
+  platform: "tiktok";
+  username: string;
+  display_name: string;
+  followers: number | null;
+  needs_reconnection: boolean;
+  label: string;
+  enabled: boolean;
+}
+export interface ZernioConnection {
+  id: string;
+  label: string;
+  key_hint: string;
+  accounts: ZernioAccount[];
+  checked_at: string;
+}
+/** An account a draft, agent or schedule can post to (enabled TikTok accounts). */
+export interface SocialTarget {
+  id: string;
+  label: string;
+  username: string;
+  connection: string;
+  needs_reconnection: boolean;
+}
+
 /** GET /api/storage: where the office keeps data on the hub PC (Settings → Storage). */
 export interface StoragePlace {
   key: string;
@@ -414,6 +441,13 @@ export const api = {
   transcribeVideo: (id: string) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/transcribe`, { method: "POST" }),
   renderVideo: (id: string, plan: EditPlan, draftId: string | null) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/render`, { body: { plan, draft_id: draftId } }),
   tiktokHdList: () => request<{ items: TikTokHdItem[] }>("/tiktok-hd"),
+  socialAccounts: () => request<{ connections: ZernioConnection[]; tiktok: SocialTarget[] }>("/social-accounts"),
+  addZernio: (label: string, api_key: string) => request<{ connection: ZernioConnection }>("/social-accounts/zernio", { body: { label, api_key } }),
+  refreshZernio: (id: string) => request<{ connection: ZernioConnection }>(`/social-accounts/${id}/refresh`, { method: "POST" }),
+  patchZernio: (id: string, body: { label?: string; accounts?: Record<string, { label?: string; enabled?: boolean }> }) =>
+    request<{ connection: ZernioConnection }>(`/social-accounts/${id}`, { method: "PATCH", body }),
+  removeZernio: (id: string) => request<{ ok: true }>(`/social-accounts/${id}`, { method: "DELETE" }),
+  setDraftAccount: (id: string, account: string | null) => request<{ draft: ContentDraft }>(`/drafts/${id}/account`, { method: "PATCH", body: { account } }),
   storage: (wait = false) => request<{ items: StoragePlace[]; measured_at: string | null; measuring?: boolean }>(`/storage${wait ? "?wait=1" : ""}`),
   openStorage: (key: string) => request<{ opened: string }>("/storage/open", { body: { key } }),
   tiktokHd: (id: string, mode: "auto" | "remux" | "reencode" = "auto") => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/tiktok-hd`, { body: { mode } }),

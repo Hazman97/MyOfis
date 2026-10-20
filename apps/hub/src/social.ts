@@ -5,7 +5,7 @@ import { keyHint, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { contentDrafts, projects, settings } from "./db/schema.ts";
 import type { EventStore } from "./events.ts";
-import { HttpError } from "./repo.ts";
+import { HttpError, newId } from "./repo.ts";
 import { toDraft } from "./content.ts";
 import type { Publisher } from "./publisher.ts";
 
@@ -32,6 +32,51 @@ export const TikTokSettingsInput = z.object({
   api_key: z.string().max(400).optional(),
   account_id: z.string().max(100).nullable().optional(),
 });
+
+/** Settings → Social accounts: one Zernio API key (its TikTok accounts are listed from it). */
+export const ZernioConnectInput = z.object({
+  label: z.string().trim().min(1).max(60),
+  api_key: z.string().trim().min(8).max(400),
+});
+export const ZernioConnectionPatch = z.object({
+  label: z.string().trim().min(1).max(60).optional(),
+  /** Per account: a name the owner knows it by, and on/off (off = never posted to). */
+  accounts: z.record(z.string().max(100), z.object({ label: z.string().trim().max(60).optional(), enabled: z.boolean().optional() })).optional(),
+});
+export interface ZernioAccount {
+  id: string;
+  platform: "tiktok";
+  username: string;
+  display_name: string;
+  followers: number | null;
+  needs_reconnection: boolean;
+  /** The owner's name for it (defaults to the display name). */
+  label: string;
+  enabled: boolean;
+}
+interface StoredZernio {
+  id: string;
+  label: string;
+  key_enc: string;
+  key_hint: string;
+  accounts: ZernioAccount[];
+  checked_at: string;
+}
+export interface ZernioConnectionPublic {
+  id: string;
+  label: string;
+  key_hint: string;
+  accounts: ZernioAccount[];
+  checked_at: string;
+}
+/** An account a draft, an agent or a schedule can post to. */
+export interface SocialTarget {
+  id: string;
+  label: string;
+  username: string;
+  connection: string;
+  needs_reconnection: boolean;
+}
 
 export interface TikTokAccount {
   id: string;
@@ -95,6 +140,9 @@ interface PendingTikTok {
   project_id: string;
   post_id: string;
   since: string;
+  /** The Social accounts connection that posted it (null = the project's older setting). */
+  workspace_id?: string;
+  conn_id?: string | null;
 }
 const TIKTOK_PENDING = "tiktok.pending.";
 const TIKTOK_RESOLVE_MS = 30 * 60_000;
@@ -322,6 +370,121 @@ export class Social {
     return s?.key_enc && s.account_id ? { apiKey: this.secrets.decrypt(s.key_enc), accountId: s.account_id } : null;
   }
 
+  // ---------------------------------------------------------------- Social accounts (Zernio, many)
+  //
+  // Owner request 2026-10-20: connect Zernio once (or several keys) and use any of its TikTok
+  // accounts. An agent has a default account, a schedule can pick another, and the owner can change
+  // it on the draft. Stored per room in settings `zernio.connections.<workspace>`. The older
+  // per-project TikTok setting still works as a fallback.
+
+  #conns(ws: string): StoredZernio[] {
+    const row = this.db.select().from(settings).where(eq(settings.key, `zernio.connections.${ws}`)).get();
+    return (row?.value as StoredZernio[] | undefined) ?? [];
+  }
+
+  #saveConns(ws: string, value: StoredZernio[]): void {
+    const k = `zernio.connections.${ws}`;
+    this.db.insert(settings).values({ key: k, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+  }
+
+  #publicConn = (c: StoredZernio): ZernioConnectionPublic => ({ id: c.id, label: c.label, key_hint: c.key_hint, accounts: c.accounts, checked_at: c.checked_at });
+
+  zernioConnections(ws: string): ZernioConnectionPublic[] {
+    return this.#conns(ws).map(this.#publicConn);
+  }
+
+  /** The TikTok accounts agents and drafts can post to (enabled ones), for pickers. */
+  tiktokTargets(ws: string): SocialTarget[] {
+    return this.#conns(ws).flatMap((c) =>
+      c.accounts
+        .filter((a) => a.enabled && a.platform === "tiktok")
+        .map((a) => ({ id: a.id, label: a.label || a.display_name || a.username, username: a.username, connection: c.label, needs_reconnection: a.needs_reconnection })),
+    );
+  }
+
+  /** Connect a Zernio API key: its TikTok accounts are listed at once (all on, named after the account). */
+  async addZernio(ws: string, input: z.input<typeof ZernioConnectInput>): Promise<ZernioConnectionPublic> {
+    const data = ZernioConnectInput.parse(input);
+    const conns = this.#conns(ws);
+    const found = await this.#tiktokAccounts(data.api_key);
+    // an account already listed under another key stays there (one account, one key)
+    const taken = new Set(conns.flatMap((c) => c.accounts.map((a) => a.id)));
+    const conn: StoredZernio = {
+      id: newId("zrn"),
+      label: data.label,
+      key_enc: this.secrets.encrypt(data.api_key),
+      key_hint: keyHint(data.api_key),
+      accounts: found.filter((a) => !taken.has(a.id)).map((a) => ({ ...a, platform: "tiktok", label: a.display_name || a.username, enabled: true })),
+      checked_at: new Date().toISOString(),
+    };
+    this.#saveConns(ws, [...conns, conn]);
+    return this.#publicConn(conn);
+  }
+
+  /** Ask Zernio again (new accounts appear, gone ones are dropped, labels and switches are kept). */
+  async refreshZernio(ws: string, id: string): Promise<ZernioConnectionPublic> {
+    const conns = this.#conns(ws);
+    const c = conns.find((x) => x.id === id);
+    if (!c) throw new HttpError(404, "connection not found");
+    const found = await this.#tiktokAccounts(this.secrets.decrypt(c.key_enc));
+    const old = new Map(c.accounts.map((a) => [a.id, a]));
+    c.accounts = found.map((a) => ({ ...a, platform: "tiktok", label: old.get(a.id)?.label ?? (a.display_name || a.username), enabled: old.get(a.id)?.enabled ?? true }));
+    c.checked_at = new Date().toISOString();
+    this.#saveConns(ws, conns);
+    return this.#publicConn(c);
+  }
+
+  patchZernio(ws: string, id: string, input: z.input<typeof ZernioConnectionPatch>): ZernioConnectionPublic {
+    const data = ZernioConnectionPatch.parse(input);
+    const conns = this.#conns(ws);
+    const c = conns.find((x) => x.id === id);
+    if (!c) throw new HttpError(404, "connection not found");
+    if (data.label !== undefined) c.label = data.label;
+    for (const [accId, patch] of Object.entries(data.accounts ?? {})) {
+      const a = c.accounts.find((x) => x.id === accId);
+      if (!a) throw new HttpError(404, `account ${accId} is not in this connection`);
+      if (patch.label !== undefined) a.label = patch.label;
+      if (patch.enabled !== undefined) a.enabled = patch.enabled;
+    }
+    this.#saveConns(ws, conns);
+    return this.#publicConn(c);
+  }
+
+  removeZernio(ws: string, id: string): void {
+    const conns = this.#conns(ws);
+    if (!conns.some((c) => c.id === id)) throw new HttpError(404, "connection not found");
+    this.#saveConns(ws, conns.filter((c) => c.id !== id));
+  }
+
+  /**
+   * Where a TikTok draft goes: the account on the draft, else the only enabled TikTok account of
+   * the room, else the project's older single setting. null = nowhere (approving only saves it).
+   */
+  #tiktokTarget(ws: string, accountId: string | null, projectId: string): { apiKey: string; accountId: string; connId: string | null } | null {
+    const conns = this.#conns(ws);
+    const usable = conns.flatMap((c) => c.accounts.filter((a) => a.enabled && a.platform === "tiktok").map((a) => ({ c, a })));
+    const pick = accountId ? usable.find((x) => x.a.id === accountId) : usable.length === 1 ? usable[0] : undefined;
+    if (pick) return { apiKey: this.secrets.decrypt(pick.c.key_enc), accountId: pick.a.id, connId: pick.c.id };
+    if (accountId && usable.length) return null; // an account that was switched off or removed: never post elsewhere
+    const legacy = this.#tt(projectId);
+    return legacy ? { ...legacy, connId: null } : null;
+  }
+
+  /** Whether approving this TikTok draft posts it somewhere. */
+  canPostTikTok(draft: { project_id: string; meta?: { social_account?: string | null } | null }): boolean {
+    return !!this.#tiktokTarget(this.#wsOf(draft.project_id), draft.meta?.social_account ?? null, draft.project_id);
+  }
+
+  #wsOf(projectId: string): string {
+    return this.db.select({ ws: projects.workspace_id }).from(projects).where(eq(projects.id, projectId)).get()?.ws ?? "owner";
+  }
+
+  /** The key of a stored connection (link resolving). */
+  #connKey(ws: string, connId: string): string | null {
+    const c = this.#conns(ws).find((x) => x.id === connId);
+    return c ? this.secrets.decrypt(c.key_enc) : null;
+  }
+
   // ---------------------------------------------------------------- token health
 
   /**
@@ -381,6 +544,22 @@ export class Social {
         }
       }
     }
+    // Settings → Social accounts: every Zernio connection of every room
+    for (const row of this.db.select().from(settings).all().filter((r) => r.key.startsWith("zernio.connections."))) {
+      const ws = row.key.slice("zernio.connections.".length);
+      for (const c of row.value as StoredZernio[]) {
+        try {
+          const found = await this.#tiktokAccounts(this.secrets.decrypt(c.key_enc));
+          for (const a of c.accounts.filter((x) => x.enabled)) {
+            const now = found.find((f) => f.id === a.id);
+            if (!now) problems.push(`TikTok "${a.label}" (@${a.username}) is no longer in Zernio connection "${c.label}". Connect it again in Zernio, then press Refresh in Settings → Social accounts.`);
+            else if (now.needs_reconnection) problems.push(`TikTok "${a.label}" (@${a.username}) needs reconnecting in Zernio, so its posts will fail until you do.`);
+          }
+        } catch (err) {
+          problems.push(`Could not reach Zernio for connection "${c.label}"${ws !== "owner" ? ` (room ${ws})` : ""}: ${(err as Error).message}`);
+        }
+      }
+    }
     return problems;
   }
 
@@ -393,7 +572,7 @@ export class Social {
       return !!(ig?.enabled && ig.ig_user_id && this.#fb(projectId));
     }
     if (platform === "threads") return !!this.#threads(projectId);
-    if (platform === "tiktok") return !!this.#tt(projectId);
+    if (platform === "tiktok") return !!this.#tt(projectId) || this.tiktokTargets(this.#wsOf(projectId)).length > 0;
     return false;
   }
 
@@ -505,8 +684,15 @@ export class Social {
   async postToTikTok(draftId: string) {
     const row = this.#draft(draftId, "tiktok");
     try {
-      const cfg = this.#tt(row.project_id);
-      if (!cfg) throw new Error("TikTok is not connected for this project (Projects → TikTok: Zernio key + account)");
+      const ws = row.workspace_id ?? "owner";
+      const account = (row.meta as { social_account?: string | null } | null)?.social_account ?? null;
+      const cfg = this.#tiktokTarget(ws, account, row.project_id);
+      if (!cfg)
+        throw new Error(
+          account
+            ? "the TikTok account on this draft is switched off or no longer connected: pick another one on the draft, or turn it on in Settings → Social accounts"
+            : "no TikTok account to post to: connect Zernio in Settings → Social accounts (and pick the account on the draft when there are several)",
+        );
       const videoId = (row.meta as { video_upload_id?: string } | null)?.video_upload_id;
       const f = videoId ? this.publisher.uploadFile(videoId) : null;
       if (!f) throw new Error("TikTok posts need a video: this draft has none");
@@ -544,7 +730,7 @@ export class Social {
       // 207 = Zernio accepted the request but the post failed
       if (status === 207 || body.post?.status === "failed" || plat?.status === "failed") throw new Error(plat?.errorMessage ?? "TikTok refused the post");
       if (body.post?._id && !plat?.platformPostUrl) {
-        const pending: PendingTikTok = { draft_id: draftId, project_id: row.project_id, post_id: body.post._id, since: new Date().toISOString() };
+        const pending: PendingTikTok = { draft_id: draftId, project_id: row.project_id, post_id: body.post._id, since: new Date().toISOString(), workspace_id: ws, conn_id: cfg.connId };
         this.db.insert(settings).values({ key: `${TIKTOK_PENDING}${draftId}`, value: pending }).onConflictDoUpdate({ target: settings.key, set: { value: pending } }).run();
       }
       return this.#finish(draftId, row.agent_id, plat?.platformPostUrl ?? "posted", null);
@@ -563,7 +749,8 @@ export class Social {
         drop();
         continue;
       }
-      const cfg = this.#tt(p.project_id);
+      const connKey = p.conn_id ? this.#connKey(p.workspace_id ?? "owner", p.conn_id) : null;
+      const cfg = connKey ? { apiKey: connKey } : this.#tt(p.project_id);
       if (!cfg) {
         drop();
         continue;

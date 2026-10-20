@@ -5,6 +5,7 @@ import type { ContentDraft, WebPost } from "@agent-office/shared";
 import AgentAvatar from "./AgentAvatar.vue";
 import ConfirmButton from "./ConfirmButton.vue";
 import StatusBadge from "./StatusBadge.vue";
+import { useTiktokTargets } from "../socialTargets.ts";
 import { api } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
 import { fmtDateTime } from "../format.ts";
@@ -28,6 +29,20 @@ const agent = computed(() => office.agentById[props.draft.agent_id]);
 const pending = computed(() => props.draft.status === "draft");
 // the owner may edit the title and (website posts) every post field before approving
 const title = ref(props.draft.title);
+
+// TikTok: which account it goes to (Settings → Social accounts); changeable until it is posted
+const { targets: tiktokTargets } = useTiktokTargets();
+const account = ref(props.draft.meta?.social_account ?? "");
+const showAccount = computed(() => props.draft.platform === "tiktok" && props.draft.status !== "published" && props.draft.status !== "rejected" && tiktokTargets.value.length > 0);
+async function changeAccount() {
+  error.value = "";
+  try {
+    await api.setDraftAccount(props.draft.id, account.value || null);
+  } catch (e) {
+    error.value = (e as Error).message;
+    account.value = props.draft.meta?.social_account ?? "";
+  }
+}
 const post = reactive({
   post_type: props.draft.meta?.post_type ?? "",
   excerpt: props.draft.meta?.excerpt ?? "",
@@ -223,6 +238,13 @@ async function decide(decision: "approve" | "reject") {
       <span v-if="projectName" class="text-xs font-medium text-muted">· {{ projectName }}</span>
       <span class="ml-auto font-mono text-[11px] text-faint">{{ fmtDateTime(draft.created_at) }}</span>
     </header>
+    <div v-if="showAccount" class="flex flex-wrap items-center gap-2 px-4 pt-3 text-xs">
+      <label :for="`da-${draft.id}`" class="text-muted">Posts to</label>
+      <select :id="`da-${draft.id}`" v-model="account" class="input h-9 w-auto min-w-48 text-xs" @change="changeAccount">
+        <option value="">{{ tiktokTargets.length === 1 ? `${tiktokTargets[0]!.label} (the only account)` : "Pick an account…" }}</option>
+        <option v-for="t in tiktokTargets" :key="t.id" :value="t.id">{{ t.label }} · @{{ t.username }}</option>
+      </select>
+    </div>
     <div v-if="editable" class="px-4 pt-3">
       <label :for="`dt-${draft.id}`" class="sr-only">Title</label>
       <input :id="`dt-${draft.id}`" v-model="title" class="input text-sm font-semibold" maxlength="200" />
