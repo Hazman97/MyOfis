@@ -35,8 +35,18 @@ export function modelRank(id: string): number {
     [/laguna-s|north-mini|dots-3/, 50],
     [/lightning|nano|lite|xs-|2\.6b|-mini|small/, 25],
   ];
-  for (const [re, score] of rules) if (re.test(m)) return score;
-  return 40;
+  let score = 40;
+  for (const [re, s] of rules) {
+    if (re.test(m)) {
+      score = s;
+      break;
+    }
+  }
+  // within a family: the full model beats its fast variant; newer generations first; "-mod" copies last
+  if (/\bpro\b|-pro\b|kimi-k3|glm-5\.3(?!-flash)/.test(m)) score += 3;
+  if (/flash|turbo/.test(m) && score < 90) score -= 6;
+  if (/-mod\b/.test(m)) score -= 2;
+  return score;
 }
 
 /** Best first; equal ranks keep their order. */
