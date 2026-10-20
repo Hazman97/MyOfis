@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { Cpu, ImagePlus, LoaderCircle, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
+import { Clapperboard, Cpu, ImagePlus, LoaderCircle, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
 import type { Agent, Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import EditSuggestionCards from "../components/EditSuggestionCards.vue";
@@ -85,6 +85,10 @@ async function saveModel() {
     modelSaving.value = false;
   }
 }
+
+/** OpenChatCut editor links in a reply, cleaned to the exact project URL. */
+const OCC_LINK = /https?:\/\/(?:localhost|127\.0\.0\.1):\d{2,5}\/#\/editor\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const occLinks = (text: string) => [...new Set(text.match(OCC_LINK) ?? [])];
 
 /** Stop a reply that takes too long (cancels its job; the run ends within seconds). */
 const stopping = ref<string | null>(null);
@@ -463,6 +467,13 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                     </div>
                   </div>
 
+                  <!-- OpenChatCut projects mentioned in the reply: a clean link (models sometimes glue words to the URL) -->
+                  <div v-if="occLinks(live(m).reply).length" class="mt-2 flex flex-wrap items-center gap-2">
+                    <a v-for="u in occLinks(live(m).reply)" :key="u" :href="u" target="_blank" rel="noopener" class="btn btn-sm min-h-9">
+                      <Clapperboard :size="13" /> Open in OpenChatCut
+                    </a>
+                    <span class="text-[11px] text-faint">Opens on this PC (OpenChatCut must be running).</span>
+                  </div>
                   <!-- Editor's edit suggestions (tool suggest_edits) -->
                   <div v-if="m.suggestions" class="mt-3">
                     <EditSuggestionCards :suggestions="m.suggestions" mode="chat" @pick="onPickSuggestion" />

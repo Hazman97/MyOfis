@@ -16,7 +16,8 @@ import { attachmentFile } from "./video.ts";
 
 const BASE = () => (process.env.OPENCHATCUT_URL ?? "http://localhost:5199").replace(/\/$/, "");
 const PROTOCOL = "2025-06-18";
-const RESULT_MAX = 12_000;
+/** Long answers (template lists) are cut: each one is re-read by the model on every later step. */
+const RESULT_MAX = 5_000;
 
 export function openchatcutToken(): string | null {
   const env = process.env.OPENCHATCUT_MCP_TOKEN?.trim();
