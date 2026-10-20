@@ -177,8 +177,8 @@ const isEdited = computed(() => {
 
 const aspectClass = computed(() => {
   if (plan.preset === "youtube_1080p") return "aspect-video w-full max-h-[62vh]";
-  if (plan.preset === "square") return "aspect-square max-w-[400px] max-h-[62vh] mx-auto";
-  return "aspect-[9/16] max-w-[340px] max-h-[62vh] mx-auto";
+  if (plan.preset === "square") return "aspect-square max-w-100 max-h-[62vh] mx-auto";
+  return "aspect-[9/16] max-w-85 max-h-[62vh] mx-auto";
 });
 
 function selectClip(i: number) {
@@ -1519,7 +1519,7 @@ async function useOwnEdit(e: Event) {
         class="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs transition-opacity"
         @click.self="askEditorOpen = false"
       >
-        <!-- On phone: bottom sheet (bottom-0 w-full max-h-[85vh]); on desktop: right side drawer (w-96 sm:w-[420px] h-full) -->
+        <!-- On phone: bottom sheet (bottom-0 w-full max-h-[85vh]); on desktop: right side drawer (w-96 sm:w-105 h-full) -->
         <div
           class="w-full sm:w-110 max-w-full h-[85vh] sm:h-full mt-auto sm:mt-0 flex flex-col shadow-2xl transition-transform"
         >

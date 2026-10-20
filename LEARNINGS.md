@@ -104,3 +104,17 @@ SEBELUM TAMBAH: search entries bawah untuk root cause yang sama. Kalau ada, upda
 📌 **Elak lagi:** jangan set had fps sama dengan refresh rate skrin; guna had cuma untuk turunkan fps
 🔗 **Ref:** apps/web/src/office/scene/game.ts (createOfficeGame)
 🏷️ **Status:** active
+
+## [2026-10-20] [frontend] [low] — Tailwind v4: kelas `[Npx]` dan `!kelas` keluar amaran "suggestCanonicalClasses"
+❌ **Silap:** tulis kelas gaya Tailwind v3: `max-w-[120px]`, `min-h-[44px]`, `w-[420px]`, `!mb-0`
+🔍 **Root cause:** Tailwind v4 ada skala spacing dinamik (1 unit = 0.25rem = 4px) yang terima nombor apa saja termasuk perpuluhan, dan tanda important letak di HUJUNG kelas. Bentuk lama masih jalan tapi extension VS Code tanda sebagai amaran setiap kali.
+✅ **Fix:** guna bentuk kanonik:
+  - px ÷ 4 untuk size/spacing: `max-w-[120px]` → `max-w-30`, `min-h-[44px]` → `min-h-11`, `max-w-[130px]` → `max-w-32.5`, `w-[420px]` → `w-105`;
+  - important di hujung: `!mb-0` → `mb-0!`;
+  - nilai yang bukan spacing (contoh `text-[11px]`, warna, `grid-cols-[…]`) kekal dalam `[...]`.
+📌 **Elak lagi:**
+  - setiap AI (Claude, Gemini) yang sentuh `.vue`/`.css`: jangan tulis `-[Npx]` untuk w/h/min-*/max-*/size/p*/m*/gap/inset/top/left/right/bottom/translate. Kira `N/4` dan guna kelas skala.
+  - Semak sebelum hand back: `grep -rnE "\-\[[0-9.]+px\]" apps/web/src` (hanya `text-[Npx]` dan bukan-spacing yang dibenarkan).
+  - Peraturan penuh: `docs/FRONTEND.md` (AGENTS.md suruh baca fail tu untuk kerja UI).
+🔗 **Ref:** commit cdb9c6a (kelas ditukar), apps/web/src/views/VideoStudioView.vue
+🏷️ **Status:** active
