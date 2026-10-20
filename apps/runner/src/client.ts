@@ -58,6 +58,8 @@ export interface RunnerClientOptions {
   extraHeaders?: Record<string, string>;
   /** Override runtime selection (tests). */
   pickRuntime?: (a: RunAssignment) => AgentRuntime;
+  /** Called when another runner with the same token replaced this one (the process may exit). */
+  onReplaced?: () => void;
   /** Override the programs this runner reports (tests). */
   programs?: string[];
   log?: (msg: string) => void;
@@ -141,7 +143,9 @@ export class RunnerClient {
     };
     ws.onmessage = (ev) => this.#handle(String(ev.data));
     ws.onclose = (ev) => {
-      if (this.#ws === ws) this.#ws = null;
+      // an old socket closing after we already reconnected: nothing to do
+      if (this.#ws !== ws) return;
+      this.#ws = null;
       this.#ready = false;
       if (this.#heartbeat) clearInterval(this.#heartbeat);
       this.#heartbeat = null;
@@ -149,6 +153,14 @@ export class RunnerClient {
       if (ev.code === 4003) {
         this.#log("hub revoked this runner's token; pair again with a new PAIRING_CODE");
         this.#stopped = true;
+        return;
+      }
+      // another runner process with the same token took over (e.g. `bun run dev` plus `bun run dev:runner`):
+      // step aside instead of kicking each other off forever
+      if (ev.code === 4000) {
+        this.#log("another runner with this token is connected now, so this one stops. Run only one runner per token (bun run dev already starts one).");
+        this.stop();
+        this.#opts.onReplaced?.();
         return;
       }
       this.#log(`disconnected (${ev.code} ${ev.reason || ""}), retrying in ${this.#backoff / 1000}s`);
