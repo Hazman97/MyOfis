@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n hub,web -c blue,green \"bun run dev:hub\" \"bun run dev:web\"",
+    "dev": "concurrently -n hub,web,runner -c blue,green,magenta \"bun run dev:hub\" \"bun run dev:web\" \"bun run dev:runner\"",
+    "dev:no-runner": "concurrently -n hub,web -c blue,green \"bun run dev:hub\" \"bun run dev:web\"",
     "dev:hub": "bun --watch apps/hub/src/index.ts",
     "dev:runner": "bun --watch apps/runner/src/index.ts",
     "dev:web": "bun run --cwd apps/web dev",
