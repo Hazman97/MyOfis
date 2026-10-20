@@ -91,6 +91,8 @@ export interface JobView {
   status: JobStatus;
   created_at: string;
   run_ids: string[];
+  /** Why it was cancelled (owner, time limit, pause), when it was. */
+  cancel_reason?: string | null;
 }
 
 export interface RunView {
@@ -109,6 +111,12 @@ export interface RunView {
   /** Concatenated text of all agent.message chunks, in order. */
   output: string;
   event_count: number;
+  /** What it is doing now: the latest thinking note, or "tool:<name>" after a tool call. */
+  step?: string | null;
+  /** Tool calls so far. */
+  tool_calls?: number;
+  /** When the run last sent anything (to spot a run that has gone quiet). */
+  last_event_at?: string;
 }
 
 export const initialState = (): OfficeState => ({
@@ -174,7 +182,10 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
   if (event.id <= s.last_event_id) return false;
   s.last_event_id = event.id;
   const run = event.run_id ? s.runs[event.run_id] : undefined;
-  if (run) run.event_count += 1;
+  if (run) {
+    run.event_count += 1;
+    run.last_event_at = event.ts;
+  }
 
   switch (event.type) {
     case "runner.online":
@@ -210,7 +221,13 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
     }
     case "job.cancelled": {
       const job = s.jobs[event.payload.job_id];
-      if (job) job.status = "cancelled";
+      if (job) {
+        job.status = "cancelled";
+        job.cancel_reason = event.payload.reason ?? null;
+        const last = job.run_ids.at(-1);
+        const r = last ? s.runs[last] : undefined;
+        if (r && !r.error) r.error = event.payload.reason ?? null;
+      }
       break;
     }
     case "run.started": {
@@ -230,6 +247,9 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
         error: null,
         output: "",
         event_count: 1,
+        step: null,
+        tool_calls: 0,
+        last_event_at: event.ts,
       };
       const job = s.jobs[p.job_id];
       if (job) {
@@ -279,6 +299,7 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
     }
     case "agent.thinking":
       if (event.agent_id) agentView(s, event.agent_id).thinking = event.payload.summary;
+      if (run) run.step = event.payload.summary;
       break;
     case "agent.message": {
       if (run && run.output.length < MAX_OUTPUT_CHARS) {
@@ -292,6 +313,10 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
       break;
     }
     case "agent.tool_call":
+      if (run) {
+        run.step = `tool:${event.payload.tool}`;
+        run.tool_calls = (run.tool_calls ?? 0) + 1;
+      }
       if (event.agent_id) {
         const a = agentView(s, event.agent_id);
         a.last_tool_category = event.payload.category;

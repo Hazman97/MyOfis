@@ -7,6 +7,7 @@ import { useOffice } from "../../stores/office.ts";
 import { fmtTime } from "../../format.ts";
 import AgentAvatar from "../AgentAvatar.vue";
 import EditSuggestionCards from "../EditSuggestionCards.vue";
+import RunStatusCard from "../RunStatusCard.vue";
 
 /**
  * AskEditorPanel (Task 015):
@@ -153,6 +154,14 @@ async function send(quickText?: string) {
   }
 }
 
+async function stopJob(jobId: string) {
+  try {
+    await api.cancelJob(jobId);
+  } catch (err) {
+    error.value = (err as Error).message;
+  }
+}
+
 function onKey(e: KeyboardEvent) {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
@@ -251,27 +260,20 @@ onBeforeUnmount(() => {
           />
           <div class="max-w-[90%] min-w-0 space-y-2">
             <div class="rounded-2xl rounded-tl-sm border border-line bg-surface-2/90 px-3 py-2 text-fg shadow-xs">
-              <!-- Pending status -->
-              <div
-                v-if="['queued', 'running', 'waiting_approval'].includes(m.status)"
-                class="flex items-center gap-2 py-1 text-muted text-xs"
-              >
-                <LoaderCircle :size="13" class="animate-spin text-accent" />
-                <span>{{ m.status === 'queued' ? 'waiting for runner…' : 'thinking…' }}</span>
-              </div>
-
               <!-- Reply text -->
-              <div v-else-if="m.reply" class="whitespace-pre-wrap leading-relaxed text-xs">
+              <div v-if="m.reply" class="whitespace-pre-wrap leading-relaxed text-xs">
                 {{ m.reply }}
               </div>
 
-              <!-- Failed / Cancelled -->
-              <p v-else-if="m.status === 'failed'" class="text-danger text-xs">
-                Could not answer: the job failed.
-              </p>
-              <p v-else-if="m.status === 'cancelled'" class="text-faint text-xs">
-                Cancelled.
-              </p>
+              <!-- Live status: queued (place + why), current step, quiet, failed or stopped (+ why) -->
+              <RunStatusCard
+                v-if="(office.state.jobs[m.job_id]?.status ?? m.status) !== 'done'"
+                :job-id="m.job_id"
+                :compact="!!m.reply"
+                :class="m.reply ? 'mt-2' : ''"
+                @stop="stopJob(m.job_id)"
+                @retry="send(m.text)"
+              />
 
               <!-- Suggestions from Editor -->
               <div v-if="m.suggestions" class="mt-2.5 pt-2 border-t border-line/60">

@@ -5,6 +5,7 @@ import { ImagePlus, LoaderCircle, Mic, MicOff, Plus, SendHorizontal, Square, Vol
 import type { Agent, Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import EditSuggestionCards from "../components/EditSuggestionCards.vue";
+import RunStatusCard from "../components/RunStatusCard.vue";
 import PageHeader from "../components/PageHeader.vue";
 import { api, type ChatAttachment, type ChatMessage, type ChatThread } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
@@ -396,17 +397,16 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
               <div class="max-w-[85%] sm:max-w-[75%] min-w-0">
                 <div class="rounded-2xl rounded-tl-sm border border-line bg-surface-2/90 px-4 py-2.5 text-[14px] leading-relaxed text-fg shadow-sm">
                   <div v-if="live(m).reply" class="chat-reply whitespace-pre-wrap text-[13.5px] sm:text-[14px] leading-relaxed" v-html="lite(live(m).reply)" />
-                  <p v-else-if="live(m).status === 'failed'" class="text-danger font-medium text-xs">Could not answer: {{ live(m).error ?? "the run failed" }}</p>
-                  <p v-else-if="live(m).status === 'cancelled'" class="text-faint text-xs">{{ live(m).error ? `Stopped: ${(live(m).error ?? "").replace(/^stopped: /i, "")}` : "Cancelled." }}</p>
-                  <div v-else class="flex items-center gap-2.5 py-0.5 text-muted">
-                    <span class="inline-flex items-center gap-1">
-                      <span class="size-2 rounded-full bg-accent motion-safe:animate-bounce" />
-                      <span class="size-2 rounded-full bg-accent motion-safe:animate-bounce [animation-delay:150ms]" />
-                      <span class="size-2 rounded-full bg-accent motion-safe:animate-bounce [animation-delay:300ms]" />
-                    </span>
-                    <span class="text-xs font-medium">{{ live(m).status === "queued" ? "waiting for a runner…" : live(m).status === "waiting_approval" ? "waiting for your approval" : "thinking…" }}</span>
-                    <button type="button" class="btn btn-ghost btn-sm ml-1 min-h-8 px-2 text-[11px] text-danger" :disabled="stopping === m.job_id" title="Stop this reply" @click="stopReply(m.job_id)">Stop</button>
-                  </div>
+                  <!-- live status: queued (place + why), the step it is on, quiet, failed or stopped (+ why) -->
+                  <RunStatusCard
+                    v-if="live(m).status !== 'done'"
+                    :job-id="m.job_id"
+                    :compact="!!live(m).reply && live(m).status === 'running'"
+                    :class="live(m).reply ? 'mt-2' : ''"
+                    @stop="stopReply(m.job_id)"
+                    @retry="send(m.text)"
+                  />
+                  <p v-else-if="!live(m).reply && !m.renders?.length && !m.suggestions" class="text-xs text-muted">Finished without a written answer. Open <em>details</em> to see what it did, or ask again.</p>
                   <!-- videos the agent made (Editor): watch here, edit in the studio -->
                   <div v-if="m.renders?.length" class="mt-2 space-y-2">
                     <div v-for="r in m.renders" :key="r.id" class="space-y-1">
