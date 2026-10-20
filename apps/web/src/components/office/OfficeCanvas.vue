@@ -32,6 +32,18 @@ const error = ref("");
 let game: OfficeGame | null = null;
 let world: OfficeWorld | null = null;
 let disposed = false;
+let loaded: { map: TiledMap; layout: ReturnType<typeof parseOfficeMap> } | null = null;
+
+/** 3D (Taskuary-style isometric, default) or the original pixel office; remembered per browser. */
+type ViewMode = "3d" | "pixel";
+const readMode = (): ViewMode => {
+  try {
+    return localStorage.getItem("office.view") === "pixel" ? "pixel" : "3d";
+  } catch {
+    return "3d";
+  }
+};
+const mode = ref<ViewMode>(readMode());
 
 const activeCount = computed(() => office.agents.filter((a) => a.enabled).length);
 
@@ -59,33 +71,69 @@ async function getJson<T>(name: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Build the view for the current mode (the brain stays: switching keeps everyone where they are). */
+async function start() {
+  if (!loaded || !host.value || !world) return;
+  game?.destroy();
+  game = null;
+  const options = {
+    map: loaded.map,
+    layout: loaded.layout,
+    world,
+    assetBase: OFFICE_ASSETS,
+    onSelect: (id: string | null) => emit("select", id),
+    onApproval: (id: string) => emit("approval", id),
+    selected: () => props.selected,
+    interactive: true,
+    // screen (viewport) position, so the menu can sit exactly under the pointer
+    onMenu: (id: string, x: number, y: number) => {
+      const r = host.value?.getBoundingClientRect();
+      emit("menu", id, (r?.left ?? 0) + x, (r?.top ?? 0) + y);
+    },
+    onAction: (a: NonNullable<DropAction>) => emit("action", a),
+    onNear: (id: string | null) => emit("near", id),
+  };
+  if (mode.value === "3d") {
+    const mod = await import("../../office/scene3d/office3d.ts");
+    if (disposed || !host.value) return;
+    game = mod.createOffice3d(host.value, options);
+  } else {
+    const mod = await import("../../office/scene/game.ts");
+    if (disposed || !host.value) return;
+    game = mod.createOfficeGame(host.value, options);
+  }
+}
+
+async function setMode(m: ViewMode) {
+  if (m === mode.value) return;
+  mode.value = m;
+  try {
+    localStorage.setItem("office.view", m);
+  } catch {
+    /* private window: the choice lasts this visit */
+  }
+  status.value = "loading";
+  try {
+    await start();
+    status.value = "ready";
+  } catch (e) {
+    status.value = "error";
+    error.value = (e as Error).message;
+  }
+}
+
 onMounted(async () => {
   try {
-    const [map, mod] = await Promise.all([getJson<TiledMap>("office.tmj"), import("../../office/scene/game.ts")]);
+    const map = await getJson<TiledMap>("office.tmj");
     const layout = parseOfficeMap(map);
     const chars = await getJson<CharacterManifest>(layout.assets.characters);
     if (disposed || !host.value) return;
+    loaded = { map, layout };
     world = new OfficeWorld(layout, chars.meta.outfits);
     // your own character, named after you
     world.setMe(me.value?.name || me.value?.email?.split("@")[0] || "You");
     sync();
-    game = mod.createOfficeGame(host.value, {
-      map,
-      layout,
-      world,
-      assetBase: OFFICE_ASSETS,
-      onSelect: (id) => emit("select", id),
-      onApproval: (id) => emit("approval", id),
-      selected: () => props.selected,
-      interactive: true,
-      // screen (viewport) position, so the menu can sit exactly under the pointer
-      onMenu: (id, x, y) => {
-        const r = host.value?.getBoundingClientRect();
-        emit("menu", id, (r?.left ?? 0) + x, (r?.top ?? 0) + y);
-      },
-      onAction: (a) => emit("action", a),
-      onNear: (id) => emit("near", id),
-    });
+    await start();
     status.value = "ready";
   } catch (e) {
     status.value = "error";
@@ -117,6 +165,11 @@ onBeforeUnmount(() => {
         <span class="font-mono text-xs font-semibold tracking-wide text-accent whitespace-nowrap">HQ FLOOR DECK</span>
         <span class="text-faint">·</span>
         <span class="truncate text-xs text-muted font-medium">{{ activeCount }} agents on duty</span>
+      </div>
+      <div class="inline-flex shrink-0 rounded-md border border-line p-0.5" role="group" aria-label="Office view">
+        <button v-for="m in (['3d', 'pixel'] as const)" :key="m" class="rounded px-2 py-0.5 text-xs font-medium" :class="mode === m ? 'bg-accent/15 text-accent' : 'text-muted hover:text-fg'" :aria-pressed="mode === m" @click="setMode(m)">
+          {{ m === "3d" ? "3D" : "Pixel" }}
+        </button>
       </div>
     </div>
 

@@ -339,3 +339,31 @@
     color: var(--muted);
   }
 }
+
+/* 3D office: name labels and bubbles drawn over the canvas (office/scene3d/office3d.ts). Gemini 021 styles these. */
+.office3d-label {
+  font: 600 11px/1.2 system-ui, sans-serif;
+  color: #2c2a27;
+  background: rgb(255 255 255 / 0.92);
+  padding: 3px 7px;
+  border-radius: 999px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+  white-space: nowrap;
+}
+.office3d-bubble {
+  font: 16px/1 system-ui;
+  background: #fff;
+  padding: 5px 6px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+  cursor: pointer;
+}
+.office3d-bubble.needs-you {
+  outline: 2px solid #f2b04f;
+  animation: office3d-bob 0.7s ease-in-out infinite alternate;
+}
+@keyframes office3d-bob {
+  to {
+    translate: 0 -4px;
+  }
+}
