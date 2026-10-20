@@ -29,6 +29,7 @@ import {
 } from "lucide-vue-next";
 import BrandMark from "./BrandMark.vue";
 import RoomSwitcher from "../RoomSwitcher.vue";
+import WorkQueue from "./WorkQueue.vue";
 import { api } from "../../api/http.ts";
 import { resetAuthCheck } from "../../router.ts";
 import { useOffice } from "../../stores/office.ts";
@@ -206,6 +207,7 @@ async function logout() {
             </dd>
           </RouterLink>
         </dl>
+        <WorkQueue />
         <p v-if="!isOwner" class="truncate text-xs text-muted" :title="me?.email">Signed in as {{ me?.name || me?.email }} (member)</p>
         <button v-if="isOwner" class="btn w-full" :class="office.state.paused ? 'btn-primary' : confirmPause ? 'btn-signal' : 'btn-danger'" @click="togglePause">
           <component :is="office.state.paused ? Play : Pause" :size="14" />
