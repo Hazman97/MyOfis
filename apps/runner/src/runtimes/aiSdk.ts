@@ -6,7 +6,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { visionUsage } from "./vision.ts";
 import { generateText, isStepCount, streamText, tool, type LanguageModel, type StopCondition, type ToolSet } from "ai";
-import { AUTO_MODEL, MARKETING_JOB_TYPES, MEMORY_LIMITS, freshFetchImpl, modelCandidates, tolerantFetchImpl, memoryPromptSection, preferencesPrompt, type ProviderRuntimeConfig } from "@agent-office/shared";
+import { AUTO_MODEL, AUTO_TRIES, MARKETING_JOB_TYPES, accountError, modelGroup, MEMORY_LIMITS, freshFetchImpl, modelCandidates, tolerantFetchImpl, memoryPromptSection, preferencesPrompt, type ProviderRuntimeConfig } from "@agent-office/shared";
 import { TOOL_REGISTRY, runTool } from "@agent-office/tools";
 import { Script, scriptedModel } from "./scripted.ts";
 import { MessageStreamer, jobText } from "./text.ts";
@@ -296,10 +296,20 @@ export const aiSdkRuntime: AgentRuntime = {
     }
     // auto: a model that failed before doing anything (limit, payment, unavailable) → the next one.
     // Never after a tool ran: starting over could repeat work (a render, a post).
-    while ((streamError || (stuckRun >= STUCK_STEPS && !full.trim())) && !full && !toolsRan && !ctx.signal.aborted && tryNo + 1 < candidates.length) {
+    // an upstream that is out of credit (or logged out) fails for every model: skip all of its models
+    const deadGroups = new Set<string>();
+    let tries = 1;
+    while ((streamError || (stuckRun >= STUCK_STEPS && !full.trim())) && !full && !toolsRan && !ctx.signal.aborted && tries < AUTO_TRIES) {
       const why = streamError ? (streamError instanceof Error ? streamError.message : String(streamError)) : "it got stuck";
-      const next = candidates[++tryNo]!;
-      ctx.emit({ type: "agent.thinking", payload: { summary: `${model} did not work (${why.slice(0, 160)}); trying ${next}` } });
+      if (accountError(why) && modelGroup(model)) deadGroups.add(modelGroup(model));
+      let nextIdx = tryNo + 1;
+      while (nextIdx < candidates.length && deadGroups.has(modelGroup(candidates[nextIdx]!))) nextIdx++;
+      if (nextIdx >= candidates.length) break;
+      tryNo = nextIdx;
+      tries++;
+      const next = candidates[tryNo]!;
+      const skipped = deadGroups.size ? ` (skipping ${[...deadGroups].join(", ")}: out of credit or not logged in)` : "";
+      ctx.emit({ type: "agent.thinking", payload: { summary: `${model} did not work (${why.slice(0, 140)}); trying ${next}${skipped}` } });
       model = next;
       activeModels.set(ctx, model);
       stuckRun = 0;

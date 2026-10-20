@@ -6,6 +6,15 @@
 export const AUTO_MODEL = "auto";
 /** At most this many models are tried for one run. */
 export const AUTO_TRIES = 5;
+/** The candidate list auto picks from (tries skip whole upstreams that are out of credit). */
+export const AUTO_POOL = 20;
+
+/** The upstream a gateway model id comes from ("cl/anthropic/x" → "cl"); "" for plain ids. */
+export const modelGroup = (id: string): string => (id.includes("/") && id.split("/").length > 2 ? id.split("/")[0]! : "");
+
+/** An error about the account, not the model: every model of that upstream will fail the same way. */
+export const accountError = (message: string): boolean =>
+  /\b402\b|insufficient[_ ]?(credits|balance|quota)|out of credits|credits? required|billing|payment required|quota (exceeded|exhausted)|no active credentials|unauthori[sz]ed|\b401\b/i.test(message);
 
 /** How capable a model is likely to be for agent work (tools, long instructions). Higher is better. */
 export function modelRank(id: string): number {
@@ -40,5 +49,5 @@ export const rankModels = (ids: string[]): string[] =>
 /** The models a run may use, in order: one fixed model, or for "auto" the provider's best few. */
 export function modelCandidates(model: string, providerModels: string[] = []): string[] {
   if (model !== AUTO_MODEL) return [model];
-  return rankModels([...new Set(providerModels.filter((m) => m && m !== AUTO_MODEL))]).slice(0, AUTO_TRIES);
+  return rankModels([...new Set(providerModels.filter((m) => m && m !== AUTO_MODEL))]).slice(0, AUTO_POOL);
 }

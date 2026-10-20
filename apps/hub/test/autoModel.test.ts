@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { modelCandidates, rankModels } from "@agent-office/shared";
+import { accountError, modelCandidates, modelGroup, rankModels } from "@agent-office/shared";
 import { startFakeOpenAI, type FakeOpenAI } from "../../runner/test/fakeOpenAI.ts";
 import { createTestEnv, waitFor, type TestEnv } from "./helpers.ts";
 
@@ -12,7 +12,15 @@ test("models are ranked for agent work; auto tries the best few", () => {
   const ids = ["kc/poolside/laguna-xs-2.1:free", "cl/openai/gpt-5.4", "kc/nvidia/nemotron-3-ultra-550b-a55b:free", "cl/anthropic/claude-sonnet-4.6", "cl/anthropic/claude-opus-4.7", "kc/liquid/lfm-2.5-2.6b:free"];
   expect(rankModels(ids).slice(0, 4)).toEqual(["cl/anthropic/claude-opus-4.7", "cl/anthropic/claude-sonnet-4.6", "cl/openai/gpt-5.4", "kc/nvidia/nemotron-3-ultra-550b-a55b:free"]);
   expect(modelCandidates("cl/openai/gpt-5.4", ids)).toEqual(["cl/openai/gpt-5.4"]);
-  expect(modelCandidates("auto", ids)).toHaveLength(5);
+  expect(modelCandidates("auto", ids)).toHaveLength(6);
+  // an account error (no credit) means: skip every model of that upstream
+  expect(modelGroup("cl/anthropic/claude-opus-4.7")).toBe("cl");
+  expect(modelGroup("gpt-5.4")).toBe("");
+  expect(accountError('[cline/x] [402]: {"error":{"code":"insufficient_credits"}}')).toBe(true);
+  expect(accountError("No active credentials for provider: kiro")).toBe(true);
+  expect(accountError("Rate limit exceeded, try again in 20 s")).toBe(false);
+  expect(accountError("used 4021 tokens")).toBe(false);
+  expect(accountError("HTTP 402: payment")).toBe(true);
   expect(modelCandidates("auto", [])).toEqual([]);
 });
 
