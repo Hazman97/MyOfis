@@ -54,16 +54,21 @@ export function parseMcpBody(text: string, id: number): { result?: unknown; erro
   return null;
 }
 
-/** One MCP session per run (the session binds to a project with target_project). */
-const sessions = new WeakMap<ToolContext, { id: string | null; next: number }>();
+/**
+ * One MCP session per agent, kept across runs. OpenChatCut ties the project binding and every edit
+ * session to the MCP transport, and each chat message is a new run: a fresh transport per run left
+ * the last message's edit session "stale" and the agent blaming a second editor tab (2026-10-20).
+ */
+const sessions = new Map<string, { id: string | null; next: number }>();
+const sessionKey = (ctx: ToolContext) => ctx.agent.slug;
 
 async function rpc(ctx: ToolContext, method: string, params: Record<string, unknown>, notify = false): Promise<unknown> {
   const token = openchatcutToken();
   if (!token) throw new ToolDenied("OpenChatCut is not set up on this PC (install it and open it once; the token is in ~/.openchatcut/mcp-token). Tell the owner.");
-  let s = sessions.get(ctx);
+  let s = sessions.get(sessionKey(ctx));
   if (!s) {
     s = { id: null, next: 1 };
-    sessions.set(ctx, s);
+    sessions.set(sessionKey(ctx), s);
   }
   const id = s.next++;
   let res: Response;
@@ -91,8 +96,8 @@ async function rpc(ctx: ToolContext, method: string, params: Record<string, unkn
   if (res.status === 401 || res.status === 403) throw new ToolDenied("OpenChatCut refused the MCP token: open the app once so it writes ~/.openchatcut/mcp-token, or set OPENCHATCUT_MCP_TOKEN on the runner");
   if (res.status === 404 && s.id) {
     // the app restarted: start a new session next time
-    sessions.delete(ctx);
-    throw new ToolDenied("the OpenChatCut session ended (the app restarted?): try again");
+    sessions.delete(sessionKey(ctx));
+    throw new ToolDenied("the OpenChatCut connection was reset (the app restarted?): call target_project again, then begin_edit_session {reuseExisting: true}");
   }
   const msg = parseMcpBody(text, id);
   if (!msg) throw new ToolDenied(`OpenChatCut gave no answer (HTTP ${res.status})`);
@@ -101,7 +106,7 @@ async function rpc(ctx: ToolContext, method: string, params: Record<string, unkn
 }
 
 async function ensureSession(ctx: ToolContext): Promise<void> {
-  if (sessions.get(ctx)?.id) return;
+  if (sessions.get(sessionKey(ctx))?.id) return;
   await rpc(ctx, "initialize", { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: "agent-office", version: "1.0" } });
   await rpc(ctx, "notifications/initialized", {}, true);
 }

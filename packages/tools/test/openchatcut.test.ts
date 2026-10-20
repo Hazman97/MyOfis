@@ -69,6 +69,11 @@ test("one MCP session per run: initialize once, then tool calls with the session
   // initialize once, every later call carries the session
   expect(calls.filter((c) => c.method === "initialize")).toHaveLength(1);
   expect(calls.filter((c) => c.method !== "initialize").every((c) => c.session === "sess-1")).toBe(true);
+  // the next chat message is a new run of the same agent: it keeps the MCP session (binding + edit session)
+  const { ctx: next } = makeCtx(join(dir, "ws-next"));
+  expect((await runTool(TOOL_REGISTRY.openchatcut!, { tool: "list_projects", arguments: {} }, next)).ok).toBe(true);
+  expect(calls.filter((c) => c.method === "initialize")).toHaveLength(1);
+  expect(calls.at(-1)?.session).toBe("sess-1");
   // an unknown tool is a failed result, and deleting is the owner's job
   expect((await runTool(TOOL_REGISTRY.openchatcut!, { tool: "nope", arguments: {} }, ctx)).ok).toBe(false);
   expect((await runTool(TOOL_REGISTRY.openchatcut!, { tool: "delete_project", arguments: { id: "p1" } }, ctx)).ok).toBe(false);
