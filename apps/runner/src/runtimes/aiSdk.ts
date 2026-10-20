@@ -103,6 +103,29 @@ interface StepLike {
 const fruitless = (s: StepLike) => !s.text.trim() && s.toolResults.length === 0;
 /** Steps in a row like that before the run stops (some local models loop forever on a bad call). */
 export const STUCK_STEPS = 3;
+/** The same tool call (same tool, same input) this many times in a row is a loop. */
+export const REPEAT_CALLS = 3;
+
+interface StepCalls {
+  toolCalls: { toolName: string; input: unknown }[];
+}
+const callKey = (s: StepCalls) => s.toolCalls.map((c) => `${c.toolName}:${JSON.stringify(c.input)}`).sort().join("|");
+
+/** True when the last REPEAT_CALLS steps made exactly the same tool calls. */
+export function repeating(steps: StepCalls[]): boolean {
+  if (steps.length < REPEAT_CALLS) return false;
+  const last = steps.slice(-REPEAT_CALLS).map(callKey);
+  return last[0] !== "" && last.every((k) => k === last[0]);
+}
+
+export const repeatStop =
+  (): StopCondition<ToolSet> =>
+  ({ steps }) =>
+    repeating(steps as unknown as StepCalls[]);
+
+/** The tokens one run may use: its own cap, or what is left of today's budget if that is less. */
+export const runTokenLimit = (cap: number | undefined, budgetLeft: number | null): number | null =>
+  cap ? (budgetLeft === null ? cap : Math.min(cap, budgetLeft)) : budgetLeft;
 
 /** Stop when the model is stuck: STUCK_STEPS steps in a row with no text and no working tool call. */
 export const stuckStop =
@@ -222,7 +245,7 @@ export const aiSdkRuntime: AgentRuntime = {
         instructions: `${agent.system_prompt}\n${SAFETY_PREAMBLE}${projectsNote(ctx)}${contentNote(ctx)}${memoryNote(ctx)}${handoffNote(ctx)}${preferencesPrompt(agent.config.preferences)}`,
         ...input,
         tools,
-        stopWhen: [isStepCount(agent.config.max_steps), budgetStop(ctx.assignment.budget_left_tokens), stuckStop()],
+        stopWhen: [isStepCount(agent.config.max_steps), budgetStop(runTokenLimit(agent.config.max_run_tokens, ctx.assignment.budget_left_tokens)), stuckStop(), repeatStop()],
         repairToolCall: repairForBridge(agent.tools) as never,
         abortSignal: ctx.signal,
         maxOutputTokens: 8000,
@@ -263,6 +286,15 @@ export const aiSdkRuntime: AgentRuntime = {
     if (stuckRun >= STUCK_STEPS && !full.trim()) {
       throw new Error(`the model (${agent.model}) got stuck: ${STUCK_STEPS} steps in a row without an answer or a working tool call. Try a stronger model for this agent, or a simpler request.`);
     }
+    const allSteps = (await result.steps) as unknown as StepCalls[];
+    if (repeating(allSteps)) {
+      const what = allSteps.at(-1)!.toolCalls.map((c) => c.toolName).join(", ");
+      if (!full.trim()) throw new Error(`stopped a loop: the model made the same call (${what}) ${REPEAT_CALLS} times in a row. Try a stronger model, or rephrase the request.`);
+      ctx.emit({ type: "agent.thinking", payload: { summary: `Stopped a loop: the same call (${what}) ${REPEAT_CALLS} times in a row` } });
+    }
+    if (allSteps.length >= agent.config.max_steps) {
+      ctx.emit({ type: "agent.thinking", payload: { summary: `Stopped at the step limit (${agent.config.max_steps} steps). Raise "Max steps" in Agents if this job needs more.` } });
+    }
 
     await writeFile(join(ctx.workspace, "output.md"), full);
     ctx.emit({ type: "artifact.created", payload: { kind: "file", title: "output.md", path: "output.md" } });
@@ -271,7 +303,10 @@ export const aiSdkRuntime: AgentRuntime = {
     let extraIn = 0;
     let extraOut = 0;
     const toolCalls = (await result.steps).reduce((n, s) => n + s.toolCalls.length, 0);
-    if (wantsReview(ctx, toolCalls) && !ctx.signal.aborted) {
+    const runLimit = runTokenLimit(agent.config.max_run_tokens, ctx.assignment.budget_left_tokens);
+    const overLimit = runLimit !== null && (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) >= runLimit;
+    // no learning pass after a run that hit its limits or looped
+    if (wantsReview(ctx, toolCalls) && !ctx.signal.aborted && !overLimit && !repeating(allSteps)) {
       ctx.emit({ type: "agent.thinking", payload: { summary: "Looking back: anything worth remembering?" } });
       try {
         const learnTools = Object.fromEntries(Object.entries(tools).filter(([n]) => [...LEARNING, "skills_list", "skill_view"].includes(n)));
@@ -297,6 +332,8 @@ export const aiSdkRuntime: AgentRuntime = {
     const left = ctx.assignment.budget_left_tokens;
     if (left !== null && (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) >= left) {
       ctx.emit({ type: "agent.thinking", payload: { summary: "Stopped early: today's token budget is used up." } });
+    } else if (overLimit) {
+      ctx.emit({ type: "agent.thinking", payload: { summary: `Stopped early: this run used its token limit (${agent.config.max_run_tokens.toLocaleString()} tokens). Raise "Max tokens per run" in Agents if this job needs more.` } });
     }
     const seen = visionUsage.get(ctx) ?? { in: 0, out: 0 };
     return { tokens_in: (usage.inputTokens ?? 0) + extraIn + seen.in, tokens_out: (usage.outputTokens ?? 0) + extraOut + seen.out };

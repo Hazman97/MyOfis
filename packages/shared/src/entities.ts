@@ -101,6 +101,10 @@ export const AgentConfig = z.object({
   http_allowlist: z.array(z.string().min(1)).default([]),
   /** Upper bound on model <-> tool round trips per run. */
   max_steps: z.number().int().min(1).max(200).default(30),
+  /** A run is stopped after this many minutes of work (time spent waiting for your approval does not count). */
+  max_run_minutes: z.number().int().min(1).max(240).default(20),
+  /** A run stops once it has used this many tokens (input + output), whatever is left of the daily budget. */
+  max_run_tokens: z.number().int().min(5_000).max(5_000_000).default(250_000),
   /**
    * Which engine runs the agent. "ai-sdk": our own tool loop. "opencode": OpenCode (opencode.ai) does the
    * coding in a cloned repo; Agent Office keeps permissions/approvals and does commit, push and PR itself.

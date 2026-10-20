@@ -193,7 +193,7 @@ async function testConnection() {
     <!-- Accounts List (after key is saved) -->
     <div v-if="tk?.has_key" class="space-y-2.5 pt-1">
       <div class="flex items-center justify-between">
-        <span class="label !mb-0">Connected TikTok Accounts</span>
+        <span class="label mb-0!">Connected TikTok Accounts</span>
         <span v-if="tk.accounts.length" class="text-[11px] font-mono text-faint">
           {{ tk.accounts.length }} {{ tk.accounts.length === 1 ? "account" : "accounts" }}
         </span>
@@ -204,7 +204,7 @@ async function testConnection() {
         <label
           v-for="acc in tk.accounts"
           :key="acc.id"
-          class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 min-h-[44px] transition-all select-none"
+          class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 min-h-11 transition-all select-none"
           :class="[
             acc.needs_reconnection
               ? 'border-danger/50 bg-danger-soft/20 text-danger'

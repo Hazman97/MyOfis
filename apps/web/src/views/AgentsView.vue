@@ -38,6 +38,8 @@ const blank = () => ({
   read_paths: "",
   http_allowlist: "",
   max_steps: 30,
+  max_run_minutes: 20,
+  max_run_tokens: 250_000,
   runtime: "ai-sdk" as "ai-sdk" | "opencode",
   self_review: true,
   // set from the agent panel (office); kept as is here
@@ -92,6 +94,8 @@ function edit(a: Agent | null) {
       read_paths: a.config.read_paths.join("\n"),
       http_allowlist: a.config.http_allowlist.join("\n"),
       max_steps: a.config.max_steps,
+      max_run_minutes: a.config.max_run_minutes ?? 20,
+      max_run_tokens: a.config.max_run_tokens ?? 250_000,
       runtime: a.config.runtime,
       self_review: a.config.self_review ?? true,
       preferences: AgentPreferences.parse(a.config.preferences ?? {}),
@@ -108,10 +112,10 @@ async function save() {
   error.value = "";
   saving.value = true;
   try {
-    const { shell_allowlist, read_paths, http_allowlist, max_steps, runtime, self_review, preferences, skills, clip_folder, auto_publish, auto_publish_daily_max, slug, ...rest } = form;
+    const { shell_allowlist, read_paths, http_allowlist, max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder, auto_publish, auto_publish_daily_max, slug, ...rest } = form;
     const body = {
       ...rest,
-      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, runtime, self_review, preferences, skills, clip_folder: clip_folder.trim(), auto_publish, auto_publish_daily_max },
+      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder: clip_folder.trim(), auto_publish, auto_publish_daily_max },
     };
     if (editing.value === "new") await api.createAgent({ ...body, slug });
     else await api.updateAgent(editing.value!, body);
@@ -339,6 +343,16 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
             <div>
               <label class="label" for="ag-steps">Max steps per run</label>
               <input id="ag-steps" v-model.number="form.max_steps" type="number" min="1" max="200" class="input font-mono text-xs" />
+            </div>
+            <div>
+              <label class="label" for="ag-minutes">Max minutes per run</label>
+              <input id="ag-minutes" v-model.number="form.max_run_minutes" type="number" min="1" max="240" class="input font-mono text-xs" />
+              <p class="mt-1 text-[11px] text-faint">Stopped after this. Waiting for your approval does not count.</p>
+            </div>
+            <div>
+              <label class="label" for="ag-run-tokens">Max tokens per run</label>
+              <input id="ag-run-tokens" v-model.number="form.max_run_tokens" type="number" min="5000" step="10000" class="input font-mono text-xs" />
+              <p class="mt-1 text-[11px] text-faint">One job never uses more than this, even if the daily budget allows.</p>
             </div>
             <label class="flex items-center gap-2 self-end pb-2 text-xs font-medium cursor-pointer">
               <input v-model="form.enabled" type="checkbox" class="accent-accent" /> Enabled

@@ -120,7 +120,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
       class="flex items-center gap-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       :class="
         compact
-          ? 'h-9 max-w-[130px] sm:max-w-[160px] rounded-lg border border-line bg-surface-2/70 px-2 py-1 text-xs font-medium text-fg hover:border-line-strong hover:bg-surface-2'
+          ? 'h-9 max-w-32.5 sm:max-w-40 rounded-lg border border-line bg-surface-2/70 px-2 py-1 text-xs font-medium text-fg hover:border-line-strong hover:bg-surface-2'
           : 'w-full justify-between rounded-lg border border-line bg-surface-2/60 px-2.5 py-2 text-sm font-medium text-fg hover:border-line-strong hover:bg-surface-2'
       "
       aria-haspopup="listbox"
@@ -136,7 +136,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
           class="shrink-0"
           :class="kindColor(current?.kind ?? 'room')"
         />
-        <span class="truncate font-medium text-fg" :class="compact ? 'text-xs max-w-[80px] sm:max-w-[110px]' : 'text-sm'">
+        <span class="truncate font-medium text-fg" :class="compact ? 'text-xs max-w-20 sm:max-w-27.5' : 'text-sm'">
           {{ current ? roomLabel(current) : "Select room" }}
         </span>
       </div>

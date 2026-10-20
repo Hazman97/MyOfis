@@ -86,7 +86,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
           class="size-1.5 rounded-full shrink-0"
           :class="agent?.enabled ? 'bg-accent shadow-[0_0_6px_rgba(16,185,129,0.5)]' : 'bg-muted/50'"
         />
-        <span class="truncate max-w-[90px]">{{ agent?.name ?? "Agent" }}</span>
+        <span class="truncate max-w-22.5">{{ agent?.name ?? "Agent" }}</span>
       </div>
 
       <!-- Radial Action Buttons -->
@@ -95,7 +95,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         :key="it.key"
         type="button"
         role="menuitem"
-        class="menu-item absolute flex size-11 min-w-[44px] min-h-[44px] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-0.5 rounded-full border bg-surface/95 text-[9px] font-semibold shadow-card backdrop-blur-md transition-all duration-150 hover:scale-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-accent"
+        class="menu-item absolute flex size-11 min-w-11 min-h-11 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-0.5 rounded-full border bg-surface/95 text-[9px] font-semibold shadow-card backdrop-blur-md transition-all duration-150 hover:scale-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-accent"
         :class="[
           it.key === 'pause' && !agent?.enabled
             ? 'border-accent/40 text-accent bg-accent-soft/80 hover:bg-accent hover:text-accent-ink shadow-[0_0_12px_rgba(16,185,129,0.25)]'

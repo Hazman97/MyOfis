@@ -133,13 +133,13 @@ async function toggleSkill(agent: SkillAssignments["agents"][number], skillName:
           <table class="w-full border-collapse text-left text-xs">
             <thead>
               <tr class="border-b border-line bg-surface-2/50 text-[11px] font-semibold text-muted">
-                <th class="sticky left-0 z-10 bg-surface-2/95 px-4 py-2.5 backdrop-blur-xs min-w-[220px]">
+                <th class="sticky left-0 z-10 bg-surface-2/95 px-4 py-2.5 backdrop-blur-xs min-w-55">
                   Agent & Mode
                 </th>
                 <th
                   v-for="skill in assignments.skills"
                   :key="skill"
-                  class="px-3 py-2.5 font-mono text-center font-medium max-w-[140px] truncate"
+                  class="px-3 py-2.5 font-mono text-center font-medium max-w-35 truncate"
                   :title="skill"
                 >
                   {{ skill }}

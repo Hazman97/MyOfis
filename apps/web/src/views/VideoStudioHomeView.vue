@@ -169,7 +169,7 @@ async function add(e: Event) {
         <li v-for="v in videos" :key="v.id">
           <RouterLink
             :to="{ name: 'studio', params: { id: v.id } }"
-            class="card block p-4 space-y-3 hover:border-accent hover:shadow-card group transition-all bg-surface/80 h-full flex flex-col justify-between"
+            class="card p-4 space-y-3 hover:border-accent hover:shadow-card group transition-all bg-surface/80 h-full flex flex-col justify-between"
           >
             <div class="space-y-2.5">
               <!-- Card Top Badges -->

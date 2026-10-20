@@ -47,6 +47,8 @@ export const isVideoType = (type: string) => type in VIDEO_TYPES;
  * video_render = the Video Studio's "Render again"; video_transcribe = its "Transcribe".
  */
 export const DIRECT_JOBS: Record<string, string> = { video_render: "video_edit", video_transcribe: "video_transcribe" };
+/** Renders and transcripts of long videos take time: they get at least this many minutes. */
+export const DIRECT_JOB_MIN_MINUTES = 120;
 
 // ---------------------------------------------------------------- Editor's edit plan (video_edit input; the studio edits it too)
 

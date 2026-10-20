@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { STUCK_STEPS, repairForBridge, stuckStop, toolErrors } from "../src/runtimes/aiSdk.ts";
+import { STUCK_STEPS, repairForBridge, repeatStop, repeating, runTokenLimit, stuckStop, toolErrors } from "../src/runtimes/aiSdk.ts";
 
 const step = (text: string, ok: number, errors: { toolName: string; error: unknown }[] = []) => ({
   text,
@@ -32,4 +32,22 @@ test("an OpenChatCut tool called by its own name goes through the openchatcut br
   });
   // agents without the bridge are left alone
   expect(await repairForBridge(["memory"])({ toolCall: call("get_editor_url", {}), error: { name: "AI_NoSuchToolError" } })).toBeNull();
+});
+
+test("the same tool call 3 times in a row is a loop; different calls are not", async () => {
+  const call = (toolName: string, input: unknown) => ({ toolCalls: [{ toolName, input }] });
+  const same = call("openchatcut", { tool: "list_projects", arguments: {} });
+  expect(repeating([same, same])).toBe(false);
+  expect(repeating([call("memory", {}), same, same, same])).toBe(true);
+  expect(repeating([same, call("openchatcut", { tool: "read_timeline", arguments: {} }), same])).toBe(false);
+  // steps without tool calls are not a "same call" loop (the stuck guard handles them)
+  expect(repeating([{ toolCalls: [] }, { toolCalls: [] }, { toolCalls: [] }])).toBe(false);
+  expect(await repeatStop()({ steps: [same, same, same] as never })).toBe(true);
+});
+
+test("a run's token limit is its own cap, or today's budget when that is smaller", () => {
+  expect(runTokenLimit(250_000, null)).toBe(250_000);
+  expect(runTokenLimit(250_000, 40_000)).toBe(40_000);
+  expect(runTokenLimit(undefined, 40_000)).toBe(40_000);
+  expect(runTokenLimit(undefined, null)).toBeNull();
 });

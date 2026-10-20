@@ -56,6 +56,17 @@ const STARTERS: Record<string, string[]> = {
 const starters = computed(() => STARTERS[agent.value?.slug ?? ""] ?? (isMarketing.value ? STARTERS.marketing! : ["What can you help me with?"]));
 
 /** Live reply for a message: the run's streamed text from the event store. */
+/** Stop a reply that takes too long (cancels its job; the run ends within seconds). */
+const stopping = ref<string | null>(null);
+async function stopReply(jobId: string) {
+  stopping.value = jobId;
+  try {
+    await api.cancelJob(jobId);
+  } finally {
+    stopping.value = null;
+  }
+}
+
 function live(m: ChatMessage) {
   const runId = office.state.jobs[m.job_id]?.run_ids.at(-1) ?? m.run_id;
   const run = runId ? office.state.runs[runId] : undefined;
@@ -386,7 +397,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                 <div class="rounded-2xl rounded-tl-sm border border-line bg-surface-2/90 px-4 py-2.5 text-[14px] leading-relaxed text-fg shadow-sm">
                   <div v-if="live(m).reply" class="chat-reply whitespace-pre-wrap text-[13.5px] sm:text-[14px] leading-relaxed" v-html="lite(live(m).reply)" />
                   <p v-else-if="live(m).status === 'failed'" class="text-danger font-medium text-xs">Could not answer: {{ live(m).error ?? "the run failed" }}</p>
-                  <p v-else-if="live(m).status === 'cancelled'" class="text-faint text-xs">Cancelled.</p>
+                  <p v-else-if="live(m).status === 'cancelled'" class="text-faint text-xs">{{ live(m).error ? `Stopped: ${(live(m).error ?? "").replace(/^stopped: /i, "")}` : "Cancelled." }}</p>
                   <div v-else class="flex items-center gap-2.5 py-0.5 text-muted">
                     <span class="inline-flex items-center gap-1">
                       <span class="size-2 rounded-full bg-accent motion-safe:animate-bounce" />
@@ -394,6 +405,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                       <span class="size-2 rounded-full bg-accent motion-safe:animate-bounce [animation-delay:300ms]" />
                     </span>
                     <span class="text-xs font-medium">{{ live(m).status === "queued" ? "waiting for a runner…" : live(m).status === "waiting_approval" ? "waiting for your approval" : "thinking…" }}</span>
+                    <button type="button" class="btn btn-ghost btn-sm ml-1 min-h-8 px-2 text-[11px] text-danger" :disabled="stopping === m.job_id" title="Stop this reply" @click="stopReply(m.job_id)">Stop</button>
                   </div>
                   <!-- videos the agent made (Editor): watch here, edit in the studio -->
                   <div v-if="m.renders?.length" class="mt-2 space-y-2">

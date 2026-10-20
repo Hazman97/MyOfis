@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentEvent } from "@agent-office/shared";
+import { eq } from "drizzle-orm";
+import { approvals } from "../src/db/schema.ts";
 import { createTestEnv, waitFor, type TestEnv } from "./helpers.ts";
 
 let env: TestEnv;
@@ -31,6 +33,32 @@ const job = (e: TestEnv, agentId: string, script: unknown[]) =>
 
 const find = <T extends AgentEvent["type"]>(events: AgentEvent[], type: T) =>
   events.find((e): e is Extract<AgentEvent, { type: T }> => e.type === type);
+
+describe("run time limit", () => {
+  test("a run over its minutes is stopped; time waiting for the owner's approval does not count", async () => {
+    env = await createTestEnv();
+    await env.pairRunner();
+    const web = await env.web();
+    const { id: agentId } = await scriptedAgent(env);
+    await env.api(`/api/agents/${agentId}`, { method: "PATCH", body: { config: { max_run_minutes: 5 } } });
+    const { body } = await job(env, agentId, [{ tool: "run_command", input: { command: "bun --print 1+1" } }, { text: "ok" }]);
+    const ask = await waitFor(() => find(web.events, "agent.needs_approval"), 8000, "needs_approval");
+    const runId = ask.run_id!;
+
+    // waiting for the owner: never stopped, however long
+    env.hub.hub.enforceTimeLimits(Date.now() + 60 * 60_000);
+    expect(env.hub.hub.store.state.runs[runId]?.status).toBe("running");
+
+    // the owner decided 10 minutes ago and the run is still busy: over its 5 minutes → stopped
+    const ago = new Date(Date.now() - 10 * 60_000).toISOString();
+    env.hub.hub.db.update(approvals).set({ status: "approved", decided_at: ago }).where(eq(approvals.id, ask.payload.approval_id)).run();
+    env.hub.hub.enforceTimeLimits(Date.now() + 6 * 60_000);
+    await waitFor(() => env.hub.hub.store.state.jobs[body.job.id]?.status === "cancelled", 15_000, "time limit cancel");
+    const cancelled = await waitFor(() => find(web.events, "job.cancelled"), 5000, "job.cancelled");
+    expect(cancelled.payload.reason).toContain("time limit (5 min)");
+    expect(env.hub.hub.store.state.runs[runId]?.status).toBe("cancelled");
+  });
+});
 
 describe("tool loop + approvals", () => {
   test("allowlisted command runs without asking", async () => {

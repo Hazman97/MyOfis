@@ -142,7 +142,7 @@ function chipTitle(agent: SkillAssignments["agents"][number]): string {
           :size="18"
           class="shrink-0"
         />
-        <span class="truncate max-w-[120px]">{{ agent.name }}</span>
+        <span class="truncate max-w-30">{{ agent.name }}</span>
 
         <span
           v-if="agent.skills === 'all'"

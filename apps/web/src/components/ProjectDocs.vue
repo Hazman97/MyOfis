@@ -160,7 +160,7 @@ const currentDocTitle = computed(() => {
           <Search :size="14" class="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
           <input
             v-model="q"
-            class="input min-w-0 pl-8 text-xs sm:text-sm min-h-[40px]"
+            class="input min-w-0 pl-8 text-xs sm:text-sm min-h-10"
             placeholder="Search all documents… (e.g. power supply, specs)"
             aria-label="Search documents"
           />
@@ -174,14 +174,14 @@ const currentDocTitle = computed(() => {
             <X :size="13" />
           </button>
         </div>
-        <button type="submit" class="btn btn-sm min-h-[40px] px-3.5 shrink-0">
+        <button type="submit" class="btn btn-sm min-h-10 px-3.5 shrink-0">
           <Search :size="14" />
           <span>Search</span>
         </button>
       </form>
 
       <label
-        class="btn btn-primary btn-sm min-h-[40px] px-3.5 cursor-pointer shrink-0 transition-all"
+        class="btn btn-primary btn-sm min-h-10 px-3.5 cursor-pointer shrink-0 transition-all"
         :class="busy && 'opacity-60 pointer-events-none'"
       >
         <input type="file" accept="application/pdf,.pdf,.docx,.txt,.md" class="hidden" :disabled="busy" @change="add" />
@@ -358,7 +358,7 @@ const currentDocTitle = computed(() => {
             </span>
             <a
               :href="api.uploadUrl(d.upload_id, true)"
-              class="btn btn-ghost btn-sm min-h-[32px] px-2 text-muted hover:text-fg"
+              class="btn btn-ghost btn-sm min-h-8 px-2 text-muted hover:text-fg"
               download
               :aria-label="`Download ${d.title}`"
               title="Download original file"

@@ -200,7 +200,7 @@ async function add() {
                 <span class="size-3.5 rounded-full bg-accent/20 text-accent font-mono text-[8px] font-bold inline-flex items-center justify-center">
                   {{ getInitials(it.owner) }}
                 </span>
-                <span class="truncate max-w-[70px]">{{ it.owner }}</span>
+                <span class="truncate max-w-17.5">{{ it.owner }}</span>
               </span>
             </div>
           </div>
@@ -212,7 +212,7 @@ async function add() {
     <div class="sm:hidden flex items-center justify-between">
       <button
         type="button"
-        class="btn btn-sm btn-primary min-h-[40px] px-3.5 w-full justify-between"
+        class="btn btn-sm btn-primary min-h-10 px-3.5 w-full justify-between"
         @click="formOpen = !formOpen"
       >
         <span class="flex items-center gap-1.5">
@@ -231,7 +231,7 @@ async function add() {
     >
       <label class="block">
         <span class="label text-xs">Type</span>
-        <select v-model="form.kind" class="input text-xs sm:text-sm min-h-[40px]">
+        <select v-model="form.kind" class="input text-xs sm:text-sm min-h-10">
           <option v-for="k in KINDS" :key="k.kind" :value="k.kind">
             {{ k.label.replace(/s$/, "") }}
           </option>
@@ -245,7 +245,7 @@ async function add() {
           required
           minlength="3"
           maxlength="600"
-          class="input text-xs sm:text-sm min-h-[40px]"
+          class="input text-xs sm:text-sm min-h-10"
           placeholder="e.g. Site visit Kluang / Approved layout"
         />
       </label>
@@ -255,7 +255,7 @@ async function add() {
         <input
           v-model="form.owner"
           maxlength="80"
-          class="input text-xs sm:text-sm min-h-[40px]"
+          class="input text-xs sm:text-sm min-h-10"
           placeholder="e.g. Irfan / MARDI"
         />
       </label>
@@ -265,13 +265,13 @@ async function add() {
         <input
           v-model="form.due_date"
           type="date"
-          class="input text-xs sm:text-sm min-h-[40px]"
+          class="input text-xs sm:text-sm min-h-10"
         />
       </label>
 
       <button
         type="submit"
-        class="btn btn-primary btn-sm min-h-[40px] px-4 font-semibold"
+        class="btn btn-primary btn-sm min-h-10 px-4 font-semibold"
         :disabled="form.text.trim().length < 3"
       >
         <Plus :size="14" />
@@ -329,7 +329,7 @@ async function add() {
           <button
             v-if="e.kind === 'action' || e.kind === 'date'"
             type="button"
-            class="btn btn-ghost btn-sm mt-0.5 size-8 min-w-[32px] sm:size-7 sm:min-w-[28px] rounded-md p-0 transition-colors"
+            class="btn btn-ghost btn-sm mt-0.5 size-8 min-w-8 sm:size-7 sm:min-w-7 rounded-md p-0 transition-colors"
             :class="e.status === 'done' ? 'text-accent hover:bg-accent-soft' : 'text-faint hover:text-accent hover:bg-surface-2'"
             :aria-label="e.status === 'open' ? 'Mark done' : 'Open again'"
             :title="e.status === 'open' ? 'Mark done' : 'Open again'"
@@ -347,7 +347,7 @@ async function add() {
           <!-- Item Text & Metadata -->
           <div class="min-w-0 flex-1 space-y-1">
             <p
-              class="text-xs sm:text-sm font-medium text-fg leading-snug break-words"
+              class="text-xs sm:text-sm font-medium text-fg leading-snug wrap-break-word"
               :class="e.status === 'done' && 'line-through text-muted'"
             >
               {{ e.text }}

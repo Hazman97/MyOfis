@@ -8,6 +8,7 @@ import {
   requiredPrograms,
   skillsFor,
   DIRECT_JOBS,
+  DIRECT_JOB_MIN_MINUTES,
   type HubToRunner,
   type ContentDraft,
   type Agent,
@@ -69,6 +70,9 @@ export const TIMINGS = {
 const TERMINAL = new Set(["done", "failed", "cancelled"]);
 /** Tester -> Coder -> ... stops after this many hops (prevents ping-pong loops). */
 export const MAX_HANDOFF_DEPTH = 5;
+/** Agents with these tools get at least VIDEO_RUN_MIN_MINUTES per run (renders, transcripts, OpenChatCut). */
+const VIDEO_RUN_TOOLS = new Set(["video_edit", "video_transcribe", "openchatcut"]);
+const VIDEO_RUN_MIN_MINUTES = 60;
 /** owner_feedback on drafts an agent posted without approval (counts toward its daily limit). */
 export const AUTO_PUBLISHED = "auto-published";
 /** A run that tries to save more drafts than this is stopped from flooding the inbox. */
@@ -87,6 +91,8 @@ type AgentRow = typeof agents.$inferSelect;
 export class Hub {
   readonly conns = new Map<string, RunnerConn>();
   readonly #cancelTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Why the hub cancelled a run (time limit, owner, pause), kept until the runner confirms. */
+  readonly #cancelReasons = new Map<string, string>();
   readonly #assignedAt = new Map<string, number>();
   readonly #offlineSince = new Map<string, number>();
   #dispatching = false;
@@ -240,6 +246,7 @@ export class Hub {
       return;
     }
     conn.send({ type: "run.cancel", run_id: runId });
+    this.#cancelReasons.set(runId, reason);
     this.#cancelTimers.set(
       runId,
       setTimeout(() => {
@@ -546,6 +553,10 @@ Error: ${r.error}` : ""}` });
     if (timer) clearTimeout(timer);
     this.#cancelTimers.delete(runId);
     this.#assignedAt.delete(runId);
+    // the runner only knows "cancelled by hub": keep the hub's own reason (e.g. the time limit)
+    const why = this.#cancelReasons.get(runId);
+    this.#cancelReasons.delete(runId);
+    if (why && outcome.status === "cancelled" && !outcome.error?.startsWith(why)) outcome = { ...outcome, error: why };
 
     const agent = getAgent(this.db, run.agent_id);
     const provider = agent ? getProviderBySlug(this.db, agent.provider, aiWorkspace(this.db, agent.workspace_id)) : undefined;
@@ -1195,6 +1206,32 @@ Error: ${r.error}` : ""}` });
       for (const r of orphans) {
         this.finishRun(r.id, { status: "failed", error: "runner went offline", tokens_in: r.tokens_in, tokens_out: r.tokens_out });
       }
+    }
+    this.enforceTimeLimits(now);
+  }
+
+  /**
+   * Every run has a time limit (the agent's max_run_minutes; renders and transcripts at least two
+   * hours). Time spent waiting for the owner's approval or for another agent's answer does not
+   * count: the clock restarts after the last decision, and a run with an open question is skipped.
+   * Enforced here, so it works for every runtime (AI SDK, OpenCode, direct) and a stuck runner.
+   */
+  enforceTimeLimits(now = Date.now()): void {
+    const running = this.db.select().from(runs).where(eq(runs.status, "running")).all();
+    if (!running.length) return;
+    const waiting = this.#waitingOnConsult();
+    for (const r of running) {
+      if (!r.accepted || waiting.has(r.id) || this.#cancelTimers.has(r.id)) continue;
+      const asks = this.db.select({ status: approvals.status, decided_at: approvals.decided_at }).from(approvals).where(eq(approvals.run_id, r.id)).all();
+      if (asks.some((a) => a.status === "pending")) continue;
+      const since = Math.max(Date.parse(r.started_at), ...asks.map((a) => (a.decided_at ? Date.parse(a.decided_at) : 0)));
+      const agent = getAgent(this.db, r.agent_id);
+      const job = getJob(this.db, r.job_id);
+      let minutes = agent ? toAgent(agent).config.max_run_minutes : 20;
+      if (job && DIRECT_JOBS[job.type]) minutes = Math.max(minutes, DIRECT_JOB_MIN_MINUTES);
+      // rendering or transcribing a long video inside a run takes a while
+      else if (agent?.tools.some((t) => VIDEO_RUN_TOOLS.has(t))) minutes = Math.max(minutes, VIDEO_RUN_MIN_MINUTES);
+      if (now - since > minutes * 60_000) this.cancelRun(r.id, `stopped: the run went over its time limit (${minutes} min). Raise "Max minutes per run" in Agents if this job really needs longer.`);
     }
   }
 }

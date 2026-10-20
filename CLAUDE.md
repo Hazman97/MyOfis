@@ -279,6 +279,17 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
     - `openchatcut_import {video, editSessionId}`: a job file's local path → `import_asset`.
     One MCP session per run (WeakMap on the ToolContext). Program `openchatcut` is detected by the token file.
   - **Agent** `studio-pro` ("Studio Pro", `packages/agents/src/openchatcutEditor.ts`): edits in the app; the owner exports there and uses "Use my own edit" to bring it back. MP4 export is not available over MCP.
+- **Run limits** (owner: "no endless loops", 2026-10-20). Every run is bounded five ways:
+  1. **Steps:** `max_steps`.
+  2. **Time:** `AgentConfig.max_run_minutes`, default 20. The hub enforces it in `enforceTimeLimits()` from `sweep()`, so it works for every runtime.
+     - Time waiting for an approval or a consult does not count; the clock restarts after the last decision.
+     - Direct jobs get at least 120 min, agents with video_edit / video_transcribe / openchatcut at least 60 min.
+     - The hub keeps its own cancel reason (`#cancelReasons`), because the runner only says "cancelled by hub".
+  3. **Tokens:** `max_run_tokens`, default 250k, capped by the daily budget (`runTokenLimit`).
+  4. **Stuck:** 3 steps with no text and no working tool → fail.
+  5. **Repeat:** the same tool call 3 times in a row → stop.
+  - **Visibility:** failed tool calls show in the run log ("Tool call failed: …"); unknown OpenChatCut tool names are repaired into the bridge.
+  - **UI:** Chat has a **Stop** button on a pending reply and shows why a run was stopped. AgentsView has the limit fields.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
 
 ## Status and next steps (handoff, 2026-10-17)
