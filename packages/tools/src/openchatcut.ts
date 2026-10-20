@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { freshFetch } from "@agent-office/shared";
 import { scrubbedEnv } from "./safety.ts";
@@ -64,14 +64,49 @@ export function parseMcpBody(text: string, id: number): { result?: unknown; erro
 const sessions = new Map<string, { id: string | null; next: number }>();
 const sessionKey = (ctx: ToolContext) => ctx.agent.slug;
 
-async function rpc(ctx: ToolContext, method: string, params: Record<string, unknown>, notify = false): Promise<unknown> {
-  const token = openchatcutToken();
-  if (!token) throw new ToolDenied("OpenChatCut is not set up on this PC (install it and open it once; the token is in ~/.openchatcut/mcp-token). Tell the owner.");
+/**
+ * The session id (and targeted project) is also kept on disk: OpenChatCut releases a transport's
+ * edit sessions only on DELETE or after 60 idle minutes, so a runner restart that forgot the id
+ * locked the agent out of its own draft for an hour. After a restart the same transport is reused.
+ */
+type Saved = Record<string, { id?: string | null; target?: string }>;
+const savedFile = () => process.env.OPENCHATCUT_SESSION_FILE?.trim() || join(process.env.LOCALAPPDATA ?? join(homedir(), ".cache"), "MyOfis", "openchatcut-sessions.json");
+
+function readSaved(): Saved {
+  try {
+    return JSON.parse(readFileSync(savedFile(), "utf8")) as Saved;
+  } catch {
+    return {};
+  }
+}
+
+function saveSession(key: string, patch: { id?: string | null; target?: string }): void {
+  try {
+    const all = readSaved();
+    all[key] = { ...all[key], ...patch };
+    mkdirSync(dirname(savedFile()), { recursive: true });
+    writeFileSync(savedFile(), JSON.stringify(all, null, 2));
+  } catch {
+    /* only a convenience */
+  }
+}
+
+/** This agent's session: from memory, else from the file (after a runner restart). */
+function sessionOf(ctx: ToolContext): { id: string | null; next: number } {
   let s = sessions.get(sessionKey(ctx));
   if (!s) {
-    s = { id: null, next: 1 };
+    const saved = readSaved()[sessionKey(ctx)];
+    s = { id: saved?.id ?? null, next: 1 };
     sessions.set(sessionKey(ctx), s);
+    if (saved?.target && !targets.has(sessionKey(ctx))) targets.set(sessionKey(ctx), saved.target);
   }
+  return s;
+}
+
+async function rpc(ctx: ToolContext, method: string, params: Record<string, unknown>, notify = false, retried = false): Promise<unknown> {
+  const token = openchatcutToken();
+  if (!token) throw new ToolDenied("OpenChatCut is not set up on this PC (install it and open it once; the token is in ~/.openchatcut/mcp-token). Tell the owner.");
+  const s = sessionOf(ctx);
   const id = s.next++;
   let res: Response;
   try {
@@ -92,14 +127,22 @@ async function rpc(ctx: ToolContext, method: string, params: Record<string, unkn
     throw new ToolDenied(`OpenChatCut is not running on this PC (${(err as Error).message}). Ask the owner to open the OpenChatCut app.`);
   }
   const sid = res.headers.get("mcp-session-id");
-  if (sid) s.id = sid;
+  if (sid && sid !== s.id) {
+    s.id = sid;
+    saveSession(sessionKey(ctx), { id: sid });
+  }
   if (notify) return null;
   const text = await res.text();
   if (res.status === 401 || res.status === 403) throw new ToolDenied("OpenChatCut refused the MCP token: open the app once so it writes ~/.openchatcut/mcp-token, or set OPENCHATCUT_MCP_TOKEN on the runner");
   if (res.status === 404 && s.id) {
-    // the app restarted: start a new session next time
+    // the app restarted (or the session expired): open a new session and send this once more
     sessions.delete(sessionKey(ctx));
-    throw new ToolDenied("the OpenChatCut connection was reset (the app restarted?): call target_project again, then begin_edit_session {reuseExisting: true}");
+    saveSession(sessionKey(ctx), { id: null });
+    if (retried || method === "initialize") throw new ToolDenied("the OpenChatCut connection was reset (the app restarted?): call target_project again, then begin_edit_session {reuseExisting: true}");
+    await ensureSession(ctx);
+    const target = targets.get(sessionKey(ctx));
+    if (target && method === "tools/call" && params.name !== "target_project") await rpc(ctx, "tools/call", { name: "target_project", arguments: { projectId: target } }, false, true);
+    return rpc(ctx, method, params, notify, true);
   }
   const msg = parseMcpBody(text, id);
   if (!msg) throw new ToolDenied(`OpenChatCut gave no answer (HTTP ${res.status})`);
@@ -108,7 +151,7 @@ async function rpc(ctx: ToolContext, method: string, params: Record<string, unkn
 }
 
 async function ensureSession(ctx: ToolContext): Promise<void> {
-  if (sessions.get(sessionKey(ctx))?.id) return;
+  if (sessionOf(ctx).id) return;
   await rpc(ctx, "initialize", { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: "agent-office", version: "1.0" } });
   await rpc(ctx, "notifications/initialized", {}, true);
 }
@@ -249,6 +292,7 @@ export const openchatcutTool = defineTool({
     let note = "";
     if (i.tool === "target_project" && project) {
       targets.set(sessionKey(ctx), project);
+      saveSession(sessionKey(ctx), { target: project });
       note = await ensureEditor(ctx, project);
     }
     let r = await callOpenChatCut(ctx, i.tool, i.arguments);
@@ -292,3 +336,9 @@ export const openchatcutImportTool = defineTool({
 });
 
 export const OPENCHATCUT_TOOLS = [openchatcutTool, openchatcutImportTool];
+
+/** Tests: forget the in-memory sessions, as a runner restart does (the file stays). */
+export function forgetOpenChatCutSessions(): void {
+  sessions.clear();
+  targets.clear();
+}

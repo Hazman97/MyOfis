@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TOOL_REGISTRY, parseMcpBody, runTool } from "../src/index.ts";
-import { editorDropped, editorWindowArgs } from "../src/openchatcut.ts";
+import { editorDropped, editorWindowArgs, forgetOpenChatCutSessions } from "../src/openchatcut.ts";
 import { makeCtx } from "./helpers.ts";
 
 /** A stand-in for OpenChatCut's MCP endpoint: bearer token, session id, SSE answers. */
@@ -22,6 +22,7 @@ beforeAll(() => {
     async fetch(req) {
       if (new URL(req.url).pathname !== "/api/external-mcp/mcp") return new Response("no", { status: 404 });
       if (req.headers.get("authorization") !== `Bearer ${TOKEN}`) return Response.json({ error: "invalid request origin" }, { status: 403 });
+      if (req.headers.get("mcp-session-id") === "gone") return Response.json({ error: "MCP session not found or expired" }, { status: 404 });
       const msg = (await req.json()) as { id?: number; method: string; params?: { name?: string; arguments?: Record<string, unknown> } };
       calls.push({ method: msg.method, name: msg.params?.name, args: msg.params?.arguments, session: req.headers.get("mcp-session-id") });
       if (msg.id === undefined) return new Response(null, { status: 202 });
@@ -45,6 +46,7 @@ beforeAll(() => {
   process.env.OPENCHATCUT_MCP_TOKEN = TOKEN;
   process.env.OPENCHATCUT_MEDIA_DIR = join(dir, "occ-media");
   process.env.OPENCHATCUT_BROWSER = join(dir, "no-browser.exe"); // never opens a real window
+  process.env.OPENCHATCUT_SESSION_FILE = join(dir, "sessions.json");
   writeFileSync(join(dir, "clip.mp4"), "fake video");
 });
 afterAll(() => {
@@ -53,6 +55,7 @@ afterAll(() => {
   delete process.env.OPENCHATCUT_MCP_TOKEN;
   delete process.env.OPENCHATCUT_MEDIA_DIR;
   delete process.env.OPENCHATCUT_BROWSER;
+  delete process.env.OPENCHATCUT_SESSION_FILE;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -133,4 +136,24 @@ test("editor window: own profile, throttling off; stale detection", () => {
   expect(editorDropped('{"outcome":"rejected","message":"No OpenChatCut editor is connected. Call target_project"}')).toBe(true);
   expect(editorDropped('{"outcome":"rejected","message":"editSessionId is required"}')).toBe(false);
   expect(editorDropped('{"tracks":[]}')).toBe(false);
+});
+
+test("a runner restart reuses the saved MCP session; an expired one is replaced, re-targeted and retried", async () => {
+  const { ctx } = makeCtx(join(dir, "ws4"));
+  await runTool(TOOL_REGISTRY.openchatcut!, { tool: "target_project", arguments: { projectId: "p1" } }, ctx);
+  expect(JSON.parse(readFileSync(join(dir, "sessions.json"), "utf8")).coder).toEqual({ id: "sess-1", target: "p1" });
+  // restart: memory gone, the file stays → same transport, no new initialize
+  forgetOpenChatCutSessions();
+  const inits = calls.filter((c) => c.method === "initialize").length;
+  expect((await runTool(TOOL_REGISTRY.openchatcut!, { tool: "list_projects", arguments: {} }, makeCtx(join(dir, "ws5")).ctx)).ok).toBe(true);
+  expect(calls.filter((c) => c.method === "initialize")).toHaveLength(inits);
+  expect(calls.at(-1)?.session).toBe("sess-1");
+  // the app forgot the session (404): a new one, target_project again, then the call
+  writeFileSync(join(dir, "sessions.json"), JSON.stringify({ coder: { id: "gone", target: "p1" } }));
+  forgetOpenChatCutSessions();
+  const before = calls.length;
+  const r = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "list_projects", arguments: {} }, makeCtx(join(dir, "ws6")).ctx);
+  expect(r.ok).toBe(true);
+  expect(calls.slice(before).map((c) => c.name ?? c.method)).toEqual(["initialize", "notifications/initialized", "target_project", "list_projects"]);
+  expect(JSON.parse(readFileSync(join(dir, "sessions.json"), "utf8")).coder.id).toBe("sess-1");
 });
