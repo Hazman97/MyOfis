@@ -49,8 +49,14 @@ To generate random values: `bun -e "console.log(crypto.randomUUID()+crypto.rando
 **Development (hot reload):**
 
 ```sh
-bun run dev           # hub on :8787 + Vite on http://127.0.0.1:5180 (open this)
+bun run dev           # hub + Vite on http://127.0.0.1:5180 + the runner, in one terminal
+bun run dev:no-runner # the same without the runner (when it runs elsewhere, e.g. PM2)
 ```
+
+**Always on (PM2, this PC):**
+- `C:\Users\Hazman\ecosystem.config.js` has three entries: `9router` (127.0.0.1:20128 only), `myofis-hub` and `myofis-runner`. `pm2-startup.ps1` starts them at boot.
+- Use PM2 or `bun run dev`, not both: they share port 8788 and the runner token.
+- For development: `pm2 stop myofis-hub myofis-runner`, then `bun run dev`.
 
 **Production-ish:**
 
