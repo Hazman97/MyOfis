@@ -28,8 +28,10 @@ import {
   Transcript,
   UPLOAD_PART_BYTES,
   WebPostEdit,
+  TikTokHdMode,
 } from "@agent-office/shared";
 import { TOOL_REGISTRY } from "@agent-office/tools";
+import { DiskUsage } from "./diskUsage.ts";
 import { SESSION_COOKIE, SESSION_TTL_MS, isHttps, ownerOnly, requireUser, type Authenticator, type Identity } from "./auth.ts";
 import type { Hub } from "./core.ts";
 import { hashToken, keyHint, normalizeCode, pairingCode, randomToken } from "./crypto.ts";
@@ -114,6 +116,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   const pairLimit = limiter(20, 60_000);
   const members = new Members(hub);
   const rooms = new Rooms(hub);
+  const disk = new DiskUsage(db, config);
   const loginLimit = limiter(20, 60_000);
 
   app.onError((err, c) => {
@@ -331,7 +334,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const run = getRun(db, q.run_id ?? "");
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tools = getAgent(db, run.agent_id)?.tools ?? [];
-    if (!tools.includes(q.attach ? "clip_library" : "video_edit")) throw new HttpError(403, "this agent may not upload videos");
+    if (!(q.attach ? tools.includes("clip_library") : tools.includes("video_edit") || tools.includes("video_tiktok_hd"))) throw new HttpError(403, "this agent may not upload videos");
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
     const ws = getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
     // a library clip is the owner's own video (no run_id); a render belongs to the run that made it
@@ -456,7 +459,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.use("*", requireUser(auth));
   const W = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").workspace_id;
   const memberOf = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").role !== "owner";
-  for (const path of ["/settings/pause", "/settings/integrations", "/settings/integrations/*", "/backups", "/skills/catalog", "/skills/catalog/*", "/proposals", "/proposals/*", "/system", "/runners", "/runners/*", "/opencut", "/members", "/members/*", "/rooms/*", "/agents/:id/move", "/projects/:id/move"]) {
+  for (const path of ["/settings/pause", "/settings/integrations", "/settings/integrations/*", "/backups", "/skills/catalog", "/skills/catalog/*", "/proposals", "/proposals/*", "/system", "/storage", "/storage/*", "/runners", "/runners/*", "/opencut", "/members", "/members/*", "/rooms/*", "/agents/:id/move", "/projects/:id/move"]) {
     api.use(path, ownerOnly);
   }
 
@@ -914,6 +917,12 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.get("/videos", (c) => c.json({ videos: hub.studio.list(W(c)) }));
   api.get("/videos/:id", (c) => c.json(hub.studio.info(c.req.param("id"), W(c))));
   api.post("/videos/:id/transcribe", (c) => c.json({ job: hub.studio.transcribe(c.req.param("id"), W(c)) }, 201));
+  // TikTok HD (owner, 2026-10-20): remux or re-encode a finished video for TikTok, no AI
+  api.get("/tiktok-hd", (c) => c.json({ items: hub.studio.tiktokHdList(W(c)) }));
+  api.post("/videos/:id/tiktok-hd", async (c) => {
+    const body = z.object({ mode: TikTokHdMode.default("auto") }).parse(await c.req.json().catch(() => ({})));
+    return c.json({ job: hub.studio.tiktokHd(c.req.param("id"), body.mode, W(c)) }, 201);
+  });
   api.post("/videos/:id/render", async (c) => {
     const body = z.object({ plan: z.unknown(), draft_id: z.string().nullable().optional() }).parse(await c.req.json());
     return c.json({ job: hub.studio.render(c.req.param("id"), body, W(c)) }, 201);
@@ -1008,6 +1017,12 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
 
   // the System page: versions, schema (ERD), counts, connected integrations (no secrets)
   api.get("/system", (c) => c.json(systemInfo(hub, integrations)));
+  // Settings → Storage: where the office keeps data on this PC, sizes, and "open the folder"
+  api.get("/storage", async (c) => c.json(await disk.list(c.req.query("wait") === "1")));
+  api.post("/storage/open", async (c) => {
+    const body = z.object({ key: z.string().min(1).max(40) }).parse(await c.req.json());
+    return c.json(disk.open(body.key));
+  });
   // tools catalog (for the agent editor); members see which ones they may use
   api.get("/tools", (c) =>
     c.json({

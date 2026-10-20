@@ -29,6 +29,14 @@ export const directRuntime: AgentRuntime = {
       }
       if (!done.length) throw new Error("no video to transcribe");
       msg.push(`Transcribed: ${done.join("; ")}.`);
+    } else if (tool === "video_tiktok_hd") {
+      const n = toolCtx.attachments.findIndex((a) => !!VIDEO_TYPES[a.content_type]);
+      if (n < 0) throw new Error("no video to prepare");
+      const out = await runTool(def, { video: n + 1, mode: job.input.mode ?? "auto" }, toolCtx);
+      if (!out.ok) throw new Error(out.summary);
+      const o = out.output as { mode: string; reasons: string[]; before: { size: string; fps: number; mb: number }; after: { size: string; fps: number; mb: number } };
+      const how = o.mode === "remux" ? "No re-encode: the picture is untouched, only the file was cleaned up for TikTok." : `Re-encoded once to TikTok's spec because: ${o.reasons.join("; ")}.`;
+      msg.push(`${how}\nBefore: ${o.before.size}, ${o.before.fps} fps, ${o.before.mb} MB. After: ${o.after.size}, ${o.after.fps} fps, ${o.after.mb} MB.`);
     } else {
       const out = await runTool(def, job.input.plan, toolCtx);
       if (!out.ok) throw new Error(out.summary);

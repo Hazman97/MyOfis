@@ -46,7 +46,72 @@ export const isVideoType = (type: string) => type in VIDEO_TYPES;
  * Jobs the runner does without the AI (no provider, key or tokens): the one tool each may use.
  * video_render = the Video Studio's "Render again"; video_transcribe = its "Transcribe".
  */
-export const DIRECT_JOBS: Record<string, string> = { video_render: "video_edit", video_transcribe: "video_transcribe" };
+export const DIRECT_JOBS: Record<string, string> = { video_render: "video_edit", video_transcribe: "video_transcribe", tiktok_hd: "video_tiktok_hd" };
+
+// ---------------------------------------------------------------- TikTok HD (owner request 2026-10-20, like zilemmethod.com)
+
+/**
+ * "TikTok HD": get a finished video (edited on the phone, CapCut…) ready for TikTok without
+ * losing quality. When the file already matches what TikTok plays (1080×1920, 30/60 fps constant,
+ * H.264/HEVC 8-bit 4:2:0, AAC) it is only remuxed (streams copied, MOV → MP4, index at the front:
+ * what Zilem Method sells). Otherwise it is re-encoded once to that spec, so TikTok's own
+ * compression starts from a clean file instead of guessing (25 fps, 4K, 10-bit, VFR phone video…).
+ */
+export const TikTokHdMode = z.enum(["auto", "remux", "reencode"]);
+export type TikTokHdMode = z.infer<typeof TikTokHdMode>;
+
+export interface TikTokHdFacts {
+  width: number;
+  height: number;
+  fps: number;
+  duration: number;
+  video_codec: string;
+  size_bytes: number;
+  pix_fmt?: string;
+  audio_codec?: string | null;
+  vfr?: boolean;
+  rotation?: number;
+  mbps?: number;
+}
+
+export interface TikTokHdPlan {
+  mode: "remux" | "reencode";
+  /** Why, in plain words (shown to the owner). Empty for a clean remux. */
+  reasons: string[];
+  /** Frame rate of the result. */
+  fps: 30 | 60;
+  /** How a non-9:16 picture is fitted when re-encoding. */
+  fit: "crop" | "blur";
+}
+
+/** TikTok's longest upload, and a size above which its app compresses harder. */
+export const TIKTOK_MAX_SECONDS = 600;
+export const TIKTOK_HD_MAX_MB = 280;
+/** Above this, TikTok's re-encode throws most of it away anyway; re-encoding first keeps control. */
+export const TIKTOK_HD_MAX_MBPS = 30;
+
+const near = (a: number, b: number) => Math.abs(a - b) <= 0.5;
+
+export function tiktokHdPlan(p: TikTokHdFacts, mode: TikTokHdMode = "auto"): TikTokHdPlan {
+  if (p.duration > TIKTOK_MAX_SECONDS) throw new Error(`the video is ${Math.round(p.duration)} s; TikTok takes at most ${TIKTOK_MAX_SECONDS} s`);
+  const fps: 30 | 60 = p.fps >= 45 ? 60 : 30;
+  const ratio = p.width / p.height;
+  // close to 9:16 → fill the frame (a sliver is cut); wide or square → whole picture on a blurred copy
+  const fit = Math.abs(ratio - 9 / 16) < 0.04 ? "crop" : "blur";
+  const reasons: string[] = [];
+  if (!(p.width === 1080 && p.height === 1920)) reasons.push(`size ${p.width}×${p.height}, TikTok plays 1080×1920`);
+  if (!near(p.fps, 30) && !near(p.fps, 60) && !near(p.fps, 29.97) && !near(p.fps, 59.94)) reasons.push(`${p.fps} fps, TikTok wants 30 or 60`);
+  if (p.vfr) reasons.push("variable frame rate (phone recording)");
+  if (!["h264", "hevc"].includes(p.video_codec)) reasons.push(`codec ${p.video_codec}, TikTok wants H.264 or HEVC`);
+  if (p.pix_fmt && p.pix_fmt !== "unknown" && p.pix_fmt !== "yuv420p" && p.pix_fmt !== "yuvj420p") reasons.push(`colour format ${p.pix_fmt} (10-bit/HDR), TikTok wants 8-bit`);
+  if (p.audio_codec && p.audio_codec !== "aac") reasons.push(`sound ${p.audio_codec}, TikTok wants AAC`);
+  if (p.rotation) reasons.push(`rotated ${p.rotation}° by metadata`);
+  if ((p.mbps ?? 0) > TIKTOK_HD_MAX_MBPS) reasons.push(`${p.mbps} Mbit/s is more than TikTok keeps`);
+  if (p.size_bytes > TIKTOK_HD_MAX_MB * 1024 ** 2) reasons.push(`${Math.round(p.size_bytes / 1024 ** 2)} MB, TikTok compresses big files harder`);
+  if (mode === "remux") return { mode: "remux", reasons: [], fps, fit };
+  if (mode === "reencode") return { mode: "reencode", reasons: reasons.length ? reasons : ["re-encode asked for"], fps, fit };
+  return { mode: reasons.length ? "reencode" : "remux", reasons, fps, fit };
+}
 /** Renders and transcripts of long videos take time: they get at least this many minutes. */
 export const DIRECT_JOB_MIN_MINUTES = 120;
 

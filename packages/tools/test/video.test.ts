@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VIDEO_PRESETS } from "@agent-office/shared";
-import { EditPlan, TOOL_REGISTRY, chooseClips, type ClipEntry, buildEditArgs, captionsAss, parseProbe, parseSilences, parseWhisperJson, runTool } from "../src/index.ts";
+import { VIDEO_PRESETS, tiktokHdPlan } from "@agent-office/shared";
+import { EditPlan, TOOL_REGISTRY, chooseClips, type ClipEntry, buildEditArgs, captionsAss, parseProbe, parseSilences, parseWhisperJson, remuxArgs, runTool } from "../src/index.ts";
 import { makeCtx } from "./helpers.ts";
 
 const probe = { duration: 10, width: 1920, height: 1080, fps: 30, has_audio: true, video_codec: "h264", size_bytes: 1 };
@@ -209,4 +209,70 @@ describe("clip library and music", () => {
     expect(EditPlan.safeParse({ clips: [{ video: 1 }], music: { track: `..${backslash}secret.txt` } }).success).toBe(false);
     expect(EditPlan.safeParse({ clips: [{ video: 1 }], music: { track: "../secret.txt" } }).success).toBe(false);
   });
+});
+
+describe("TikTok HD", () => {
+  const ready = { width: 1080, height: 1920, fps: 30, duration: 20, video_codec: "h264", size_bytes: 40 * 1024 ** 2, pix_fmt: "yuv420p", audio_codec: "aac", vfr: false, rotation: 0, mbps: 12 };
+
+  test("a file that already fits TikTok is only remuxed; anything off is re-encoded with the reasons", () => {
+    expect(tiktokHdPlan(ready)).toEqual({ mode: "remux", reasons: [], fps: 30, fit: "crop" });
+    expect(tiktokHdPlan({ ...ready, fps: 59.94 })).toMatchObject({ mode: "remux", fps: 60 });
+    const phone = tiktokHdPlan({ ...ready, width: 2160, height: 3840, fps: 25, pix_fmt: "yuv420p10le", vfr: true, video_codec: "hevc" });
+    expect(phone.mode).toBe("reencode");
+    expect(phone.reasons.join(" | ")).toMatch(/2160×3840.*25 fps.*variable frame rate.*yuv420p10le/);
+    expect(tiktokHdPlan({ ...ready, width: 1920, height: 1080 })).toMatchObject({ mode: "reencode", fit: "blur" });
+    expect(tiktokHdPlan({ ...ready, audio_codec: "opus" }).reasons).toEqual(["sound opus, TikTok wants AAC"]);
+    expect(tiktokHdPlan({ ...ready, size_bytes: 400 * 1024 ** 2 }).mode).toBe("reencode");
+    // the owner's choice wins
+    expect(tiktokHdPlan({ ...ready, fps: 25 }, "remux").mode).toBe("remux");
+    expect(tiktokHdPlan(ready, "reencode")).toMatchObject({ mode: "reencode", reasons: ["re-encode asked for"] });
+    expect(() => tiktokHdPlan({ ...ready, duration: 700 })).toThrow(/at most 600/);
+  });
+
+  test("remux copies the streams into a fast-start MP4", () => {
+    const args = remuxArgs("in-1.mov", "out.mp4");
+    expect(args).toEqual(expect.arrayContaining(["-c", "copy", "-movflags", "+faststart", "0:a:0?"]));
+    expect(args.at(-1)).toBe("out.mp4");
+  });
+});
+
+describe.skipIf(!ffmpeg || !ffprobe)("TikTok HD with real ffmpeg", () => {
+  let dir: string;
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "ao-tthd-"));
+    const run = (args: string[]) => Bun.spawn([ffmpeg!, "-hide_banner", "-loglevel", "error", "-y", ...args], { cwd: dir }).exited;
+    // ready for TikTok (1080×1920 30 fps H.264 + AAC), and a 25 fps wide clip that is not
+    expect(await run(["-f", "lavfi", "-i", "testsrc=size=1080x1920:rate=30:duration=2", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "ready.mov"])).toBe(0);
+    expect(await run(["-f", "lavfi", "-i", "testsrc=size=640x360:rate=25:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "wide25.mp4"])).toBe(0);
+  }, 60_000);
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const ctxFor = (src: string, type: string, ws: string) => {
+    const { ctx } = makeCtx(join(dir, ws));
+    ctx.attachments = [{ id: "upl_src", name: src, content_type: type }];
+    ctx.downloadAttachment = async (_id, dest) => copyFileSync(join(dir, src), dest);
+    const sent: string[] = [];
+    ctx.uploadVideo = async (path) => {
+      sent.push(path);
+      return { id: `upl_out${sent.length}`, size: readFileSync(path).length };
+    };
+    return { ctx, sent };
+  };
+  const info = (path: string) => parseProbe(JSON.parse(Bun.spawnSync([ffprobe!, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path]).stdout.toString()));
+
+  test("auto: a ready MOV is remuxed to MP4 untouched; a 25 fps wide clip is re-encoded to 1080×1920 30 fps", async () => {
+    const a = ctxFor("ready.mov", "video/quicktime", "ws-a");
+    const r = await runTool(TOOL_REGISTRY.video_tiktok_hd!, { video: 1 }, a.ctx);
+    expect(r.ok).toBe(true);
+    expect(r.output).toMatchObject({ video_id: "upl_out1", mode: "remux", reasons: [] });
+    expect(a.sent[0]).toMatch(/ready-tiktok-hd\.mp4$/);
+    expect(info(a.sent[0]!)).toMatchObject({ width: 1080, height: 1920, fps: 30, video_codec: "h264", audio_codec: "aac" });
+
+    const b = ctxFor("wide25.mp4", "video/mp4", "ws-b");
+    const r2 = await runTool(TOOL_REGISTRY.video_tiktok_hd!, { video: 1 }, b.ctx);
+    expect(r2.ok).toBe(true);
+    expect(r2.output).toMatchObject({ mode: "reencode", after: { size: "1080×1920", fps: 30 } });
+    expect((r2.output as { reasons: string[] }).reasons.join(" ")).toMatch(/640×360.*25 fps/);
+    expect(info(b.sent[0]!)).toMatchObject({ width: 1080, height: 1920, fps: 30 });
+  }, 180_000);
 });

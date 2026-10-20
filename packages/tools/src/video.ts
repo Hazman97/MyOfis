@@ -13,6 +13,8 @@ import {
   packTranscript,
   subtitleCues,
   tightCuts,
+  TikTokHdMode,
+  tiktokHdPlan,
   type VideoPreset,
 } from "@agent-office/shared";
 import { scrubbedEnv } from "./safety.ts";
@@ -34,13 +36,24 @@ export interface VideoProbe {
   has_audio: boolean;
   video_codec: string;
   size_bytes: number;
+  /** Extra facts for the TikTok HD check (optional: older callers and tests build probes by hand). */
+  pix_fmt?: string;
+  audio_codec?: string | null;
+  /** Variable frame rate (phones): avg and nominal rates differ. */
+  vfr?: boolean;
+  /** Rotation metadata (90/180/270) instead of upright pixels. */
+  rotation?: number;
+  /** Whole-file bitrate, Mbit/s. */
+  mbps?: number;
+  /** ffprobe's container name, e.g. "mov,mp4,m4a,3gp,3g2,mj2". */
+  format?: string;
 }
 
 /** ffprobe -show_format -show_streams JSON → what Editor needs (display size: rotation applied). */
 export function parseProbe(json: unknown): VideoProbe {
   const j = json as {
-    format?: { duration?: string; size?: string };
-    streams?: { codec_type?: string; codec_name?: string; width?: number; height?: number; avg_frame_rate?: string; r_frame_rate?: string; duration?: string; tags?: { rotate?: string }; side_data_list?: { rotation?: number }[] }[];
+    format?: { duration?: string; size?: string; bit_rate?: string; format_name?: string };
+    streams?: { codec_type?: string; codec_name?: string; width?: number; height?: number; avg_frame_rate?: string; r_frame_rate?: string; duration?: string; pix_fmt?: string; tags?: { rotate?: string }; side_data_list?: { rotation?: number }[] }[];
   };
   const v = j.streams?.find((s) => s.codec_type === "video");
   if (!v?.width || !v.height) throw new ToolDenied("this file has no video stream");
@@ -48,8 +61,11 @@ export function parseProbe(json: unknown): VideoProbe {
     const [a, b] = (r ?? "").split("/").map(Number);
     return a && b ? a / b : 0;
   };
-  const rotation = Math.abs(Number(v.tags?.rotate ?? v.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? 0)) % 180;
-  const turned = rotation === 90;
+  const rotationRaw = ((Number(v.tags?.rotate ?? v.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? 0) % 360) + 360) % 360;
+  const turned = rotationRaw % 180 === 90;
+  const avg = rate(v.avg_frame_rate);
+  const nominal = rate(v.r_frame_rate);
+  const audio = j.streams?.find((s) => s.codec_type === "audio");
   return {
     duration: round2(Number(j.format?.duration ?? v.duration ?? 0)),
     width: turned ? v.height : v.width,
@@ -58,6 +74,12 @@ export function parseProbe(json: unknown): VideoProbe {
     has_audio: !!j.streams?.some((s) => s.codec_type === "audio"),
     video_codec: v.codec_name ?? "unknown",
     size_bytes: Number(j.format?.size ?? 0),
+    pix_fmt: v.pix_fmt ?? "unknown",
+    audio_codec: audio?.codec_name ?? null,
+    vfr: !!avg && !!nominal && Math.abs(avg - nominal) > 0.5,
+    rotation: rotationRaw,
+    mbps: round2(Number(j.format?.bit_rate ?? 0) / 1e6),
+    format: j.format?.format_name ?? "",
   };
 }
 
@@ -142,7 +164,9 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
     parts.push("[ac][mus]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[am]");
     sound = "[am]";
   }
-  parts.push(plan.normalize_audio && (!plan.mute || music) ? `${sound}loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[ao]` : `${sound}anull[ao]`);
+  // loudnorm on pure silence gives NaN and the AAC encoder fails: only when some real sound is there
+  const realSound = !!music || (!plan.mute && plan.clips.some((_, i) => inputs[i]!.probe.has_audio));
+  parts.push(plan.normalize_audio && realSound ? `${sound}loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[ao]` : `${sound}anull[ao]`);
   args.push("-filter_complex", parts.join(";"), "-map", "[vo]", "-map", "[ao]");
   const max = preset.max_mbps;
   const gop = String(plan.fps * 2);
@@ -385,6 +409,57 @@ export const videoEditTool = defineTool({
   },
 });
 
+// ---------------------------------------------------------------- TikTok HD (remux or re-encode a finished video)
+
+/** Copy the streams into a clean MP4 with the index at the front (no quality change). Pure. */
+export function remuxArgs(input: string, out: string): string[] {
+  return ["-hide_banner", "-nostdin", "-y", "-i", input, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-map_metadata", "-1", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", out];
+}
+
+export const videoTiktokHdTool = defineTool({
+  name: "video_tiktok_hd",
+  description:
+    "Get a finished video (edited on the phone, CapCut…) ready for TikTok without losing quality. mode auto: when it already matches TikTok (1080×1920, 30/60 fps, H.264, AAC) the streams are only copied into a clean MP4; " +
+    "otherwise it is re-encoded once to that spec. Returns the new video id for save_draft(video: id), and why it chose that.",
+  category: "write",
+  input: z.object({
+    video: z.number().int().min(1).max(10).describe("Which file (1 = first)"),
+    mode: TikTokHdMode.default("auto"),
+  }),
+  risk: () => "safe",
+  describe: (i) => `TikTok HD for video ${i.video}`,
+  async execute(i, ctx) {
+    const bin = ffmpegBin();
+    if (!bin) throw new ToolDenied("ffmpeg is not installed on the runner PC (ffmpeg.org). Tell the owner.");
+    const { file, name } = await attachmentFile(ctx, i.video);
+    const before = await probe(ctx, file);
+    let plan: ReturnType<typeof tiktokHdPlan>;
+    try {
+      plan = tiktokHdPlan(before, i.mode);
+    } catch (err) {
+      throw new ToolDenied((err as Error).message);
+    }
+    const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").slice(0, 60) || `video-${i.video}`;
+    const facts = (p: VideoProbe) => ({ size: `${p.width}×${p.height}`, fps: p.fps, codec: p.video_codec, mb: round2(p.size_bytes / 1024 ** 2), seconds: p.duration });
+    if (plan.mode === "reencode") {
+      const edit = EditPlan.parse({ clips: [{ video: i.video }], preset: "tiktok_fhd", fit: plan.fit, fps: plan.fps, name: `${base}-tiktok-hd` });
+      const r = await videoEditTool.execute(edit, ctx);
+      const out = r.output as { video_id: string; file: string; size_mb: number };
+      const after = await probe(ctx, out.file);
+      return { ok: true, summary: `TikTok HD (re-encoded): ${out.file}`, output: { video_id: out.video_id, mode: "reencode", reasons: plan.reasons, before: facts(before), after: facts(after) } };
+    }
+    const dir = mediaDir(ctx);
+    const out = `${base}-tiktok-hd.mp4`;
+    const r = await spawn([bin, ...remuxArgs(file, out)], dir, ctx.signal);
+    if (r.code !== 0) throw new ToolDenied(`ffmpeg could not remux the video: ${r.stderr.slice(-400)}`);
+    const after = await probe(ctx, out);
+    const whole = EditPlan.parse({ clips: [{ video: i.video }], name: `${base}-tiktok-hd` });
+    const up = await ctx.uploadVideo(join(dir, out), out, { plan: whole, attachments: ctx.attachments });
+    ctx.renders.push({ id: up.id, name: out, content_type: "video/mp4" });
+    return { ok: true, summary: `TikTok HD (no re-encode): ${out}`, output: { video_id: up.id, mode: "remux", reasons: plan.reasons, before: facts(before), after: facts(after) } };
+  },
+});
+
 // ---------------------------------------------------------------- speech (whisper.cpp) and suggestions
 
 /** whisper.cpp's CLI: WHISPER_CPP, else on PATH, else the usual Windows folder C:\whisper. */
@@ -537,4 +612,4 @@ export const suggestEditsTool = defineTool({
   },
 });
 
-export const VIDEO_TOOLS = [videoProbeTool, videoTranscribeTool, videoEditTool, suggestEditsTool];
+export const VIDEO_TOOLS = [videoProbeTool, videoTranscribeTool, videoEditTool, suggestEditsTool, videoTiktokHdTool];

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshFetch } from "@agent-office/shared";
-import { uploads } from "../src/db/schema.ts";
+import { runs, uploads } from "../src/db/schema.ts";
 import { TOKEN, createTestEnv, waitFor, type TestEnv } from "./helpers.ts";
 import { OpencutWatch } from "../src/opencutWatch.ts";
 
@@ -163,6 +163,26 @@ describe.skipIf(!ffmpeg || !Bun.which("ffprobe"))("Editor renders on the runner"
     await env.api(`/api/drafts/${draft.id}/decide`, { body: { decision: "reject" } });
     expect((await env.api(`/api/drafts/${draft.id}/video`, { method: "PATCH", body: { upload_id: mine.id } })).status).toBe(409);
   }, 300_000);
+
+  test("TikTok HD (no AI): a wide 640×360 clip is re-encoded to 1080×1920 and listed with the reasons", async () => {
+    env = await createTestEnv();
+    await env.pairRunner();
+    const v = await sendVideo(clip, "phone-edit.mp4");
+    const job = (await env.api(`/api/videos/${v.id}/tiktok-hd`, { body: { mode: "auto" } })).body.job;
+    expect(job).toMatchObject({ type: "tiktok_hd" });
+    expect((await env.api("/api/tiktok-hd")).body.items[0]).toMatchObject({ job_id: job.id, source: { id: v.id, name: "phone-edit.mp4" }, mode: "auto" });
+    await waitFor(() => ["done", "failed"].includes(env.hub.hub.store.state.jobs[job.id]?.status ?? ""), 120_000, "tiktok hd");
+    expect(env.hub.hub.store.state.jobs[job.id]?.status).toBe("done");
+    const item = (await env.api("/api/tiktok-hd")).body.items[0];
+    expect(item.result.name).toBe("phone-edit-tiktok-hd-tiktok_fhd.mp4");
+    expect(item.note).toContain("Re-encoded once to TikTok's spec because: size 640×360");
+    expect(item.note).toContain("After: 1080×1920, 30 fps");
+    // no tokens were used
+    const run = env.hub.hub.db.select().from(runs).all().find((r) => r.job_id === job.id);
+    expect(run).toMatchObject({ tokens_in: 0, tokens_out: 0 });
+    // an unknown or foreign video is a 404
+    expect((await env.api("/api/videos/upl_nope/tiktok-hd", { body: {} })).status).toBe(404);
+  }, 180_000);
 
   test("transcripts: Studio Transcribe (no AI) → Editor suggests options → render with pop subtitles", async () => {
     // a fake whisper-cli (the real one needs a 500 MB model)

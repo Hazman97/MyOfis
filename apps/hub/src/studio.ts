@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { EditPlan, EditSuggestionsInput, RenderInfo, Transcript, VIDEO_PRESETS, type EditSuggestions, type Job } from "@agent-office/shared";
+import { EditPlan, EditSuggestionsInput, RenderInfo, Transcript, VIDEO_PRESETS, type EditSuggestions, type Job, type TikTokHdMode } from "@agent-office/shared";
 import type { Hub } from "./core.ts";
 import { contentDrafts, editSuggestions, events, jobs, runs, uploads } from "./db/schema.ts";
 import { HttpError, getRun, newId } from "./repo.ts";
@@ -14,6 +14,7 @@ import { toDraft } from "./content.ts";
  */
 export const VIDEO_RENDER_JOB = "video_render";
 export const VIDEO_TRANSCRIBE_JOB = "video_transcribe";
+export const TIKTOK_HD_JOB = "tiktok_hd";
 
 export class Studio {
   constructor(private readonly hub: Hub) {}
@@ -141,6 +142,55 @@ export class Studio {
       },
       ws,
     );
+  }
+
+  /** "TikTok HD": remux or re-encode a finished video for TikTok on the runner PC (no AI). Returns the job. */
+  tiktokHd(uploadId: string, mode: TikTokHdMode, ws = "owner"): Job {
+    const up = this.hub.publisher.upload(uploadId);
+    if (!up || up.workspace_id !== ws || !up.content_type.startsWith("video/")) throw new HttpError(404, "video not found");
+    const agent = this.#editor(null, ws, "video_tiktok_hd");
+    return this.hub.createJob(
+      {
+        agent_id: agent.id,
+        project_id: null,
+        type: TIKTOK_HD_JOB,
+        title: `TikTok HD: ${up.name}`.slice(0, 200),
+        input: { text: `Prepare "${up.name}" for TikTok in HD`, attachments: [{ id: up.id, name: up.name, content_type: up.content_type }], source_upload_id: up.id, mode },
+        trigger: "manual",
+      },
+      ws,
+    );
+  }
+
+  /** The TikTok HD page: recent jobs with their source, result video and what was done. */
+  tiktokHdList(ws = "owner") {
+    const rows = this.hub.db.select().from(jobs).where(and(eq(jobs.type, TIKTOK_HD_JOB), eq(jobs.workspace_id, ws))).orderBy(desc(jobs.created_at)).limit(30).all();
+    return rows.map((j) => {
+      const input = j.input as { source_upload_id?: string; mode?: string; attachments?: { name: string }[] };
+      const runIds = this.hub.db.select({ id: runs.id }).from(runs).where(eq(runs.job_id, j.id)).all().map((r) => r.id);
+      const evs = runIds.length
+        ? this.hub.db
+            .select({ type: events.type, payload: events.payload })
+            .from(events)
+            .where(and(inArray(events.run_id, runIds), inArray(events.type, ["agent.message", "run.failed"])))
+            .orderBy(events.id)
+            .all()
+        : [];
+      const text = evs.map((e) => (e.type === "agent.message" ? String((e.payload as { text?: string }).text ?? "") : "")).join("");
+      const failed = evs.filter((e) => e.type === "run.failed").map((e) => String((e.payload as { error?: string }).error ?? "")).pop() ?? null;
+      const result = this.#resultOf(j.id);
+      const made = result ? this.hub.publisher.upload(result) : null;
+      return {
+        job_id: j.id,
+        status: j.status,
+        created_at: j.created_at,
+        mode: input.mode ?? "auto",
+        source: { id: input.source_upload_id ?? null, name: input.attachments?.[0]?.name ?? "" },
+        result: made ? { id: made.id, name: made.name, size: made.size } : null,
+        note: text.trim(),
+        error: j.status === "failed" ? failed : null,
+      };
+    });
   }
 
   /** The video a render job made (newest), if it is done. */

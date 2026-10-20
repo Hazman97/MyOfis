@@ -6,7 +6,7 @@ import { isOwner } from "../me.ts";
 // members keep their own AI providers; integrations (Telegram, Gitea, search, backups) are the owner's
 const tabs = computed(() => [
   { to: "/settings/providers", label: "AI providers" },
-  ...(isOwner.value ? [{ to: "/settings/integrations", label: "Integrations" }, { to: "/members", label: "Members" }] : []),
+  ...(isOwner.value ? [{ to: "/settings/integrations", label: "Integrations" }, { to: "/settings/storage", label: "Storage" }, { to: "/members", label: "Members" }] : []),
 ]);
 </script>
 

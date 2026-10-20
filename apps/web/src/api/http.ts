@@ -254,6 +254,32 @@ export interface SkillAssignments {
   agents: { id: string; slug: string; name: string; sprite: string; enabled: boolean; skills: "all" | string[]; reads_skills: boolean }[];
 }
 
+/** GET /api/storage: where the office keeps data on the hub PC (Settings → Storage). */
+export interface StoragePlace {
+  key: string;
+  label: string;
+  what: string;
+  path: string;
+  group: "data" | "runner" | "tools";
+  exists: boolean;
+  bytes: number | null;
+  files: number | null;
+  partial: boolean;
+}
+
+/** GET /api/tiktok-hd: recent "TikTok HD" jobs (remux or re-encode for TikTok). */
+export interface TikTokHdItem {
+  job_id: string;
+  status: Job["status"];
+  created_at: string;
+  mode: "auto" | "remux" | "reencode";
+  source: { id: string | null; name: string };
+  result: { id: string; name: string; size: number } | null;
+  /** What was done and why (the runner's message). */
+  note: string;
+  error: string | null;
+}
+
 /** GET /api/videos: the room's videos for the Video Studio home, newest first. */
 export interface VideoListItem {
   id: string;
@@ -387,6 +413,10 @@ export const api = {
   /** Transcribe the video's source files with whisper on the runner PC (no AI tokens). */
   transcribeVideo: (id: string) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/transcribe`, { method: "POST" }),
   renderVideo: (id: string, plan: EditPlan, draftId: string | null) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/render`, { body: { plan, draft_id: draftId } }),
+  tiktokHdList: () => request<{ items: TikTokHdItem[] }>("/tiktok-hd"),
+  storage: (wait = false) => request<{ items: StoragePlace[]; measured_at: string | null }>(`/storage${wait ? "?wait=1" : ""}`),
+  openStorage: (key: string) => request<{ opened: string }>("/storage/open", { body: { key } }),
+  tiktokHd: (id: string, mode: "auto" | "remux" | "reencode" = "auto") => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/tiktok-hd`, { body: { mode } }),
   setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),
 
   integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings }>("/settings/integrations"),

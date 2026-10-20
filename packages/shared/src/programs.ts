@@ -8,6 +8,7 @@ const TOOL_PROGRAMS: Record<string, string> = {
   video_probe: "ffmpeg",
   video_transcribe: "whisper",
   video_edit: "ffmpeg",
+  video_tiktok_hd: "ffmpeg",
   clip_library: "ffmpeg",
   openchatcut: "openchatcut",
   openchatcut_import: "openchatcut",

@@ -93,6 +93,7 @@ export const editorAgent: AgentInput = {
     "video_transcribe",
     "suggest_edits",
     "video_edit",
+    "video_tiktok_hd",
     "save_draft",
     "read_brief",
     "read_past_drafts",
@@ -116,7 +117,7 @@ export const editorAgent: AgentInput = {
  * Upgrades for an Editor that was seeded earlier: new tools are added once; the prompt is replaced
  * only when the owner never changed it (it still equals an older built-in prompt).
  */
-export const editorUpgrade = { tools: ["video_transcribe", "suggest_edits"], previousPrompts: [EDITOR_PROMPT_V1, EDITOR_PROMPT_V2] };
+export const editorUpgrade = { tools: ["video_transcribe", "suggest_edits", "video_tiktok_hd"], previousPrompts: [EDITOR_PROMPT_V1, EDITOR_PROMPT_V2] };
 
 /** A built-in skill (seeded once into the skills folder; the owner may edit or delete it). */
 export const SHORT_VIDEO_EDITING_SKILL = `---
