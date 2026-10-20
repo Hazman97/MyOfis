@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { renameSync, rmSync } from "node:fs";
 import { arch, platform } from "node:os";
 import { join } from "node:path";
 import {
@@ -287,12 +288,25 @@ export class RunnerClient {
   }
 
   /** Stream an attached file (a video) to disk. */
+  /**
+   * Save a file the owner sent (videos can be GBs) to the run's folder. Streams to disk; a download
+   * that stops sending data for STALL_MS is aborted and tried once more, so a dropped connection
+   * never leaves the run waiting forever (it happened with a 200 MB video).
+   */
   async #downloadUpload(runId: string, id: string, dest: string): Promise<void> {
     const url = new URL(`/api/runner/uploads/${encodeURIComponent(id)}`, this.#opts.hubUrl);
     url.searchParams.set("run_id", runId);
-    const res = await freshFetch(url, { timeoutMs: 30 * 60_000, headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}` } });
-    if (!res.ok) throw new Error(`video download failed (${res.status})`);
-    await Bun.write(dest, res);
+    let last: Error | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await downloadTo(url, dest, { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}` });
+        return;
+      } catch (err) {
+        last = err as Error;
+        this.#log(`download of ${id} failed (attempt ${attempt}): ${last.message}`);
+      }
+    }
+    throw new Error(`video download failed: ${last?.message ?? "unknown error"}`);
   }
 
   /** Send a finished video to the hub in parts (Cloudflare refuses bodies over 100 MB). */
@@ -493,3 +507,43 @@ export class RunnerClient {
 const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "whisper", "openchatcut", "opencode", "openscad", "blender", "pandoc", "soffice", "gh"];
 // whisper.cpp is found by its own path (WHISPER_CPP) or C:\whisper, rarely on PATH
 export const detectPrograms = (): string[] => PROGRAMS.filter((p) => (p === "whisper" ? !!whisperBinary() : p === "openchatcut" ? !!openchatcutToken() : Bun.which(p)));
+
+/** A download that sends no data for this long is treated as dead. */
+export const STALL_MS = 60_000;
+
+/** Stream a URL to a file; abort when no data arrives for STALL_MS. Writes `<dest>.part`, then renames. */
+export async function downloadTo(url: URL | string, dest: string, headers: Record<string, string>, stallMs = STALL_MS): Promise<number> {
+  const ctl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => ctl.abort(new Error(`no data for ${Math.round(stallMs / 1000)} s`)), stallMs);
+  };
+  arm();
+  const part = `${dest}.part`;
+  const out = Bun.file(part).writer();
+  let bytes = 0;
+  try {
+    const res = await freshFetch(url, { signal: ctl.signal, headers });
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    for (;;) {
+      arm();
+      const { done, value } = await reader.read();
+      if (done) break;
+      out.write(value);
+      bytes += value.byteLength;
+    }
+    await out.end();
+    const expected = Number(res.headers.get("content-length") ?? 0);
+    if (expected && bytes !== expected) throw new Error(`got ${bytes} of ${expected} bytes`);
+    renameSync(part, dest);
+    return bytes;
+  } catch (err) {
+    await Promise.resolve(out.end()).catch(() => {});
+    rmSync(part, { force: true });
+    throw ctl.signal.aborted && ctl.signal.reason instanceof Error ? ctl.signal.reason : err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
