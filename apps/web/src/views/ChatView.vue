@@ -472,7 +472,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                     <a v-for="u in occLinks(live(m).reply)" :key="u" :href="u" target="_blank" rel="noopener" class="btn btn-sm min-h-9">
                       <Clapperboard :size="13" /> Open in OpenChatCut
                     </a>
-                    <span class="text-[11px] text-faint">Opens on this PC (OpenChatCut must be running).</span>
+                    <span class="text-[11px] text-faint">Studio Pro opens its own editor window on your PC. Use this only if that window is closed: two editors of one project fight over it.</span>
                   </div>
                   <!-- Editor's edit suggestions (tool suggest_edits) -->
                   <div v-if="m.suggestions" class="mt-3">

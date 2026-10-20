@@ -398,7 +398,7 @@ async function editInOpenChatCut() {
     const ask = occBrief.value.trim() || "Edit this into a short vertical video with a strong hook, a title and music.";
     await api.chat({ agent_id: studioPro.value.id, text: `${ask}
 
-(Video: ${info.value.upload.name}. Open the project in OpenChatCut so I can watch.)`, attachments: files });
+(Video: ${info.value.upload.name}.)`, attachments: files });
     await router.push({ path: "/chat", query: { agent: "studio-pro" } });
   } catch (e) {
     error.value = (e as Error).message;
@@ -531,7 +531,7 @@ async function useOwnEdit(e: Event) {
             Edit live with AI in OpenChatCut
           </span>
           <p class="text-xs text-muted leading-relaxed">
-            Studio Pro edits this video inside the OpenChatCut app on your PC (motion graphics, effects, music). Open the editor link it sends to watch and approve. Export there, then use <strong>Use my own edit</strong> here.
+            Studio Pro edits this video inside the OpenChatCut app on your PC (motion graphics, effects, music). An editor window opens on your PC by itself so you can watch and approve. Export there, then use <strong>Use my own edit</strong> here.
           </p>
           <textarea v-model="occBrief" rows="2" class="input text-xs w-full" placeholder="e.g. 15 s TikTok, title 'SmashPoint Open', upbeat music" />
           <button class="btn btn-sm btn-primary w-full min-h-10" :disabled="occBusy" @click="editInOpenChatCut">

@@ -1,8 +1,10 @@
+import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { freshFetch } from "@agent-office/shared";
+import { scrubbedEnv } from "./safety.ts";
 import { ToolDenied, defineTool, type ToolContext } from "./types.ts";
 import { attachmentFile } from "./video.ts";
 
@@ -119,12 +121,99 @@ export async function callOpenChatCut(ctx: ToolContext, tool: string, args: Reco
   return { text: text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n… (cut; ask for a narrower view)` : text, isError: !!r.isError };
 }
 
+/**
+ * The editor window (2026-10-20). Edits need an open editor page for the project, and a page in a
+ * normal browser tab is throttled when hidden: its 30 s heartbeat comes late, OpenChatCut drops it
+ * (45 s), the page reconnects as a new editor instance and every binding and edit session goes
+ * stale. So the bridge opens its own Edge/Chrome app window with throttling off (it stays connected
+ * when minimised) whenever no editor of the project is connected, and re-binds after a drop.
+ * OPENCHATCUT_EDITOR_WINDOW=0 turns this off; OPENCHATCUT_BROWSER picks the browser.
+ */
+const editorWindows = new Map<string, number>();
+/** The project each agent last targeted, to re-bind after the editor dropped. */
+const targets = new Map<string, string>();
+
+export function editorBrowser(): string | null {
+  const env = process.env.OPENCHATCUT_BROWSER?.trim();
+  if (env) return existsSync(env) ? env : null;
+  if (process.platform !== "win32") return null;
+  const x86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+  const pf = process.env.ProgramFiles ?? "C:\\Program Files";
+  const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
+  return (
+    [
+      join(x86, "Microsoft", "Edge", "Application", "msedge.exe"),
+      join(pf, "Microsoft", "Edge", "Application", "msedge.exe"),
+      join(pf, "Google", "Chrome", "Application", "chrome.exe"),
+      join(local, "Google", "Chrome", "Application", "chrome.exe"),
+    ].find((p) => existsSync(p)) ?? null
+  );
+}
+
+/** A separate profile (so it is its own browser process) with background throttling off. */
+export const editorWindowArgs = (url: string, profile: string): string[] => [
+  `--user-data-dir=${profile}`,
+  `--app=${url}`,
+  "--disable-background-timer-throttling",
+  "--disable-renderer-backgrounding",
+  "--disable-backgrounding-occluded-windows",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--window-size=1500,950",
+];
+
+const alive = (pid: number | undefined): boolean => {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+async function editorConnected(ctx: ToolContext, projectId: string): Promise<boolean> {
+  const r = await callOpenChatCut(ctx, "openchatcut_status", {});
+  try {
+    return ((JSON.parse(r.text) as { connectedProjectIds?: string[] }).connectedProjectIds ?? []).includes(projectId);
+  } catch {
+    return false;
+  }
+}
+
+/** Make sure an editor of the project is connected; opens the window when none is. A note for the model, or "". */
+export async function ensureEditor(ctx: ToolContext, projectId: string): Promise<string> {
+  if (process.env.OPENCHATCUT_EDITOR_WINDOW === "0" || !/^[\w-]{1,100}$/.test(projectId)) return "";
+  if (await editorConnected(ctx, projectId)) return "";
+  // a window we opened that is still running reconnects by itself; otherwise open one
+  if (!alive(editorWindows.get(projectId))) {
+    const browser = editorBrowser();
+    if (!browser) return "No OpenChatCut editor is open and no Edge/Chrome was found to open one: ask the owner to open the project in the OpenChatCut app.";
+    const profile = join(process.env.LOCALAPPDATA ?? join(homedir(), ".cache"), "MyOfis", "openchatcut-editor");
+    mkdirSync(profile, { recursive: true });
+    const child = spawn(browser, editorWindowArgs(`${BASE()}/#/editor/${projectId}`, profile), { detached: true, stdio: "ignore", env: scrubbedEnv() });
+    child.on("error", () => {});
+    child.unref();
+    if (child.pid) editorWindows.set(projectId, child.pid);
+  }
+  for (let i = 0; i < 25; i++) {
+    if (ctx.signal.aborted) break;
+    await Bun.sleep(2000);
+    if (await editorConnected(ctx, projectId)) return "The OpenChatCut editor window for this project is open on the owner's PC (opened by the office); the owner can watch there.";
+  }
+  return "The editor window did not connect within 50 s: ask the owner to check the OpenChatCut app is running.";
+}
+
+/** An answer that means the editor dropped or the binding went stale (safe to re-bind and retry: nothing was applied). */
+export const editorDropped = (text: string): boolean =>
+  /"outcome":"(rejected|stale)"/.test(text) && /stale|no openchatcut editor is connected|not connected|binding|editor instance/i.test(text);
+
 export const openchatcutTool = defineTool({
   name: "openchatcut",
   description:
     "Drive the OpenChatCut video editor on this PC (a full multitrack timeline the owner can watch). Calls one of its MCP tools by name. " +
-    'tool "tools/list" lists them all. Usual flow: list_projects or create_project (1080×1920, 30 fps for TikTok) → get_editor_url (tell the owner to open it to watch live) → ' +
-    'target_project → begin_edit_session (approvalMode "manual" when the owner has the editor open, else "auto") → openchatcut_import your videos → read_timeline / read_transcript → ' +
+    'tool "tools/list" lists them all. Usual flow: list_projects or create_project (1080×1920, 30 fps for TikTok) → ' +
+    "target_project (opens the editor window on the owner's PC by itself) → begin_edit_session {reuseExisting: true} → openchatcut_import your videos → read_timeline / read_transcript → " +
     "edit_item, split_item, set_item_timing, add_motion_graphic, add_audio, edit_captions, manage_effects (pass editSessionId every time) → review_edit_session → get_edit_session until applied.",
   category: "write",
   input: z.object({
@@ -142,8 +231,22 @@ export const openchatcutTool = defineTool({
     }
     // deleting projects is the owner's job, in the app
     if (/delete/i.test(i.tool) && !/^(remove_item|discard_edit_session)$/.test(i.tool)) throw new ToolDenied("deleting in OpenChatCut is done by the owner in the app");
-    const r = await callOpenChatCut(ctx, i.tool, i.arguments);
-    return { ok: !r.isError, summary: `${i.tool}${r.isError ? " failed" : ""}`, output: r.text };
+    const project = typeof i.arguments.projectId === "string" ? i.arguments.projectId : null;
+    let note = "";
+    if (i.tool === "target_project" && project) {
+      targets.set(sessionKey(ctx), project);
+      note = await ensureEditor(ctx, project);
+    }
+    let r = await callOpenChatCut(ctx, i.tool, i.arguments);
+    // the editor reconnected (or was closed): open it again if needed, re-bind, retry once
+    const target = targets.get(sessionKey(ctx));
+    if (target && i.tool !== "target_project" && editorDropped(r.text)) {
+      note = await ensureEditor(ctx, target);
+      await callOpenChatCut(ctx, "target_project", { projectId: target });
+      r = await callOpenChatCut(ctx, i.tool, i.arguments);
+      note = `(The editor had reconnected; the office re-bound it and retried.) ${note}`.trim();
+    }
+    return { ok: !r.isError, summary: `${i.tool}${r.isError ? " failed" : ""}`, output: note ? `${r.text}\n${note}` : r.text };
   },
 });
 

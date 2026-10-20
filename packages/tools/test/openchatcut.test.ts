@@ -3,12 +3,15 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TOOL_REGISTRY, parseMcpBody, runTool } from "../src/index.ts";
+import { editorDropped, editorWindowArgs } from "../src/openchatcut.ts";
 import { makeCtx } from "./helpers.ts";
 
 /** A stand-in for OpenChatCut's MCP endpoint: bearer token, session id, SSE answers. */
 const TOKEN = "occ_test_token_1234567890";
 const calls: { method: string; name?: string; args?: Record<string, unknown>; session: string | null }[] = [];
 let server: ReturnType<typeof Bun.serve>;
+/** The fake editor: connected projects, and how many calls answer "stale" next. */
+const fake = { connected: ["p1"], staleNext: 0 };
 let dir: string;
 
 beforeAll(() => {
@@ -26,6 +29,13 @@ beforeAll(() => {
         new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\n\n`, { headers: { "content-type": "text/event-stream", "mcp-session-id": "sess-1" } });
       if (msg.method === "initialize") return sse({ protocolVersion: "2025-06-18", serverInfo: { name: "openchatcut" } });
       if (msg.method === "tools/list") return sse({ tools: [{ name: "list_projects", description: "List OpenChatCut projects, newest first. More text." }, { name: "import_asset", description: "Import ONE file." }] });
+      if (msg.params?.name === "openchatcut_status") return sse({ content: [{ type: "text", text: JSON.stringify({ connectedProjectIds: fake.connected }) }] });
+      if (msg.params?.name === "target_project") return sse({ content: [{ type: "text", text: '{"ok":true}' }] });
+      if (msg.params?.name === "read_timeline" && fake.staleNext > 0) {
+        fake.staleNext--;
+        return sse({ content: [{ type: "text", text: '{"outcome":"rejected","message":"The editor binding is stale."}' }], isError: true });
+      }
+      if (msg.params?.name === "read_timeline") return sse({ content: [{ type: "text", text: '{"tracks":[]}' }] });
       if (msg.params?.name === "list_projects") return sse({ content: [{ type: "text", text: '{"result":[{"id":"p1","name":"Promo"}]}' }] });
       if (msg.params?.name === "import_asset") return sse({ content: [{ type: "text", text: `imported ${String(msg.params.arguments?.path).split(/[\\/]/).pop()}` }] });
       return sse({ content: [{ type: "text", text: "unknown tool" }], isError: true });
@@ -34,6 +44,7 @@ beforeAll(() => {
   process.env.OPENCHATCUT_URL = `http://127.0.0.1:${server.port}`;
   process.env.OPENCHATCUT_MCP_TOKEN = TOKEN;
   process.env.OPENCHATCUT_MEDIA_DIR = join(dir, "occ-media");
+  process.env.OPENCHATCUT_BROWSER = join(dir, "no-browser.exe"); // never opens a real window
   writeFileSync(join(dir, "clip.mp4"), "fake video");
 });
 afterAll(() => {
@@ -41,6 +52,7 @@ afterAll(() => {
   delete process.env.OPENCHATCUT_URL;
   delete process.env.OPENCHATCUT_MCP_TOKEN;
   delete process.env.OPENCHATCUT_MEDIA_DIR;
+  delete process.env.OPENCHATCUT_BROWSER;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -86,4 +98,36 @@ test("a wrong token is explained", async () => {
   expect(r.ok).toBe(false);
   expect(r.summary).toContain("refused the MCP token");
   process.env.OPENCHATCUT_MCP_TOKEN = TOKEN;
+});
+
+test("target_project checks the editor; a stale answer is re-bound and retried once", async () => {
+  const { ctx } = makeCtx(join(dir, "ws3"));
+  // the editor of p1 is connected: no window, no note
+  const t = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "target_project", arguments: { projectId: "p1" } }, ctx);
+  expect(t).toMatchObject({ ok: true, output: '{"ok":true}' });
+  // the editor reconnected: the call is answered stale once, then re-bound and retried
+  fake.staleNext = 1;
+  const before = calls.length;
+  const r = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "read_timeline", arguments: { editSessionId: "es1" } }, ctx);
+  expect(r.ok).toBe(true);
+  expect(String(r.output)).toContain('{"tracks":[]}');
+  expect(String(r.output)).toContain("re-bound it and retried");
+  expect(calls.slice(before).map((c) => c.name)).toEqual(["read_timeline", "openchatcut_status", "target_project", "read_timeline"]);
+  // no editor and no browser to open one: the model is told to ask the owner
+  fake.connected = [];
+  const none = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "target_project", arguments: { projectId: "p2" } }, ctx);
+  expect(String(none.output)).toContain("ask the owner to open the project");
+  fake.connected = ["p1"];
+});
+
+test("editor window: own profile, throttling off; stale detection", () => {
+  const args = editorWindowArgs("http://localhost:5199/#/editor/p1", "C:/x/profile");
+  expect(args).toContain("--app=http://localhost:5199/#/editor/p1");
+  expect(args).toContain("--user-data-dir=C:/x/profile");
+  expect(args).toContain("--disable-background-timer-throttling");
+  expect(args).toContain("--disable-backgrounding-occluded-windows");
+  expect(editorDropped('{"outcome":"rejected","message":"Project p1 browser ownership is stale."}')).toBe(true);
+  expect(editorDropped('{"outcome":"rejected","message":"No OpenChatCut editor is connected. Call target_project"}')).toBe(true);
+  expect(editorDropped('{"outcome":"rejected","message":"editSessionId is required"}')).toBe(false);
+  expect(editorDropped('{"tracks":[]}')).toBe(false);
 });
