@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -69,18 +69,18 @@ const sessionKey = (ctx: ToolContext) => ctx.agent.slug;
  * edit sessions only on DELETE or after 60 idle minutes, so a runner restart that forgot the id
  * locked the agent out of its own draft for an hour. After a restart the same transport is reused.
  */
-type Saved = Record<string, { id?: string | null; target?: string }>;
+type Saved = Record<string, { id?: string | null; target?: string; [projectWindow: string]: unknown }>;
 const savedFile = () => process.env.OPENCHATCUT_SESSION_FILE?.trim() || join(process.env.LOCALAPPDATA ?? join(homedir(), ".cache"), "MyOfis", "openchatcut-sessions.json");
 
 function readSaved(): Saved {
   try {
-    return JSON.parse(readFileSync(savedFile(), "utf8")) as Saved;
+    return JSON.parse(readFileSync(savedFile(), "utf8").replace(/^﻿/, "")) as Saved;
   } catch {
     return {};
   }
 }
 
-function saveSession(key: string, patch: { id?: string | null; target?: string }): void {
+function saveSession(key: string, patch: Record<string, unknown>): void {
   try {
     const all = readSaved();
     all[key] = { ...all[key], ...patch };
@@ -215,6 +215,16 @@ const alive = (pid: number | undefined): boolean => {
   }
 };
 
+/** Close a window the office opened (the whole browser process tree of its own profile). */
+function closeWindow(pid: number): void {
+  try {
+    if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", env: scrubbedEnv() });
+    else process.kill(pid);
+  } catch {
+    /* already gone */
+  }
+}
+
 async function editorConnected(ctx: ToolContext, projectId: string): Promise<boolean> {
   const r = await callOpenChatCut(ctx, "openchatcut_status", {});
   try {
@@ -228,21 +238,34 @@ async function editorConnected(ctx: ToolContext, projectId: string): Promise<boo
 export async function ensureEditor(ctx: ToolContext, projectId: string): Promise<string> {
   if (process.env.OPENCHATCUT_EDITOR_WINDOW === "0" || !/^[\w-]{1,100}$/.test(projectId)) return "";
   if (await editorConnected(ctx, projectId)) return "";
-  // a window we opened that is still running reconnects by itself; otherwise open one
-  if (!alive(editorWindows.get(projectId))) {
-    const browser = editorBrowser();
-    if (!browser) return "No OpenChatCut editor is open and no Edge/Chrome was found to open one: ask the owner to open the project in the OpenChatCut app.";
+  const browser = editorBrowser();
+  const open = (): void => {
     const profile = join(process.env.LOCALAPPDATA ?? join(homedir(), ".cache"), "MyOfis", "openchatcut-editor");
     mkdirSync(profile, { recursive: true });
-    const child = spawn(browser, editorWindowArgs(`${BASE()}/#/editor/${projectId}`, profile), { detached: true, stdio: "ignore", env: scrubbedEnv() });
+    const child = spawn(browser!, editorWindowArgs(`${BASE()}/#/editor/${projectId}`, profile), { detached: true, stdio: "ignore", env: scrubbedEnv() });
     child.on("error", () => {});
     child.unref();
-    if (child.pid) editorWindows.set(projectId, child.pid);
+    if (child.pid) {
+      editorWindows.set(projectId, child.pid);
+      saveSession("_windows", { [projectId]: child.pid });
+    }
+  };
+  // the window we opened (also before a runner restart) usually reconnects by itself; otherwise open one
+  const owned = editorWindows.get(projectId) ?? (readSaved()._windows as Record<string, number> | undefined)?.[projectId];
+  if (!alive(owned)) {
+    if (!browser) return "No OpenChatCut editor is open and no Edge/Chrome was found to open one: ask the owner to open the project in the OpenChatCut app.";
+    open();
   }
   for (let i = 0; i < 25; i++) {
     if (ctx.signal.aborted) break;
     await Bun.sleep(2000);
     if (await editorConnected(ctx, projectId)) return "The OpenChatCut editor window for this project is open on the owner's PC (opened by the office); the owner can watch there.";
+    // our old window did not come back (the app restarted under it): close it and open a fresh one
+    if (i === 7 && owned && alive(owned) && browser) {
+      closeWindow(owned);
+      await Bun.sleep(1500);
+      open();
+    }
   }
   return "The editor window did not connect within 50 s: ask the owner to check the OpenChatCut app is running.";
 }
