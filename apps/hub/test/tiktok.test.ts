@@ -124,7 +124,13 @@ describe.skipIf(!ffmpeg || !Bun.which("ffprobe"))("TikTok agent: clip folder →
 
     // approving it by hand posts it; a 207 from Zernio keeps the error on the draft for Publish again
     zernio.failNext = true;
-    const failed = (await env.api(`/api/drafts/${pending[0].id}/decide`, { body: { decision: "approve" } })).body.draft;
+    // a video posts in the background (it can take longer than Cloudflare's 100 s): the answer comes at once
+    const approved = (await env.api(`/api/drafts/${pending[0].id}/decide`, { body: { decision: "approve" } })).body;
+    expect(approved).toMatchObject({ posting: true, draft: { status: "approved" } });
+    const failed = await waitFor(() => {
+      const d = env.hub.hub.content.draft(pending[0].id);
+      return d?.publish_error ? d : null;
+    }, 30_000, "tiktok post result");
     expect(failed.publish_error).toContain("Video must be at least 3 seconds");
     const again = (await env.api(`/api/drafts/${pending[0].id}/publish`, { method: "POST" })).body.draft;
     expect(again).toMatchObject({ status: "published", publish_error: null });

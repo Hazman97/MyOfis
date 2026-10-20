@@ -439,8 +439,13 @@ export const videoTiktokHdTool = defineTool({
     } catch (err) {
       throw new ToolDenied((err as Error).message);
     }
-    const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").slice(0, 60) || `video-${i.video}`;
     const facts = (p: VideoProbe) => ({ size: `${p.width}×${p.height}`, fps: p.fps, codec: p.video_codec, mb: round2(p.size_bytes / 1024 ** 2), seconds: p.duration });
+    const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").slice(0, 60) || `video-${i.video}`;
+    // already prepared on the TikTok HD page and still fits: use that very file, no second copy
+    const attached = ctx.attachments[i.video - 1];
+    if (plan.mode === "remux" && i.mode === "auto" && /-tiktok-hd(-tiktok_fhd)?$/.test(name.replace(/\.[^.]+$/, "")) && attached) {
+      return { ok: true, summary: `TikTok HD: ${name} is already prepared`, output: { video_id: attached.id, mode: "remux", reasons: [], before: facts(before), after: facts(before) } };
+    }
     if (plan.mode === "reencode") {
       const edit = EditPlan.parse({ clips: [{ video: i.video }], preset: "tiktok_fhd", fit: plan.fit, fps: plan.fps, name: `${base}-tiktok-hd` });
       const r = await videoEditTool.execute(edit, ctx);

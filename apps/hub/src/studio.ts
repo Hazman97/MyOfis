@@ -188,9 +188,20 @@ export class Studio {
         source: { id: input.source_upload_id ?? null, name: input.attachments?.[0]?.name ?? "" },
         result: made ? { id: made.id, name: made.name, size: made.size } : null,
         note: text.trim(),
-        error: j.status === "failed" ? failed : null,
+        error: j.status === "failed" ? failed : j.status === "cancelled" ? this.#cancelReason(j.id) : null,
       };
     });
+  }
+
+  /** Why a job was stopped (time limit, the owner, pause), from its job.cancelled event. */
+  #cancelReason(jobId: string): string | null {
+    const e = this.hub.db
+      .select({ payload: events.payload })
+      .from(events)
+      .where(and(eq(events.type, "job.cancelled"), sql`json_extract(${events.payload}, '$.job_id') = ${jobId}`))
+      .orderBy(desc(events.id))
+      .get();
+    return (e?.payload as { reason?: string } | undefined)?.reason ?? "stopped";
   }
 
   /** The video a render job made (newest), if it is done. */

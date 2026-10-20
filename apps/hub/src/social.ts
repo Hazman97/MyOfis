@@ -423,6 +423,8 @@ export class Social {
           .returning()
           .get()!;
         if (!error) emit({ type: "draft.decided", payload: { draft_id: draftId, status: "published" } }, { agent_id: agentId });
+        // a failed post: open draft lists reload and show the error
+        else emit({ type: "draft.updated", payload: { draft_id: draftId, video_upload_id: null } }, { agent_id: agentId });
         return r;
       }),
     );
@@ -569,11 +571,17 @@ export class Social {
       try {
         const { body } = await this.#zernio<{ post?: { platforms?: { platformPostUrl?: string | null; status?: string; errorMessage?: string }[] } }>(cfg.apiKey, `/posts/${encodeURIComponent(p.post_id)}`);
         const plat = body.post?.platforms?.[0];
+        // either way open draft lists reload (draft.updated), so a failed post stops looking live
+        const changed = (set: Partial<typeof contentDrafts.$inferInsert>) =>
+          this.store.transact((tx, emit) => {
+            const row = tx.update(contentDrafts).set(set).where(eq(contentDrafts.id, p.draft_id)).returning().get();
+            if (row) emit({ type: "draft.updated", payload: { draft_id: p.draft_id, video_upload_id: null } }, { agent_id: row.agent_id });
+          });
         if (plat?.status === "failed") {
-          this.db.update(contentDrafts).set({ status: "approved", published_url: null, publish_error: `TikTok: ${plat.errorMessage ?? "the post failed"}`.slice(0, 500) }).where(eq(contentDrafts.id, p.draft_id)).run();
+          changed({ status: "approved", published_url: null, publish_error: `TikTok: ${plat.errorMessage ?? "the post failed"}`.slice(0, 500) });
           drop();
         } else if (plat?.platformPostUrl) {
-          this.db.update(contentDrafts).set({ published_url: plat.platformPostUrl }).where(eq(contentDrafts.id, p.draft_id)).run();
+          changed({ published_url: plat.platformPostUrl });
           done.push({ draft_id: p.draft_id, url: plat.platformPostUrl });
           drop();
         }

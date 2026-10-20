@@ -36,6 +36,11 @@ watch(
   () => Object.values(office.state.pending_drafts ?? {}).map((d) => `${d.id}:${d.updated_at ?? ""}`).join(","),
   () => tab.value === "pending" && load(),
 );
+// decided drafts change too (published, taken down, a post that failed later): reload the other tabs
+watch(
+  () => office.state.drafts_rev,
+  () => tab.value !== "pending" && load(),
+);
 
 function onDecided(d: ContentDraft) {
   if (tab.value === "pending") drafts.value = drafts.value.filter((x) => x.id !== d.id);

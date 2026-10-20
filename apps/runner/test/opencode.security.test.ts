@@ -137,3 +137,15 @@ describe.skipIf(!binary)("OpenCode safety (real OpenCode, scripted LLM)", () => 
     expect(existsSync(join(work, "hi.txt"))).toBe(false);
   }, 200_000);
 });
+
+test('model "auto" gives OpenCode the provider\'s best model, and a clear error without a list', () => {
+  const assignment = (models?: string[]) =>
+    ({
+      agent: { id: "a", slug: "coder", name: "Coder", model: "auto", system_prompt: "", tools: [], config: AgentConfig.parse({ runtime: "opencode" }), permission_level: "review" },
+      provider: { slug: "r", kind: "openai_compatible", base_url: "http://127.0.0.1:1", api_key: "k", ...(models ? { models } : {}) },
+    }) as unknown as RunAssignment;
+  const setup = buildOpenCodeSetup(assignment(["kc/minimax/minimax-m3.1-flash:free", "cl/anthropic/claude-sonnet-4.6"]), { baseUrl: "http://127.0.0.1:2", token: "t" });
+  expect(JSON.stringify(setup)).toContain("agentoffice/cl/anthropic/claude-sonnet-4.6");
+  expect(JSON.stringify(setup)).not.toContain("agentoffice/auto");
+  expect(() => buildOpenCodeSetup(assignment(), { baseUrl: "http://127.0.0.1:2", token: "t" })).toThrow(/Scan models/);
+});

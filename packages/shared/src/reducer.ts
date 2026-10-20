@@ -21,6 +21,8 @@ export interface OfficeState {
   pending_drafts: Record<string, PendingDraft>;
   /** Skill proposals waiting for the owner, by proposal id. */
   pending_skills: Record<string, { id: string; name: string; action: string; agent_id: string | null; created_at: string }>;
+  /** Event id of the last change to any draft (created, decided, updated, taken down), so open draft lists reload. */
+  drafts_rev?: number;
 }
 
 export interface PendingDraft {
@@ -373,17 +375,20 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
     case "draft.created": {
       const p = event.payload;
       s.pending_drafts[p.draft_id] = { id: p.draft_id, project_id: p.project_id, agent_id: event.agent_id, platform: p.platform, kind: p.kind, created_at: event.ts };
+      s.drafts_rev = event.id;
       if (event.agent_id) agentView(s, event.agent_id).moment = momentOf(event, "draft_pinned");
       break;
     }
     case "draft.decided":
       delete s.pending_drafts[event.payload.draft_id];
+      s.drafts_rev = event.id;
       // the owner liked it: the agent cheers in the office
       if (event.agent_id && event.payload.status !== "rejected") agentView(s, event.agent_id).moment = momentOf(event, "praised");
       break;
     case "draft.updated": {
       const d = s.pending_drafts[event.payload.draft_id];
       if (d) d.updated_at = event.ts;
+      s.drafts_rev = event.id;
       break;
     }
     case "skill.proposed": {

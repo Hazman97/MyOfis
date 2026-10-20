@@ -104,7 +104,10 @@ export class DiskUsage {
   /** The places with sizes (cached for a minute; the first call answers at once and measures in the background). */
   async list(wait = false): Promise<{ items: DiskPlace[]; measured_at: string | null }> {
     if (this.#cache && Date.now() - this.#cache.at < CACHE_MS) return { items: this.#cache.items, measured_at: new Date(this.#cache.at).toISOString() };
-    const run = (this.#measuring ??= this.#measure().finally(() => (this.#measuring = null)));
+    // a failed walk (permissions, a folder removed meanwhile) must never become an unhandled rejection
+    const run = (this.#measuring ??= this.#measure()
+      .catch((err) => console.error(`[storage] measuring failed: ${(err as Error).message}`))
+      .finally(() => (this.#measuring = null)));
     if (wait || this.#cache) {
       if (wait) await run;
       if (this.#cache) return { items: this.#cache.items, measured_at: new Date(this.#cache.at).toISOString() };
@@ -119,7 +122,14 @@ export class DiskUsage {
         items.push({ ...p, exists: false, bytes: null, files: null, partial: false });
         continue;
       }
-      if (statSync(p.path).isFile()) {
+      let isFile = false;
+      try {
+        isFile = statSync(p.path).isFile();
+      } catch {
+        items.push({ ...p, exists: false, bytes: null, files: null, partial: false });
+        continue;
+      }
+      if (isFile) {
         // the database: count its WAL/SHM files too
         const parts = [p.path, `${p.path}-wal`, `${p.path}-shm`].filter((f) => existsSync(f));
         items.push({ ...p, exists: true, bytes: parts.reduce((s, f) => s + statSync(f).size, 0), files: parts.length, partial: false });

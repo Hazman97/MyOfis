@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { RunAssignment } from "@agent-office/shared";
+import { modelCandidates, type RunAssignment } from "@agent-office/shared";
 import { scrubbedEnv } from "@agent-office/tools";
 
 type Rule = "allow" | "ask" | "deny";
@@ -72,7 +72,9 @@ export interface OpenCodeSetup {
  */
 export function buildOpenCodeSetup(a: RunAssignment, llm: { baseUrl: string; token: string }): OpenCodeSetup {
   const providerID = "agentoffice";
-  const modelID = a.agent.model;
+  // OpenCode takes one model: "auto" means the provider's best one (no fallback inside OpenCode)
+  const modelID = modelCandidates(a.agent.model, a.provider.models ?? [])[0];
+  if (!modelID) throw new Error(`model "auto" needs the provider's model list: open Settings → AI providers and press "Scan models", or pick a model for this agent`);
   const config = {
     $schema: "https://opencode.ai/config.json",
     autoupdate: false,

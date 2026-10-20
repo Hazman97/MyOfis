@@ -89,6 +89,8 @@ export function seed(db: Db, config: HubConfig, secrets: Secrets): void {
     const id = newId("agt");
     const parsed = AgentInput.parse(needsLlm && llm ? { ...def, provider: llm.provider, model: llm.model } : def);
     db.insert(agents).values({ ...parsed, id }).run();
+    // a fresh agent already has its upgrade tools: mark them, so one the owner removes is not added back
+    for (const t of upgrade?.tools ?? []) db.insert(settings).values({ key: `seeded.tool.${def.slug}.${t}`, value: true }).onConflictDoNothing().run();
     for (const s of makeSchedules?.(id) ?? []) {
       db.insert(schedules).values({ ...ScheduleInput.parse(s), id: newId("sch") }).run();
       db.insert(settings).values({ key: `seeded.schedule.${def.slug}.${String((s.job_template as { type?: unknown }).type ?? "")}`, value: true }).onConflictDoNothing().run();

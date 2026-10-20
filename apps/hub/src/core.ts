@@ -1224,7 +1224,16 @@ Error: ${r.error}` : ""}` });
       if (!r.accepted || waiting.has(r.id) || this.#cancelTimers.has(r.id)) continue;
       const asks = this.db.select({ status: approvals.status, decided_at: approvals.decided_at }).from(approvals).where(eq(approvals.run_id, r.id)).all();
       if (asks.some((a) => a.status === "pending")) continue;
-      const since = Math.max(Date.parse(r.started_at), ...asks.map((a) => (a.decided_at ? Date.parse(a.decided_at) : 0)));
+      // the clock restarts after the last approval decision and after the last consult answer
+      // (time spent waiting on colleagues does not count: Ketua's consult_team can take 10+ minutes)
+      const consultEnds = this.db
+        .select({ ended: runs.ended_at })
+        .from(runs)
+        .innerJoin(jobs, eq(runs.job_id, jobs.id))
+        .where(and(eq(jobs.type, "consult"), sql`json_extract(${jobs.input}, '$.parent_run_id') = ${r.id}`))
+        .all()
+        .map((x) => (x.ended ? Date.parse(x.ended) : 0));
+      const since = Math.max(Date.parse(r.started_at), ...asks.map((a) => (a.decided_at ? Date.parse(a.decided_at) : 0)), ...consultEnds);
       const agent = getAgent(this.db, r.agent_id);
       const job = getJob(this.db, r.job_id);
       let minutes = agent ? toAgent(agent).config.max_run_minutes : 20;

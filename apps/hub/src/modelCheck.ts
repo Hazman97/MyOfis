@@ -223,13 +223,18 @@ async function kiloFree(): Promise<string[]> {
 }
 
 const SCAN_MAX = 120;
+/** A scan answers within this (Cloudflare drops a request after 100 s). */
+const SCAN_BUDGET_MS = 80_000;
 
 /**
  * Test the models a provider offers and say which really work with tools. For a gateway with many
  * upstreams (9Router), only the upstreams you connected are tested (plus Kilo Code's free models
  * when Kilo is connected). Runs 8 at a time (a scan must finish well under Cloudflare's 100 s).
  */
-export async function scanModels(p: ProviderForCheck, concurrency = 8): Promise<ScanResult[]> {
+export async function scanModels(p: ProviderForCheck, concurrency = 8, budgetMs = SCAN_BUDGET_MS): Promise<ScanResult[]> {
+  // the whole scan answers within the budget (Cloudflare drops a request at 100 s): a model still
+  // testing at the deadline counts as "too slow", the rest as "not tested" (scan again to finish them)
+  const deadline = Date.now() + budgetMs;
   const all = await modelGroups(p);
   let ids: string[];
   const groups = [...new Set(all.map((m) => m.group).filter(Boolean))];
@@ -243,9 +248,12 @@ export async function scanModels(p: ProviderForCheck, concurrency = 8): Promise<
   const out: ScanResult[] = [];
   for (let i = 0; i < ids.length; i += concurrency) {
     const batch = await Promise.all(
-      ids.slice(i, i + concurrency).map(async (model) => {
-        const t = await testModel(p, model);
-        return { model, ok: t.ok, tool_calls: t.tool_calls, ms: t.ms, error: t.error };
+      ids.slice(i, i + concurrency).map(async (model): Promise<ScanResult> => {
+        const left = deadline - Date.now();
+        if (left < 3000) return { model, ok: false, tool_calls: false, ms: 0, error: "not tested: the scan ran out of time (scan again)" };
+        const late = new Promise<ScanResult>((done) => setTimeout(() => done({ model, ok: false, tool_calls: false, ms: left, error: "too slow: no answer before the scan's time limit" }), left));
+        const t = testModel(p, model).then((r) => ({ model, ok: r.ok, tool_calls: r.tool_calls, ms: r.ms, error: r.error }));
+        return Promise.race([t, late]);
       }),
     );
     out.push(...batch);

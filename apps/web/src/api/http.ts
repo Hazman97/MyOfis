@@ -518,7 +518,8 @@ export const api = {
     request<{ ok: true }>(`/approvals/${id}/decide`, { body: { decision } }),
 
   presets: () => request<{ presets: ProviderPreset[] }>("/providers/presets"),
-  providers: () => request<{ providers: ProviderPublic[] }>("/providers"),
+  /** `read_only`: this room runs on HQ's AI (its providers are shown but cannot be changed here). */
+  providers: () => request<{ providers: ProviderPublic[]; read_only?: boolean }>("/providers"),
   /** The provider's model list (from its /models); save = remember it on the provider. */
   providerModels: (id: string, save = false) => request<{ models: string[] }>(`/providers/${id}/models`, { body: { save } }),
   /** Before saving: is the endpoint reachable, how many models does it list? */

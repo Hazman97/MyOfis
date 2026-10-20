@@ -90,6 +90,9 @@ export function startHub(
   const server: Server<SocketData> = Bun.serve<SocketData>({
     hostname: config.host,
     port: config.port,
+    // Bun's default is 10 s, which cut off slow owner actions (Scan models, Test model, Skills →
+    // Browse, Storage sizes, big PDF ingest) with "request timed out". 255 s is Bun's maximum.
+    idleTimeout: 255,
     async fetch(req, srv) {
       const url = new URL(req.url);
 

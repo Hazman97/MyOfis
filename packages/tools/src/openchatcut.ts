@@ -205,11 +205,26 @@ export const editorWindowArgs = (url: string, profile: string): string[] => [
   "--window-size=1500,950",
 ];
 
+/**
+ * Our editor window is still running under this pid. A pid saved before a reboot can belong to any
+ * other program by now, so on Windows the process must also be a browser started with our editor
+ * profile; anything else is never trusted (and never closed).
+ */
 const alive = (pid: number | undefined): boolean => {
   if (!pid) return false;
   try {
     process.kill(pid, 0);
-    return true;
+  } catch {
+    return false;
+  }
+  if (process.platform !== "win32") return true;
+  try {
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${Math.trunc(pid)}").CommandLine`], {
+      encoding: "utf8",
+      timeout: 8000,
+      env: scrubbedEnv(),
+    });
+    return /openchatcut-editor/i.test(r.stdout ?? "");
   } catch {
     return false;
   }
@@ -311,6 +326,11 @@ export const openchatcutTool = defineTool({
     }
     // deleting projects is the owner's job, in the app
     if (/delete/i.test(i.tool) && !/^(remove_item|discard_edit_session)$/.test(i.tool)) throw new ToolDenied("deleting in OpenChatCut is done by the owner in the app");
+    // models name the project argument in different ways; OpenChatCut wants projectId
+    if (i.tool === "target_project" && typeof i.arguments.projectId !== "string") {
+      const alt = ["project_id", "projectID", "id", "project", "editorProjectId"].map((k) => i.arguments[k]).find((v) => typeof v === "string");
+      if (alt) i.arguments = { ...i.arguments, projectId: alt };
+    }
     const project = typeof i.arguments.projectId === "string" ? i.arguments.projectId : null;
     let note = "";
     if (i.tool === "target_project" && project) {
@@ -325,7 +345,10 @@ export const openchatcutTool = defineTool({
       note = await ensureEditor(ctx, target);
       await callOpenChatCut(ctx, "target_project", { projectId: target });
       r = await callOpenChatCut(ctx, i.tool, i.arguments);
-      note = `(The editor had reconnected; the office re-bound it and retried.) ${note}`.trim();
+      note = (r.isError || editorDropped(r.text)
+        ? `(The editor had reconnected; the office re-bound it, but the retry failed too: if the edit session is stale, recover_edit_session {action: "resume"} or begin_edit_session {reuseExisting: true}.) ${note}`
+        : `(The editor had reconnected; the office re-bound it and retried.) ${note}`
+      ).trim();
     }
     // an applied session is closed: the next edit needs a new one (models kept editing into the old one)
     if (/^(review_edit_session|get_edit_session)$/.test(i.tool) && /"status"\s*:\s*"applied"/.test(r.text)) {

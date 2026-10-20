@@ -72,8 +72,11 @@ async function getJson<T>(name: string): Promise<T> {
 }
 
 /** Build the view for the current mode (the brain stays: switching keeps everyone where they are). */
+let startGen = 0;
 async function start() {
   if (!loaded || !host.value || !world) return;
+  // a quick 3D → Pixel → 3D while a chunk loads: only the newest start may keep its view
+  const gen = ++startGen;
   game?.destroy();
   game = null;
   const options = {
@@ -95,11 +98,11 @@ async function start() {
   };
   if (mode.value === "3d") {
     const mod = await import("../../office/scene3d/office3d.ts");
-    if (disposed || !host.value) return;
+    if (disposed || !host.value || gen !== startGen) return;
     game = mod.createOffice3d(host.value, options);
   } else {
     const mod = await import("../../office/scene/game.ts");
-    if (disposed || !host.value) return;
+    if (disposed || !host.value || gen !== startGen) return;
     game = mod.createOfficeGame(host.value, options);
   }
 }

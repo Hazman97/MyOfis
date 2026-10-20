@@ -8,7 +8,7 @@ import { SHORT_VIDEO_EDITING_SKILL, editorAgent, editorUpgrade } from "./editor.
 import { ketuaAgent, ketuaSchedule } from "./ketua.ts";
 import { openchatcutAgent, openchatcutUpgrade } from "./openchatcutEditor.ts";
 import { TIKTOK_CAPTIONS_SKILL, tiktokAgent, tiktokSchedule, tiktokUpgrade } from "./tiktok.ts";
-import { tiktokPosterAgent } from "./tiktokPoster.ts";
+import { tiktokPosterAgent, tiktokPosterUpgrade } from "./tiktokPoster.ts";
 import { projectAssistantAgent, projectAssistantSchedule } from "./projectAssistant.ts";
 import { keraniAgent, keraniSchedule } from "./kerani.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
@@ -64,5 +64,5 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: projectAssistantAgent, needsLlm: true, schedules: (id) => [projectAssistantSchedule(id)] },
   { agent: openchatcutAgent, needsLlm: true, upgrade: openchatcutUpgrade },
   { agent: tiktokAgent, needsLlm: true, schedules: (id) => [tiktokSchedule(id)], upgrade: tiktokUpgrade },
-  { agent: tiktokPosterAgent, needsLlm: true },
+  { agent: tiktokPosterAgent, needsLlm: true, upgrade: tiktokPosterUpgrade },
 ];

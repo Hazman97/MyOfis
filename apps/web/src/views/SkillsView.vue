@@ -18,7 +18,8 @@ import { AlertTriangle, BookOpen, ChevronRight, Clock, Sparkles, Trash2, Upload 
  * approval is on, memory changes. Nothing lands until the owner approves it here.
  */
 const office = useOffice();
-const tab = ref<"inbox" | "skills" | "history" | "browse">("inbox");
+// members only see the skills list: proposals, Browse, Import, Delete and the memory switch are the owner's
+const tab = ref<"inbox" | "skills" | "history" | "browse">(isOwner.value ? "inbox" : "skills");
 const proposals = ref<Proposal[]>([]);
 const skills = ref<Skill[]>([]);
 const writeApproval = ref(false);
@@ -45,10 +46,12 @@ async function loadAssignments() {
 async function load() {
   error.value = "";
   try {
-    const [p, s, m] = await Promise.all([api.proposals(), api.skills(), api.memorySettings()]);
-    proposals.value = p.proposals;
-    skills.value = s.skills;
-    writeApproval.value = m.write_approval;
+    skills.value = (await api.skills()).skills;
+    if (isOwner.value) {
+      const [p, m] = await Promise.all([api.proposals(), api.memorySettings()]);
+      proposals.value = p.proposals;
+      writeApproval.value = m.write_approval;
+    }
     await loadAssignments();
   } catch (e) {
     error.value = (e as Error).message;
@@ -110,7 +113,7 @@ const title = (p: Proposal) =>
       title="Skills"
       description="Procedures your agents learned (SKILL.md, the format Hermes Agent uses). Agents propose new skills and improvements; nothing is saved until you approve it."
     >
-      <button class="btn btn-primary btn-sm shadow-sm inline-flex items-center gap-1.5" @click="importOpen = !importOpen">
+      <button v-if="isOwner" class="btn btn-primary btn-sm shadow-sm inline-flex items-center gap-1.5" @click="importOpen = !importOpen">
         <Upload :size="14" />
         <span>Import SKILL.md</span>
       </button>
@@ -143,12 +146,14 @@ const title = (p: Proposal) =>
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div class="inline-flex rounded-xl border border-line bg-surface-2/60 p-1" role="tablist" aria-label="Skills view">
         <button
-          v-for="t in [
-            { id: 'inbox', label: 'Waiting' },
-            { id: 'skills', label: 'Skills' },
-            { id: 'history', label: 'History' },
-            { id: 'browse', label: 'Browse' },
-          ] as const"
+          v-for="t in (isOwner
+            ? [
+                { id: 'inbox', label: 'Waiting' },
+                { id: 'skills', label: 'Skills' },
+                { id: 'history', label: 'History' },
+                { id: 'browse', label: 'Browse' },
+              ]
+            : [{ id: 'skills', label: 'Skills' }]) as { id: 'inbox' | 'skills' | 'history' | 'browse'; label: string }[]"
           :key="t.id"
           role="tab"
           class="inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150"
@@ -175,7 +180,7 @@ const title = (p: Proposal) =>
       </div>
 
       <!-- Styled Switch -->
-      <div class="flex flex-col gap-1 sm:items-end">
+      <div v-if="isOwner" class="flex flex-col gap-1 sm:items-end">
         <label
           class="group inline-flex cursor-pointer items-center gap-2.5 select-none"
           :class="busy === 'approval' ? 'opacity-50 pointer-events-none' : ''"
@@ -377,6 +382,7 @@ const title = (p: Proposal) =>
               </div>
             </button>
             <button
+              v-if="isOwner"
               class="btn btn-ghost btn-sm size-7 p-0 text-faint hover:text-danger hover:bg-danger-soft opacity-60 hover:opacity-100 transition-all shrink-0"
               :disabled="busy === `skill:${s.name}`"
               :aria-label="`Delete skill ${s.name}`"

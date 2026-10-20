@@ -11,6 +11,7 @@ import FacebookSettings from "./FacebookSettings.vue";
 import SocialSettings from "./SocialSettings.vue";
 import TikTokSettings from "./TikTokSettings.vue";
 import { api } from "../api/http.ts";
+import { isOwner } from "../me.ts";
 import { fmtDateTime } from "../format.ts";
 
 /** Brief editor (projects/<slug>/brief.yaml) and the project's feature log. */
@@ -342,7 +343,8 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
         What changed for customers, newest first. Coder adds a note after one of its pull requests is merged and CI passes. Each note asks Tester for a screenshot and Marketing for announcement drafts.
       </p>
 
-      <form class="card space-y-3 p-4 bg-surface/70 border-line" @submit.prevent="addNote">
+      <!-- release notes are the owner's (members get 403) -->
+      <form v-if="isOwner" class="card space-y-3 p-4 bg-surface/70 border-line" @submit.prevent="addNote">
         <div class="sign text-[10px] tracking-wider text-accent">Add a note yourself</div>
         <input v-model="note.title" class="input" required minlength="3" maxlength="160" placeholder="Booking boleh pilih masa sendiri" aria-label="Title" />
         <textarea v-model="note.user_facing_note" class="input min-h-16 text-xs" required minlength="10" maxlength="2000" placeholder="Plain words for customers: what they can do now." aria-label="Note" />

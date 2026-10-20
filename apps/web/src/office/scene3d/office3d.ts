@@ -436,6 +436,8 @@ export function createOffice3d(parent: HTMLElement, o: OfficeGameOptions): Offic
     for (const [id, v] of chars) {
       if (seen.has(id)) continue;
       v.person.root.removeFromParent();
+      v.person.root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      for (const m of v.person.materials) m.dispose();
       v.label.remove();
       v.bubble.remove();
       chars.delete(id);
@@ -503,10 +505,18 @@ export function createOffice3d(parent: HTMLElement, o: OfficeGameOptions): Offic
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", noMenu);
       window.removeEventListener("keydown", onKey);
+      // free the GPU: geometries, materials (and their programs), the shadow map, then the context
+      // itself, so switching 3D ↔ Pixel many times never runs out of WebGL contexts
+      const seenMats = new Set<THREE.Material>();
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         mesh.geometry?.dispose();
+        for (const m of Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []) seenMats.add(m);
       });
+      for (const m of seenMats) m.dispose();
+      sun.shadow.map?.dispose();
+      renderer.renderLists.dispose();
+      renderer.forceContextLoss();
       renderer.dispose();
       canvas.remove();
       labels.domElement.remove();

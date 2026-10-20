@@ -280,7 +280,12 @@ export class Publisher {
   async takeDown(draftId: string) {
     const row = this.#published(draftId);
     await this.#post(row.project_id, { action: "delete", draft_id: row.id });
-    const r = this.db.update(contentDrafts).set({ status: "approved", published_url: null, publish_error: null }).where(eq(contentDrafts.id, draftId)).returning().get()!;
+    const r = this.store.transact((tx, emit) => {
+      const out = tx.update(contentDrafts).set({ status: "approved", published_url: null, publish_error: null }).where(eq(contentDrafts.id, draftId)).returning().get()!;
+      // open draft lists show it as not live any more
+      emit({ type: "draft.updated", payload: { draft_id: draftId, video_upload_id: null } }, { agent_id: row.agent_id });
+      return out;
+    });
     return toDraft(r);
   }
 }

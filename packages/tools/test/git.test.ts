@@ -1,4 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+
+// git on Windows (antivirus, cold disk) easily takes longer than bun's 5 s per hook/test
+setDefaultTimeout(60_000);
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +40,7 @@ beforeAll(async () => {
   gitea.issues.push({ number: 7, title: "Booking button broken", body: "Clicking Book does nothing", labels: ["agent"] });
 });
 afterAll(() => {
-  gitea.stop();
+  gitea?.stop();
   rmSync(root, { recursive: true, force: true });
 });
 

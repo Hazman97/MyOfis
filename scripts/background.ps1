@@ -26,17 +26,27 @@ function Read-Pids {
   return $null
 }
 
-function Test-Running($procId) {
-  if (-not $procId) { return $false }
-  $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
-  return [bool]($p -and $p.ProcessName -eq "bun")
+# An entry is { pid, start }: a pid alone could be reused by another bun after a reboot.
+function Get-Entry($pids, $name) {
+  if (-not $pids) { return $null }
+  $e = $pids.$name
+  if ($e -is [int] -or $e -is [long]) { return @{ pid = $e; start = $null } }
+  return $e
+}
+
+function Test-Running($entry) {
+  if (-not $entry -or -not $entry.pid) { return $false }
+  $p = Get-Process -Id $entry.pid -ErrorAction SilentlyContinue
+  if (-not ($p -and $p.ProcessName -eq "bun")) { return $false }
+  if ($entry.start) { return $p.StartTime.ToString("o") -eq $entry.start }
+  return $true
 }
 
 function Show-Status {
   $pids = Read-Pids
   foreach ($name in $Apps.Keys) {
-    $procId = if ($pids) { $pids.$name } else { $null }
-    $state = if (Test-Running $procId) { "running (pid $procId)" } else { "stopped" }
+    $entry = Get-Entry $pids $name
+    $state = if (Test-Running $entry) { "running (pid $($entry.pid))" } else { "stopped" }
     "{0,-7} {1}" -f $name, $state
   }
 }
@@ -46,12 +56,17 @@ function Start-All {
   $pids = Read-Pids
   $out = @{}
   foreach ($name in $Apps.Keys) {
-    $old = if ($pids) { $pids.$name } else { $null }
-    if (Test-Running $old) { "$name already running (pid $old)"; $out[$name] = $old; continue }
+    $old = Get-Entry $pids $name
+    if (Test-Running $old) { "$name already running (pid $($old.pid))"; $out[$name] = $old; continue }
+    # keep the previous log (a crash before a restart would be lost otherwise)
+    foreach ($f in "$name.log", "$name.err.log") {
+      $path = Join-Path $Logs $f
+      if (Test-Path $path) { Move-Item -Force $path ($path -replace '\.log$', '.prev.log') }
+    }
     # bun loads .env from the repo folder (cwd), the same as `bun run dev`
     $p = Start-Process -FilePath $Bun -ArgumentList $Apps[$name] -WorkingDirectory $Root -WindowStyle Hidden -PassThru `
       -RedirectStandardOutput (Join-Path $Logs "$name.log") -RedirectStandardError (Join-Path $Logs "$name.err.log")
-    $out[$name] = $p.Id
+    $out[$name] = @{ pid = $p.Id; start = (Get-Process -Id $p.Id).StartTime.ToString("o") }
     "$name started (pid $($p.Id))"
     if ($name -eq "hub") { Start-Sleep -Seconds 4 } # the runner connects to the hub
   }
@@ -62,8 +77,8 @@ function Stop-All {
   $pids = Read-Pids
   if (-not $pids) { "nothing to stop"; return }
   foreach ($name in @("runner", "hub")) {
-    $procId = $pids.$name
-    if (Test-Running $procId) { taskkill /PID $procId /T /F | Out-Null; "$name stopped" } else { "$name was not running" }
+    $entry = Get-Entry $pids $name
+    if (Test-Running $entry) { taskkill /PID $entry.pid /T /F | Out-Null; "$name stopped" } else { "$name was not running" }
   }
   Remove-Item $PidFile -ErrorAction SilentlyContinue
 }
@@ -74,7 +89,7 @@ switch ($Action) {
   "restart" { Stop-All; Start-Sleep -Seconds 2; Start-All }
   "status" { Show-Status }
   "logs" {
-    foreach ($f in "hub.log", "hub.err.log", "runner.log", "runner.err.log") {
+    foreach ($f in "hub.log", "hub.err.log", "runner.log", "runner.err.log", "hub.prev.log", "hub.err.prev.log", "runner.prev.log", "runner.err.prev.log") {
       $path = Join-Path $Logs $f
       if (Test-Path $path) { "===== $f"; Get-Content $path -Tail 15 }
     }

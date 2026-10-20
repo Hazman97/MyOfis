@@ -459,7 +459,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.use("*", requireUser(auth));
   const W = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").workspace_id;
   const memberOf = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").role !== "owner";
-  for (const path of ["/settings/pause", "/settings/integrations", "/settings/integrations/*", "/backups", "/skills/catalog", "/skills/catalog/*", "/proposals", "/proposals/*", "/system", "/storage", "/storage/*", "/runners", "/runners/*", "/opencut", "/members", "/members/*", "/rooms/*", "/agents/:id/move", "/projects/:id/move"]) {
+  for (const path of ["/settings/pause", "/settings/integrations", "/settings/integrations/*", "/backups", "/skills/catalog", "/skills/catalog/*", "/proposals", "/proposals/*", "/system", "/storage", "/storage/*", "/runners", "/runners/*", "/opencut", "/members", "/members/*", "/rooms/:id", "/rooms/:id/*", "/agents/:id/move", "/projects/:id/move"]) {
     api.use(path, ownerOnly);
   }
 
@@ -816,9 +816,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       if (d && !hub.canPublish(d)) throw new HttpError(400, "this draft has nowhere to be posted: connect its website or social account first");
     }
     const draft = hub.content.decideDraft(c.req.param("id"), decision);
+    if (draft.status === "rejected") return c.json({ draft });
+    // a video upload (TikTok through Zernio, Reels…) can take minutes, longer than Cloudflare's
+    // 100 s: answer now and post in the background; the draft list reloads when it is done or fails
+    if (draft.kind === "video" && !draft.publish_at && hub.canPublish(draft)) {
+      void hub.afterApprove(draft).catch((err) => console.error(`[drafts] posting ${draft.id} failed: ${(err as Error).message}`));
+      return c.json({ draft, posting: true });
+    }
     // a website post goes live once the owner approves it (the result or error is kept on the draft)
-    if (draft.status !== "rejected") return c.json({ draft: await hub.afterApprove(draft) });
-    return c.json({ draft });
+    return c.json({ draft: await hub.afterApprove(draft) });
   });
 
   // chat with an agent (each message is a "chat" job; replies are the run's text)
@@ -956,6 +962,13 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const patch = ScheduleInput.omit({ agent_id: true }).partial().parse(raw);
     const changes = Object.fromEntries(Object.entries(patch).filter(([k]) => k in raw));
     if (typeof changes.cron === "string") assertValidCron(changes.cron);
+    // a template sent without its job type keeps the stored one: the Schedules form has no type
+    // field, and the zod default "task" broke built-in schedules (briefing facts, Telegram reports)
+    const sentTemplate = raw.job_template as Record<string, unknown> | undefined;
+    if (changes.job_template && sentTemplate && typeof sentTemplate === "object" && !("type" in sentTemplate)) {
+      const stored = db.select({ t: schedules.job_template }).from(schedules).where(eq(schedules.id, id)).get()?.t as { type?: string } | undefined;
+      if (stored?.type) changes.job_template = { ...(changes.job_template as { title: string; type: string; input: Record<string, unknown>; project_id: string | null }), type: stored.type };
+    }
     const row = db.update(schedules).set(changes).where(eq(schedules.id, id)).returning().get();
     scheduler.reload();
     return c.json({ schedule: scheduler.toSchedule(row!) });
@@ -1182,7 +1195,10 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const ws = aiWorkspace(db, W(c));
     const row = ownProvider(db, c.req.param("id"), ws);
     const results = await scanModels(providerForCheck(row));
-    const working = rankModels(results.filter((r) => r.tool_calls).map((r) => r.model));
+    // models the scan had no time for keep their place if they worked before
+    const untested = new Set(results.filter((r) => r.error?.startsWith("not tested") || r.error?.startsWith("too slow")).map((r) => r.model));
+    const kept = (row.models ?? []).filter((m) => untested.has(m));
+    const working = rankModels([...new Set([...results.filter((r) => r.tool_calls).map((r) => r.model), ...kept])]);
     if (ws === W(c) && working.length) db.update(providers).set({ models: working }).where(eq(providers.id, row.id)).run();
     return c.json({ results, working });
   });

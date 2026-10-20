@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentEvent } from "@agent-office/shared";
 import { eq } from "drizzle-orm";
-import { approvals } from "../src/db/schema.ts";
+import { approvals, jobs, runs } from "../src/db/schema.ts";
 import { createTestEnv, waitFor, type TestEnv } from "./helpers.ts";
 
 let env: TestEnv;
@@ -52,6 +52,15 @@ describe("run time limit", () => {
     // the owner decided 10 minutes ago and the run is still busy: over its 5 minutes → stopped
     const ago = new Date(Date.now() - 10 * 60_000).toISOString();
     env.hub.hub.db.update(approvals).set({ status: "approved", decided_at: ago }).where(eq(approvals.id, ask.payload.approval_id)).run();
+
+    // a colleague answered a consult 1 minute ago: the wait for it does not count either
+    const run = env.hub.hub.db.select().from(runs).where(eq(runs.id, runId)).get()!;
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    env.hub.hub.db.insert(jobs).values({ id: "job_consult_t", agent_id: agentId, project_id: null, type: "consult", title: "ask", input: { parent_run_id: runId }, trigger: "manual", status: "done" }).run();
+    env.hub.hub.db.insert(runs).values({ id: "run_consult_t", job_id: "job_consult_t", agent_id: agentId, runner_id: run.runner_id, status: "done", started_at: ago, ended_at: minuteAgo }).run();
+    env.hub.hub.enforceTimeLimits(Date.now());
+    expect(env.hub.hub.store.state.runs[runId]?.status).toBe("running");
+
     env.hub.hub.enforceTimeLimits(Date.now() + 6 * 60_000);
     await waitFor(() => env.hub.hub.store.state.jobs[body.job.id]?.status === "cancelled", 15_000, "time limit cancel");
     const cancelled = await waitFor(() => find(web.events, "job.cancelled"), 5000, "job.cancelled");
