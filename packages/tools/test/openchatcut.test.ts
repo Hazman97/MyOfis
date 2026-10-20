@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TOOL_REGISTRY, parseMcpBody, runTool } from "../src/index.ts";
@@ -33,12 +33,14 @@ beforeAll(() => {
   });
   process.env.OPENCHATCUT_URL = `http://127.0.0.1:${server.port}`;
   process.env.OPENCHATCUT_MCP_TOKEN = TOKEN;
+  process.env.OPENCHATCUT_MEDIA_DIR = join(dir, "occ-media");
   writeFileSync(join(dir, "clip.mp4"), "fake video");
 });
 afterAll(() => {
   server.stop(true);
   delete process.env.OPENCHATCUT_URL;
   delete process.env.OPENCHATCUT_MCP_TOKEN;
+  delete process.env.OPENCHATCUT_MEDIA_DIR;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -47,7 +49,7 @@ test("SSE and plain JSON answers are both read", () => {
   expect(parseMcpBody('{"jsonrpc":"2.0","id":3,"error":{"message":"bad"}}', 3)).toMatchObject({ error: { message: "bad" } });
 });
 
-test("one MCP session per run: initialize once, then tool calls with the session id; import sends the local file path", async () => {
+test("one MCP session per run: initialize once, then tool calls with the session id; import copies the video into the fixed media folder", async () => {
   const { ctx } = makeCtx(join(dir, "ws"));
   ctx.attachments = [{ id: "upl_1", name: "clip.mp4", content_type: "video/mp4" }];
   ctx.downloadAttachment = async (_id, dest) => writeFileSync(dest, "fake video");
@@ -60,8 +62,10 @@ test("one MCP session per run: initialize once, then tool calls with the session
   const projects = await runTool(TOOL_REGISTRY.openchatcut!, { tool: "list_projects", arguments: {} }, ctx);
   expect(projects).toMatchObject({ ok: true, output: '{"result":[{"id":"p1","name":"Promo"}]}' });
   const imp = await runTool(TOOL_REGISTRY.openchatcut_import!, { video: 1, editSessionId: "es1" }, ctx);
-  expect(imp).toMatchObject({ ok: true, output: "imported in-1.mp4" });
-  expect(calls.find((c) => c.name === "import_asset")?.args).toMatchObject({ editSessionId: "es1", path: join(dir, "ws", "media", "in-1.mp4") });
+  expect(imp).toMatchObject({ ok: true, output: "imported 10-clip.mp4" });
+  const copied = join(dir, "occ-media", "10-clip.mp4");
+  expect(calls.find((c) => c.name === "import_asset")?.args).toMatchObject({ editSessionId: "es1", path: copied });
+  expect(readFileSync(copied, "utf8")).toBe("fake video");
   // initialize once, every later call carries the session
   expect(calls.filter((c) => c.method === "initialize")).toHaveLength(1);
   expect(calls.filter((c) => c.method !== "initialize").every((c) => c.session === "sess-1")).toBe(true);

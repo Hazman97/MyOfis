@@ -288,6 +288,7 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   3. **Tokens:** `max_run_tokens`, default 250k, capped by the daily budget (`runTokenLimit`).
   4. **Stuck:** 3 steps with no text and no working tool → fail.
   5. **Repeat:** the same tool call 3 times in a row → stop.
+  - **Imports:** OpenChatCut only imports files under `AGENT_IMPORT_ROOTS` (read from the environment / `.env.local` when the app starts). `openchatcut_import` copies the video into `OPENCHATCUT_MEDIA_DIR` (default `~/Videos/MyOfis-OpenChatCut`, named `<size>-<name>`) and imports that path; the owner's PC has the user env var `AGENT_IMPORT_ROOTS` set to that folder.
   - **Visibility:** failed tool calls show in the run log ("Tool call failed: …"); unknown OpenChatCut tool names are repaired into the bridge.
   - **UI:** Chat has a **Stop** button on a pending reply and shows why a run was stopped. AgentsView has the limit fields.
 - **Switching models** (owner, 2026-10-20).

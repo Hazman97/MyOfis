@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -16,6 +16,14 @@ import { attachmentFile } from "./video.ts";
 
 const BASE = () => (process.env.OPENCHATCUT_URL ?? "http://localhost:5199").replace(/\/$/, "");
 const PROTOCOL = "2025-06-18";
+/**
+ * OpenChatCut only imports files under its AGENT_IMPORT_ROOTS, and keeps pointing at them after
+ * the run, so videos are copied out of the throwaway run workspace into one fixed folder first.
+ * The owner adds this folder to AGENT_IMPORT_ROOTS once (a user environment variable; the app reads it at start).
+ */
+export const openchatcutMediaDir = () =>
+  process.env.OPENCHATCUT_MEDIA_DIR?.trim() || join(process.env.USERPROFILE ?? homedir(), "Videos", "MyOfis-OpenChatCut");
+
 /** Long answers (template lists) are cut: each one is re-read by the model on every later step. */
 const RESULT_MAX = 5_000;
 
@@ -147,9 +155,17 @@ export const openchatcutImportTool = defineTool({
   describe: (i) => `import video ${i.video} into OpenChatCut`,
   async execute(i, ctx) {
     const { file, name } = await attachmentFile(ctx, i.video);
-    const path = join(ctx.workspace, "media", file);
+    const src = join(ctx.workspace, "media", file);
+    const dir = openchatcutMediaDir();
+    mkdirSync(dir, { recursive: true });
+    // the same video (name + size) is copied once; a different one with the same name gets its own file
+    const size = statSync(src).size;
+    const safe = name.replace(/[^\w.-]+/g, "_").slice(-80) || file;
+    const path = join(dir, `${size}-${safe}`);
+    if (!existsSync(path) || statSync(path).size !== size) copyFileSync(src, path);
     const r = await callOpenChatCut(ctx, "import_asset", { path, editSessionId: i.editSessionId });
-    return { ok: !r.isError, summary: `imported ${name}${r.isError ? " (failed)" : ""}`, output: r.text };
+    const hint = /IMPORT_ROOTS/.test(r.text) ? `\nOpenChatCut does not allow this folder yet: the owner must add ${dir} to AGENT_IMPORT_ROOTS (a Windows user environment variable) and restart OpenChatCut. Stop and tell the owner.` : "";
+    return { ok: !r.isError, summary: `imported ${name}${r.isError ? " (failed)" : ""}`, output: r.text + hint };
   },
 });
 
