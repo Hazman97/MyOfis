@@ -170,8 +170,9 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
   args.push("-filter_complex", parts.join(";"), "-map", "[vo]", "-map", "[ao]");
   const max = preset.max_mbps;
   const gop = String(plan.fps * 2);
+  const targetMbps = Math.round(max * 0.75);
   if (encoder === "nvenc") {
-    args.push("-c:v", "h264_nvenc", "-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", "21", "-b:v", "0", "-maxrate", `${max}M`, "-bufsize", `${max * 2}M`, "-profile:v", "high", "-spatial-aq", "1", "-g", gop, "-bf", "2");
+    args.push("-c:v", "h264_nvenc", "-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", "21", "-b:v", `${targetMbps}M`, "-maxrate", `${max}M`, "-bufsize", `${max * 2}M`, "-profile:v", "high", "-spatial-aq", "1", "-g", gop, "-bf", "2");
   } else {
     args.push("-c:v", "libx264", "-preset", "medium", "-crf", "20", "-maxrate", `${max}M`, "-bufsize", `${max * 2}M`, "-profile:v", "high", "-level", "4.2", "-g", gop);
   }
@@ -416,6 +417,12 @@ export function remuxArgs(input: string, out: string): string[] {
   return ["-hide_banner", "-nostdin", "-y", "-i", input, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-map_metadata", "-1", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", out];
 }
 
+/** A video file that our TikTok HD tool or page already produced (-tiktok-hd or -tiktok-hd-tiktok_fhd). Pure. */
+export function isTiktokHdPrepared(name: string): boolean {
+  const base = name.replace(/\.[^.]+$/, "");
+  return /-tiktok-hd(-tiktok_fhd)?$/.test(base);
+}
+
 export const videoTiktokHdTool = defineTool({
   name: "video_tiktok_hd",
   description:
@@ -433,19 +440,19 @@ export const videoTiktokHdTool = defineTool({
     if (!bin) throw new ToolDenied("ffmpeg is not installed on the runner PC (ffmpeg.org). Tell the owner.");
     const { file, name } = await attachmentFile(ctx, i.video);
     const before = await probe(ctx, file);
+    const facts = (p: VideoProbe) => ({ size: `${p.width}×${p.height}`, fps: p.fps, codec: p.video_codec, mb: round2(p.size_bytes / 1024 ** 2), seconds: p.duration });
+    // already prepared on the TikTok HD page: use that very file, no second copy or re-encode
+    const attached = ctx.attachments[i.video - 1];
+    if (i.mode === "auto" && isTiktokHdPrepared(name) && attached) {
+      return { ok: true, summary: `TikTok HD: ${name} is already prepared`, output: { video_id: attached.id, mode: "remux", reasons: [], before: facts(before), after: facts(before) } };
+    }
     let plan: ReturnType<typeof tiktokHdPlan>;
     try {
       plan = tiktokHdPlan(before, i.mode);
     } catch (err) {
       throw new ToolDenied((err as Error).message);
     }
-    const facts = (p: VideoProbe) => ({ size: `${p.width}×${p.height}`, fps: p.fps, codec: p.video_codec, mb: round2(p.size_bytes / 1024 ** 2), seconds: p.duration });
     const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").slice(0, 60) || `video-${i.video}`;
-    // already prepared on the TikTok HD page and still fits: use that very file, no second copy
-    const attached = ctx.attachments[i.video - 1];
-    if (plan.mode === "remux" && i.mode === "auto" && /-tiktok-hd(-tiktok_fhd)?$/.test(name.replace(/\.[^.]+$/, "")) && attached) {
-      return { ok: true, summary: `TikTok HD: ${name} is already prepared`, output: { video_id: attached.id, mode: "remux", reasons: [], before: facts(before), after: facts(before) } };
-    }
     if (plan.mode === "reencode") {
       const edit = EditPlan.parse({ clips: [{ video: i.video }], preset: "tiktok_fhd", fit: plan.fit, fps: plan.fps, name: `${base}-tiktok-hd` });
       const r = await videoEditTool.execute(edit, ctx);

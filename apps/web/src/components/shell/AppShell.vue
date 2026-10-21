@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   Clapperboard,
@@ -31,7 +31,7 @@ import {
 import BrandMark from "./BrandMark.vue";
 import RoomSwitcher from "../RoomSwitcher.vue";
 import WorkQueue from "./WorkQueue.vue";
-import { api } from "../../api/http.ts";
+import { api, type Room } from "../../api/http.ts";
 import { resetAuthCheck } from "../../router.ts";
 import { useOffice } from "../../stores/office.ts";
 import { isOwner, me } from "../../me.ts";
@@ -40,6 +40,13 @@ import { fmtUsd } from "../../format.ts";
 const office = useOffice();
 const route = useRoute();
 const router = useRouter();
+
+const rooms = ref<Room[]>([]);
+onMounted(async () => {
+  rooms.value = (await api.rooms().catch(() => ({ rooms: [] as Room[] }))).rooms;
+});
+const currentRoom = computed(() => rooms.value.find((r) => r.id === me.value?.workspace_id));
+const sidebarRoomName = computed(() => (!currentRoom.value || currentRoom.value.kind === "hq") ? "MyOfis HQ" : currentRoom.value.name);
 
 function readInitialTheme(): boolean {
   try {
@@ -159,12 +166,12 @@ async function logout() {
   <div class="min-h-dvh lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
     <!-- Desktop sidebar -->
     <aside class="sticky top-0 hidden h-dvh flex-col border-r border-line bg-surface/95 backdrop-blur-md lg:flex">
-      <div class="flex items-center justify-between px-5 pt-5 pb-4">
+      <div class="shrink-0 flex items-center justify-between px-5 pt-5 pb-4">
         <RouterLink to="/" class="flex items-center gap-2.5">
           <BrandMark />
           <div class="leading-tight">
             <span class="text-[15px] font-semibold tracking-tight">Agent Office</span>
-            <div class="sign text-[9px]">MyOfis HQ</div>
+            <div class="sign text-[9px] truncate max-w-28">{{ sidebarRoomName }}</div>
           </div>
         </RouterLink>
         <button
@@ -176,9 +183,9 @@ async function logout() {
           <component :is="isDark ? Sun : Moon" :size="15" />
         </button>
       </div>
-      <div class="px-3 pb-2"><RoomSwitcher /></div>
+      <div class="shrink-0 px-3 pb-2"><RoomSwitcher /></div>
 
-      <nav class="flex-1 space-y-5 overflow-y-auto px-3 py-2" aria-label="Main">
+      <nav class="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-2" aria-label="Main">
         <div v-for="g in groups" :key="g.sign">
           <div class="sign mb-1.5 px-2 text-[10px] tracking-wider">{{ g.sign }}</div>
           <RouterLink
@@ -195,7 +202,7 @@ async function logout() {
         </div>
       </nav>
 
-      <div class="space-y-3 border-t border-line p-4">
+      <div class="shrink-0 space-y-3 border-t border-line p-4">
         <RouterLink to="/jobs/new" class="btn btn-primary w-full shadow-sm"><Plus :size="16" /> New job</RouterLink>
         <dl class="grid grid-cols-2 gap-2 text-xs">
           <div class="rounded-xl border border-line bg-surface-2/60 px-2.5 py-2">

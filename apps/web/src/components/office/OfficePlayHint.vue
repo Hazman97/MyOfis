@@ -3,12 +3,19 @@ import { onMounted, ref } from "vue";
 import { ChevronDown, Gamepad2, X } from "lucide-vue-next";
 
 const STORAGE_KEY = "myofis-play-hint";
+const VISITED_KEY = "myofis-play-visited";
 const dismissed = ref(false);
 const collapsed = ref(false);
 
 onMounted(() => {
   try {
     dismissed.value = localStorage.getItem(STORAGE_KEY) === "1";
+    const visited = localStorage.getItem(VISITED_KEY) === "1";
+    if (visited) {
+      collapsed.value = true;
+    } else {
+      localStorage.setItem(VISITED_KEY, "1");
+    }
   } catch {
     // LocalStorage blocked in private mode
   }
@@ -35,7 +42,7 @@ function toggleCollapse() {
 <template>
   <aside
     v-if="!dismissed"
-    class="absolute left-3 top-3 z-10 select-none transition-all duration-200"
+    class="absolute left-3 top-11 z-10 select-none transition-all duration-200"
     aria-label="Office play controls guide"
   >
     <!-- Collapsed Pill (mobile friendly) -->
@@ -67,7 +74,7 @@ function toggleCollapse() {
     <!-- Expanded Card -->
     <div
       v-else
-      class="card w-64 border border-line bg-surface/95 p-3 shadow-card backdrop-blur-md text-xs sm:w-72"
+      class="card w-60 border border-line bg-surface/95 p-3 shadow-card backdrop-blur-md text-xs sm:w-64"
     >
       <!-- Header -->
       <div class="flex items-center justify-between pb-2 border-b border-line mb-2">
@@ -79,7 +86,7 @@ function toggleCollapse() {
           <!-- Collapse button -->
           <button
             type="button"
-            class="rounded p-1 text-muted hover:text-fg hover:bg-surface-2 transition-colors sm:hidden"
+            class="rounded p-1 text-muted hover:text-fg hover:bg-surface-2 transition-colors"
             title="Collapse"
             @click="toggleCollapse"
           >

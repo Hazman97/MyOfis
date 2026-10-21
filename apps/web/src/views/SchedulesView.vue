@@ -186,12 +186,13 @@ const projectName = (id: string | null) => (id ? projects.value.find((p) => p.id
             <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
         </div>
-        <div v-if="showAccount">
-          <label class="label" for="sc-account">Post to TikTok account</label>
-          <select id="sc-account" v-model="form.tiktok_account" class="input">
+        <div v-if="showAccount" class="rounded-xl border border-line bg-surface-2/40 p-3.5 space-y-1.5">
+          <label class="label text-xs font-semibold text-fg" for="sc-account">Post to TikTok account</label>
+          <select id="sc-account" v-model="form.tiktok_account" class="input text-sm min-h-10 bg-surface">
             <option value="">The agent's default</option>
             <option v-for="t in tiktokTargets" :key="t.id" :value="t.id">{{ t.label }} · @{{ t.username }}</option>
           </select>
+          <p class="text-[11px] text-faint">Pick an account for this schedule, or leave as default.</p>
         </div>
         <div>
           <label class="label" for="sc-input">Job input · JSON</label>

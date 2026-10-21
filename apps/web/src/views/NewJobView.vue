@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watchEffect } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { LoaderCircle } from "lucide-vue-next";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { Bot, LoaderCircle } from "lucide-vue-next";
 import { MARKETING_JOB_TYPES, type Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import PageHeader from "../components/PageHeader.vue";
@@ -114,7 +114,23 @@ async function submit() {
   <div class="mx-auto max-w-5xl">
     <PageHeader sign="Office" title="New job" description="Pick who should do it, then describe the work in plain words." />
 
-    <form class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]" @submit.prevent="submit">
+    <!-- Empty room state (no agents) -->
+    <div v-if="!enabledAgents.length" class="card max-w-lg mx-auto p-8 text-center space-y-4 my-8">
+      <div class="mx-auto flex size-12 items-center justify-center rounded-2xl bg-surface-2 text-accent border border-line">
+        <Bot :size="24" />
+      </div>
+      <div class="space-y-1">
+        <h3 class="font-semibold text-base text-fg">No agents in this room</h3>
+        <p class="text-xs text-muted max-w-sm mx-auto">
+          You need at least one enabled agent in this room to create and run jobs.
+        </p>
+      </div>
+      <RouterLink to="/agents" class="btn btn-primary inline-flex min-h-10">
+        Move or add agents to this room
+      </RouterLink>
+    </div>
+
+    <form v-else class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]" @submit.prevent="submit">
       <div class="min-w-0 space-y-5">
         <fieldset>
           <legend class="label">Agent</legend>

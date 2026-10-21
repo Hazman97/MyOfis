@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { Clapperboard, Cpu, ImagePlus, LoaderCircle, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
+import { Clapperboard, Cpu, ImagePlus, LoaderCircle, MessageSquare, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
 import type { Agent, Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import EditSuggestionCards from "../components/EditSuggestionCards.vue";
@@ -26,6 +26,7 @@ const agents = computed(() => office.agents.filter((a) => a.enabled));
 const agent = computed<Agent | undefined>(() => agents.value.find((a) => a.slug === route.query.agent) ?? agents.value.find((a) => a.slug === "english-coach") ?? agents.value[0]);
 const threads = ref<ChatThread[]>([]);
 const threadId = ref<string | null>(null);
+const threadsDrawerOpen = ref(false);
 const messages = ref<ChatMessage[]>([]);
 const projects = ref<Project[]>([]);
 const projectId = ref("");
@@ -313,7 +314,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
     <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
       <!-- who + which conversation -->
       <aside class="space-y-4 max-lg:hidden">
-        <div class="card overflow-hidden divide-y divide-line">
+        <div class="card overflow-y-auto max-h-56 divide-y divide-line">
           <button
             v-for="a in agents"
             :key="a.id"
@@ -336,7 +337,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
               <Plus :size="12" /> New
             </button>
           </div>
-          <div class="space-y-1">
+          <div class="space-y-1 max-h-64 overflow-y-auto">
             <button
               v-for="t in threads"
               :key="t.thread_id"
@@ -380,8 +381,48 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
           <label v-if="canSpeak()" class="inline-flex items-center gap-1.5 text-xs text-muted cursor-pointer hover:text-fg transition-colors" title="Read new replies aloud">
             <input v-model="autoSpeak" type="checkbox" class="accent-accent" /> <Volume2 :size="14" /> <span class="max-sm:sr-only">Read aloud</span>
           </label>
+          <button class="btn btn-ghost btn-sm h-7 gap-1 lg:hidden" title="Conversations" @click="threadsDrawerOpen = true">
+            <MessageSquare :size="13" /> Conversations
+          </button>
           <button class="btn btn-ghost btn-sm h-7 lg:hidden" title="New conversation" @click="openThread(null)"><Plus :size="13" /> New</button>
         </header>
+
+        <!-- Mobile Conversations Drawer / Sheet -->
+        <Teleport to="body">
+          <div v-if="threadsDrawerOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs lg:hidden" @click.self="threadsDrawerOpen = false">
+            <div class="card max-h-[75vh] w-full rounded-b-none border-x-0 border-b-0 p-4 flex flex-col gap-3 shadow-2xl bg-surface animate-in slide-in-from-bottom">
+              <div class="flex items-center justify-between border-b border-line pb-2.5">
+                <div class="flex items-center gap-2">
+                  <MessageSquare :size="16" class="text-accent" />
+                  <span class="font-semibold text-sm text-fg">Conversations</span>
+                  <span v-if="agent" class="text-xs text-muted">with {{ agent.name }}</span>
+                </div>
+                <button class="btn btn-ghost btn-sm size-8 p-0" @click="threadsDrawerOpen = false" aria-label="Close">
+                  <X :size="16" />
+                </button>
+              </div>
+              <div class="flex items-center justify-between px-1">
+                <span class="sign text-[10px] tracking-wider">{{ threads.length }} {{ threads.length === 1 ? 'thread' : 'threads' }}</span>
+                <button class="btn btn-ghost btn-sm h-7 px-2 text-xs gap-1 hover:bg-surface-2" title="New conversation" @click="openThread(null); threadsDrawerOpen = false">
+                  <Plus :size="13" /> New
+                </button>
+              </div>
+              <div class="overflow-y-auto space-y-1 max-h-80 pr-1">
+                <button
+                  v-for="t in threads"
+                  :key="t.thread_id"
+                  class="block w-full truncate rounded-lg px-3 py-2 text-left text-xs transition-colors cursor-pointer"
+                  :class="t.thread_id === threadId ? 'bg-surface-2 font-medium text-fg shadow-xs border border-line' : 'text-muted hover:bg-surface-2/60 hover:text-fg border border-transparent'"
+                  :title="t.title"
+                  @click="openThread(t.thread_id); threadsDrawerOpen = false"
+                >
+                  {{ threadTitle(t) }}
+                </button>
+                <p v-if="!threads.length" class="py-6 text-center text-xs text-faint">No conversations yet.</p>
+              </div>
+            </div>
+          </div>
+        </Teleport>
         <div v-if="modelOpen" class="border-b border-line bg-surface-2/60 px-4 py-3 space-y-2">
           <p class="text-xs text-muted">Change the model {{ agent.name }} uses. Test it first: agents with tools need a model that calls tools.</p>
           <ModelPicker v-model:provider="modelForm.provider" v-model:model="modelForm.model" />

@@ -405,9 +405,9 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
             </div>
 
             <!-- Default TikTok account for this agent's TikTok drafts (schedules and drafts can pick another) -->
-            <div class="space-y-1.5">
+            <div class="rounded-xl border border-line bg-surface-2/40 p-3.5 space-y-1.5">
               <label for="ag-tiktok-account" class="label text-xs font-semibold text-fg">TikTok account</label>
-              <select id="ag-tiktok-account" v-model="form.tiktok_account" class="input text-sm min-h-10">
+              <select id="ag-tiktok-account" v-model="form.tiktok_account" class="input text-sm min-h-10 bg-surface">
                 <option value="">{{ tiktokTargets.length === 1 ? `The only one (${tiktokTargets[0]!.label})` : "None set (pick it on each draft)" }}</option>
                 <option v-for="t in tiktokTargets" :key="t.id" :value="t.id">{{ t.label }} · @{{ t.username }}</option>
               </select>

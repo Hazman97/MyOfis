@@ -238,9 +238,11 @@ async function decide(decision: "approve" | "reject") {
       <span v-if="projectName" class="text-xs font-medium text-muted">· {{ projectName }}</span>
       <span class="ml-auto font-mono text-[11px] text-faint">{{ fmtDateTime(draft.created_at) }}</span>
     </header>
-    <div v-if="showAccount" class="flex flex-wrap items-center gap-2 px-4 pt-3 text-xs">
-      <label :for="`da-${draft.id}`" class="text-muted">Posts to</label>
-      <select :id="`da-${draft.id}`" v-model="account" class="input h-9 w-auto min-w-48 text-xs" @change="changeAccount">
+    <div v-if="showAccount" class="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface-2/40 px-3 py-2 text-xs">
+      <label :for="`da-${draft.id}`" class="font-medium text-muted flex items-center gap-1.5 shrink-0">
+        <span class="size-1.5 rounded-full bg-accent" /> Posts to:
+      </label>
+      <select :id="`da-${draft.id}`" v-model="account" class="input h-8 py-1 text-xs w-auto min-w-48 bg-surface" @change="changeAccount">
         <option value="">{{ tiktokTargets.length === 1 ? `${tiktokTargets[0]!.label} (the only account)` : "Pick an account…" }}</option>
         <option v-for="t in tiktokTargets" :key="t.id" :value="t.id">{{ t.label }} · @{{ t.username }}</option>
       </select>

@@ -83,7 +83,7 @@ async function stopJob(jobId: string) {
 
     <!-- Mobile floating trigger pill (when lg:hidden and queue has items) -->
     <Teleport to="body">
-      <div v-if="totalCount > 0" class="lg:hidden fixed bottom-18 right-3 z-30">
+      <div v-if="totalCount > 0" class="lg:hidden fixed bottom-18 left-3 z-30">
         <button
           type="button"
           class="flex items-center gap-2 rounded-full border border-line bg-surface/95 px-3 py-2 text-xs font-semibold shadow-card backdrop-blur-md text-fg hover:border-accent active:scale-95 transition-all min-h-10 cursor-pointer"

@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VIDEO_PRESETS, tiktokHdPlan } from "@agent-office/shared";
-import { EditPlan, TOOL_REGISTRY, chooseClips, type ClipEntry, buildEditArgs, captionsAss, parseProbe, parseSilences, parseWhisperJson, remuxArgs, runTool } from "../src/index.ts";
+import { EditPlan, TOOL_REGISTRY, chooseClips, type ClipEntry, buildEditArgs, captionsAss, isTiktokHdPrepared, parseProbe, parseSilences, parseWhisperJson, remuxArgs, runTool } from "../src/index.ts";
 import { makeCtx } from "./helpers.ts";
 
 const probe = { duration: 10, width: 1920, height: 1080, fps: 30, has_audio: true, video_codec: "h264", size_bytes: 1 };
@@ -32,6 +32,12 @@ describe("video plan → ffmpeg", () => {
     expect(graph).toContain("[vc]ass=edit.ass[vo]");
     expect(graph).toContain("loudnorm=I=-14");
     expect(args).toContain("h264_nvenc");
+    expect(args).toContain("-b:v");
+    expect(args).toContain("12M");
+    expect(args).toContain("-maxrate");
+    expect(args).toContain("16M");
+    expect(args).toContain("-bufsize");
+    expect(args).toContain("32M");
     expect(buildEditArgs(plan, [{ file: "a", probe }, { file: "b", probe: noAudio }], "x264", "o.mp4", null)).toContain("libx264");
     expect(() => buildEditArgs(EditPlan.parse({ clips: [{ video: 1, start: 20 }] }), [{ file: "a", probe }], "x264", "o", null)).toThrow(/not before its end/);
   });
@@ -234,6 +240,15 @@ describe("TikTok HD", () => {
     expect(args).toEqual(expect.arrayContaining(["-c", "copy", "-movflags", "+faststart", "0:a:0?"]));
     expect(args.at(-1)).toBe("out.mp4");
   });
+
+  test("reuse rule: a file already named -tiktok-hd or -tiktok-hd-tiktok_fhd is recognized as prepared", () => {
+    expect(isTiktokHdPrepared("BBQ_4K-tiktok-hd.mp4")).toBe(true);
+    expect(isTiktokHdPrepared("BBQ_4K-tiktok-hd-tiktok_fhd.mp4")).toBe(true);
+    expect(isTiktokHdPrepared("BBQ_4K-tiktok-hd-tiktok_fhd-tiktok-hd.mp4")).toBe(true);
+    expect(isTiktokHdPrepared("BBQ 4K.mp4")).toBe(false);
+    expect(isTiktokHdPrepared("my-video.mp4")).toBe(false);
+    expect(isTiktokHdPrepared("test-tiktok_fhd.mp4")).toBe(false);
+  });
 });
 
 describe.skipIf(!ffmpeg || !ffprobe)("TikTok HD with real ffmpeg", () => {
@@ -275,4 +290,14 @@ describe.skipIf(!ffmpeg || !ffprobe)("TikTok HD with real ffmpeg", () => {
     expect((r2.output as { reasons: string[] }).reasons.join(" ")).toMatch(/640×360.*25 fps/);
     expect(info(b.sent[0]!)).toMatchObject({ width: 1080, height: 1920, fps: 30 });
   }, 180_000);
+
+  test("auto: an already-prepared attachment is reused as-is without re-encoding or uploading again", async () => {
+    const a = ctxFor("ready.mov", "video/quicktime", "ws-reuse");
+    a.ctx.attachments[0]!.name = "ready-tiktok-hd-tiktok_fhd.mp4";
+    const r = await runTool(TOOL_REGISTRY.video_tiktok_hd!, { video: 1, mode: "auto" }, a.ctx);
+    expect(r.ok).toBe(true);
+    expect(r.output).toMatchObject({ video_id: "upl_src", mode: "remux", reasons: [] });
+    expect(a.sent.length).toBe(0);
+    expect(a.ctx.renders.length).toBe(0);
+  });
 });

@@ -21,7 +21,7 @@ export { GiteaClient } from "./gitea.ts";
 export { checkUrl } from "./web.ts";
 export { htmlToText, isPrivateAddress } from "./research.ts";
 export { gitDefaultBranch, giteaRepoOf } from "./git.ts";
-export { buildEditArgs, captionsAss, clipLengths, parseProbe, parseSilences, parseWhisperJson, remuxArgs, whisperBinary, whisperModel } from "./video.ts";
+export { buildEditArgs, captionsAss, clipLengths, isTiktokHdPrepared, parseProbe, parseSilences, parseWhisperJson, remuxArgs, whisperBinary, whisperModel } from "./video.ts";
 export { EditPlan } from "@agent-office/shared";
 export { openchatcutToken, parseMcpBody } from "./openchatcut.ts";
 export { chooseClips, clipKey, musicTracks, readIndex, scanFolder, type ClipEntry } from "./clips.ts";

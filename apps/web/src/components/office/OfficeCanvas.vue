@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, toRaw, watch } from "vue";
-import { LocateFixed, Minus, Plus } from "lucide-vue-next";
+import { RouterLink } from "vue-router";
+import { Bot, LocateFixed, Minus, Plus } from "lucide-vue-next";
 import type { OfficeState } from "@agent-office/shared";
 import { useOffice } from "../../stores/office.ts";
 import { OFFICE_ASSETS, type CharacterManifest } from "../../office/assets.ts";
 import { parseOfficeMap, type TiledMap } from "../../office/map/tmj.ts";
 import { OfficeWorld, type DropAction } from "../../office/brain/world.ts";
+import { api, type Room } from "../../api/http.ts";
 import { me } from "../../me.ts";
 import type { AgentInfo } from "../../office/brain/intent.ts";
 import type { OfficeGame } from "../../office/scene/game.ts";
@@ -46,6 +48,15 @@ const readMode = (): ViewMode => {
 const mode = ref<ViewMode>(readMode());
 
 const activeCount = computed(() => office.agents.filter((a) => a.enabled).length);
+
+const rooms = ref<Room[]>([]);
+onMounted(async () => {
+  rooms.value = (await api.rooms().catch(() => ({ rooms: [] as Room[] }))).rooms;
+});
+const currentRoom = computed(() => rooms.value.find((r) => r.id === me.value?.workspace_id));
+const isHq = computed(() => !currentRoom.value || currentRoom.value.kind === "hq");
+const deckLabel = computed(() => (isHq.value ? "HQ FLOOR DECK" : `${currentRoom.value?.name.toUpperCase()} FLOOR DECK`));
+const openingLabel = computed(() => (isHq.value ? "Opening HQ Deck…" : `Opening ${currentRoom.value?.name} Deck…`));
 
 const infos = (): AgentInfo[] =>
   office.agents.map((a) => ({
@@ -165,7 +176,7 @@ onBeforeUnmount(() => {
           <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75"></span>
           <span class="relative inline-flex size-2 rounded-full bg-accent"></span>
         </span>
-        <span class="font-mono text-xs font-semibold tracking-wide text-accent whitespace-nowrap">HQ FLOOR DECK</span>
+        <span class="font-mono text-xs font-semibold tracking-wide text-accent whitespace-nowrap">{{ deckLabel }}</span>
         <span class="text-faint">·</span>
         <span class="truncate text-xs text-muted font-medium">{{ activeCount }} agents on duty</span>
       </div>
@@ -184,7 +195,7 @@ onBeforeUnmount(() => {
       <div v-if="status === 'loading'" class="absolute inset-0 grid place-items-center bg-[#1b2622]/80 backdrop-blur-sm">
         <div class="flex flex-col items-center gap-3">
           <div class="size-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-          <span class="font-mono text-xs uppercase tracking-wider text-accent">Opening HQ Deck…</span>
+          <span class="font-mono text-xs uppercase tracking-wider text-accent">{{ openingLabel }}</span>
         </div>
       </div>
 
@@ -194,6 +205,20 @@ onBeforeUnmount(() => {
           <p class="font-semibold text-danger">The office art did not load.</p>
           <p class="mt-1 font-mono text-xs text-muted">{{ error }}</p>
           <p class="mt-3 text-xs text-muted">Build it with <code class="bg-sunken text-fg">bun run --cwd apps/web office:assets</code>, or switch to Board view.</p>
+        </div>
+      </div>
+
+      <!-- Empty Room State -->
+      <div v-if="status === 'ready' && activeCount === 0" class="absolute inset-0 grid place-items-center p-6 text-center bg-[#1b2622]/65 backdrop-blur-xs pointer-events-none">
+        <div class="card max-w-sm p-6 text-center space-y-3 pointer-events-auto shadow-xl bg-surface/95 border border-line">
+          <div class="mx-auto flex size-12 items-center justify-center rounded-2xl bg-surface-2 text-accent border border-line">
+            <Bot :size="24" />
+          </div>
+          <div class="space-y-1">
+            <h3 class="font-semibold text-sm text-fg">No agents in this room</h3>
+            <p class="text-xs text-muted">Move or add agents to this room to see them working here.</p>
+          </div>
+          <RouterLink to="/agents" class="btn btn-primary btn-sm inline-flex min-h-9">Move or add agents to this room</RouterLink>
         </div>
       </div>
 
@@ -228,7 +253,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <p class="text-[10px] tracking-tight text-white/40 select-none">
-          Drag to move · scroll buttons to zoom
+          Scroll or use the buttons to zoom · drag to move
         </p>
       </div>
     </div>

@@ -483,7 +483,7 @@ async function useOwnEdit(e: Event) {
               controls
               playsinline
               preload="metadata"
-              class="h-full w-full object-contain rounded-lg bg-black shadow-md"
+              :class="['h-full w-full rounded-lg bg-black shadow-md', plan.fit === 'crop' ? 'object-cover' : 'object-contain']"
               aria-label="Video preview"
               @timeupdate="playerCurrentTime = previewVideo?.currentTime ?? 0"
             />
@@ -1429,7 +1429,7 @@ async function useOwnEdit(e: Event) {
               >
                 <LoaderCircle v-if="busy || rendering" :size="16" class="animate-spin" />
                 <Wand2 v-else :size="16" />
-                {{ rendering ? (jobAgent?.thinking ?? "Rendering…") : "Render again" }}
+                {{ rendering ? (jobAgent?.thinking ?? "Rendering…") : (info?.known === false ? "Render" : "Render again") }}
               </button>
 
               <button
@@ -1484,7 +1484,7 @@ async function useOwnEdit(e: Event) {
         >
           <LoaderCircle v-if="busy || rendering" :size="15" class="animate-spin" />
           <Wand2 v-else :size="15" />
-          <span>{{ rendering ? "Rendering…" : "Render again" }}</span>
+          <span>{{ rendering ? "Rendering…" : (info?.known === false ? "Render" : "Render again") }}</span>
         </button>
 
         <button

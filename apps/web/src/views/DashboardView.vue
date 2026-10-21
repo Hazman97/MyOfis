@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { Building2, Plus, SquareKanban } from "lucide-vue-next";
 import { dayKey, type JobStatus, type JobView } from "@agent-office/shared";
@@ -10,7 +10,8 @@ import AgentPanel from "../components/office/AgentPanel.vue";
 import AgentRadialMenu from "../components/office/AgentRadialMenu.vue";
 import OfficePlayHint from "../components/office/OfficePlayHint.vue";
 import WorkFeed from "../components/office/WorkFeed.vue";
-import { api } from "../api/http.ts";
+import { api, type Room } from "../api/http.ts";
+import { me } from "../me.ts";
 import { useOffice } from "../stores/office.ts";
 import { boardJobs, isChatJob } from "../jobs.ts";
 import { fmtDateTime, fmtTokens, fmtUsd } from "../format.ts";
@@ -114,11 +115,19 @@ function openJob(j: JobView) {
 async function cancel(j: JobView) {
   await api.cancelJob(j.id);
 }
+
+const rooms = ref<Room[]>([]);
+onMounted(async () => {
+  rooms.value = (await api.rooms().catch(() => ({ rooms: [] as Room[] }))).rooms;
+});
+const currentRoom = computed(() => rooms.value.find((r) => r.id === me.value?.workspace_id));
+const isHq = computed(() => !currentRoom.value || currentRoom.value.kind === "hq");
+const roomSign = computed(() => (isHq.value ? "HQ Workspace" : `${currentRoom.value?.name || "Room"} Workspace`));
 </script>
 
 <template>
   <div class="space-y-6">
-    <PageHeader sign="HQ Workspace" title="Today in the office">
+    <PageHeader :sign="roomSign" title="Today in the office">
       <RouterLink to="/jobs/new" class="btn btn-primary"><Plus :size="16" /> New job</RouterLink>
     </PageHeader>
 
