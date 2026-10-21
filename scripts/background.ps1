@@ -95,8 +95,9 @@ switch ($Action) {
     }
   }
   "autostart" {
-    $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""$PSCommandPath"" start"
-    "CreateObject(""WScript.Shell"").Run ""$($cmd.Replace('"', '""'))"", 0, False" | Set-Content -Encoding ascii $Startup
+    # Chr(34) = a quote inside the VBS string (nested "" escaping broke the line: a script error at login)
+    $vbs = 'CreateObject("WScript.Shell").Run "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "' + $PSCommandPath + '" & Chr(34) & " start", 0, False'
+    $vbs | Set-Content -Encoding ascii $Startup
     "MyOfis will start hidden at login ($Startup)"
   }
   "no-autostart" { Remove-Item $Startup -ErrorAction SilentlyContinue; "autostart removed" }
