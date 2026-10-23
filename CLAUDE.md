@@ -3,6 +3,7 @@
 - The full product spec is in [SPEC.md](SPEC.md). Read it before starting any phase. Build one phase at a time; wait for the owner to confirm before moving on.
 - Talk to the owner in casual Manglish. Code, comments and docs stay in English.
 - Owner commits manually — do not `git commit` unless asked.
+- **From 2026-10-23 Claude is the supervisor, Gemini does the work** (logic, tests, UI, docs). Claude writes `tasks/gemini/NNN-*.md`, the owner hands them to Gemini, Gemini writes `NNN-report.md`, and on "semak NNN" Claude reviews, re-runs the checks and commits. Process: `tasks/gemini/SUPERVISOR.md`.
 
 ## Decisions taken beyond the spec (Phase 1)
 - Repo root is this folder (not `agent-office/`). Packages are `@agent-office/*`.
