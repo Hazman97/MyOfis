@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { onBeforeRouteLeave, onBeforeRouteUpdate, RouterLink, useRoute, useRouter } from "vue-router";
 import { Clapperboard, Cpu, ImagePlus, LoaderCircle, MessageSquare, Mic, MicOff, Plus, SendHorizontal, Square, Volume2, X } from "lucide-vue-next";
+import { fmtDuration, startRecording, type ActiveRecording } from "../recorder.ts";
 import type { Agent, Project } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
 import EditSuggestionCards from "../components/EditSuggestionCards.vue";
@@ -40,6 +41,7 @@ const speaking = ref<string | null>(null);
 const scroller = ref<HTMLElement>();
 
 const isMarketing = computed(() => !!agent.value?.tools.includes("save_draft"));
+const hasMeetingTranscribe = computed(() => !!agent.value?.tools.includes("meeting_transcribe"));
 const isCoach = computed(() => agent.value?.slug === "english-coach");
 // the coach listens for English; other agents get Malay recognition (handles Manglish better)
 const lang = computed(() => (isCoach.value ? "en-US" : "ms-MY"));
@@ -301,7 +303,108 @@ watch(
   },
 );
 
+// ---------------------------------------------------------------- Meeting recording (Notulis)
+const activeRecord = ref<ActiveRecording | null>(null);
+const isRecording = ref(false);
+const recordSeconds = ref(0);
+let recordTimer: ReturnType<typeof setInterval> | null = null;
+
+async function startMeetingRecording() {
+  if (isRecording.value) return;
+  error.value = "";
+  try {
+    const rec = await startRecording();
+    activeRecord.value = rec;
+    isRecording.value = true;
+    recordSeconds.value = 0;
+    recordTimer = setInterval(() => {
+      if (activeRecord.value) {
+        recordSeconds.value = activeRecord.value.elapsed();
+      }
+    }, 1000);
+  } catch (err: any) {
+    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      error.value = "Kebenaran mikrofon ditolak. Sila benarkan akses mikrofon dalam tetapan pelayar.";
+    } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+      error.value = "Tiada mikrofon dijumpai pada peranti ini.";
+    } else {
+      error.value = `Gagal memulakan rakaman: ${err.message || String(err)}`;
+    }
+  }
+}
+
+function cancelMeetingRecording() {
+  if (recordTimer) {
+    clearInterval(recordTimer);
+    recordTimer = null;
+  }
+  if (activeRecord.value) {
+    activeRecord.value.cancel();
+    activeRecord.value = null;
+  }
+  isRecording.value = false;
+  recordSeconds.value = 0;
+}
+
+async function stopAndAttachRecording() {
+  if (!activeRecord.value) return;
+  const rec = activeRecord.value;
+  if (recordTimer) {
+    clearInterval(recordTimer);
+    recordTimer = null;
+  }
+  activeRecord.value = null;
+  isRecording.value = false;
+  recordSeconds.value = 0;
+
+  uploading.value = true;
+  uploadPct.value = 0;
+  error.value = "";
+  try {
+    const file = await rec.stop();
+    const up = await api.uploadVideo(file, (d) => (uploadPct.value = Math.round(d * 100)));
+    photos.value.push({ ...up, preview: URL.createObjectURL(file) });
+  } catch (err) {
+    error.value = `Gagal memuat naik rakaman: ${(err as Error).message}`;
+  } finally {
+    uploading.value = false;
+    uploadPct.value = null;
+  }
+}
+
+onBeforeRouteLeave(() => {
+  if (isRecording.value) {
+    const ok = window.confirm("Rekod sedang berjalan. Buang rakaman?");
+    if (!ok) return false;
+    cancelMeetingRecording();
+  }
+});
+
+onBeforeRouteUpdate((to, from) => {
+  if (isRecording.value && to.query.agent !== from.query.agent) {
+    const ok = window.confirm("Rekod sedang berjalan. Buang rakaman?");
+    if (!ok) return false;
+    cancelMeetingRecording();
+  }
+});
+
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (isRecording.value) {
+    e.preventDefault();
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", onBeforeUnload);
+}
+
 onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("beforeunload", onBeforeUnload);
+  }
+  if (isRecording.value) {
+    cancelMeetingRecording();
+  }
   listening.value?.stop();
   stopSpeaking();
 });
@@ -551,6 +654,38 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
 
         <!-- Composer -->
         <footer class="border-t border-line bg-surface/80 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm">
+          <!-- Red bar while recording meeting -->
+          <div
+            v-if="isRecording"
+            class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-600 dark:text-red-400"
+          >
+            <div class="flex items-center gap-2.5 min-w-0">
+              <span class="relative flex size-2.5 shrink-0">
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                <span class="relative inline-flex size-2.5 rounded-full bg-red-500"></span>
+              </span>
+              <span class="font-mono text-xs font-bold tracking-wide">{{ fmtDuration(recordSeconds) }}</span>
+              <span class="text-xs text-muted">·</span>
+              <span class="text-xs text-muted truncate">Biarkan skrin terbuka semasa merakam</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm h-7 px-2.5 text-xs font-medium text-muted hover:text-fg hover:bg-surface-2"
+                @click="cancelMeetingRecording"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm h-7 px-3 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white border-none shadow-xs"
+                @click="stopAndAttachRecording"
+              >
+                Stop & lampir
+              </button>
+            </div>
+          </div>
+
           <p v-if="error" class="mb-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-1.5 text-xs text-danger">{{ error }}</p>
           <div v-if="photos.length || uploading" class="mb-2.5 flex flex-wrap items-center gap-2" aria-label="Photos to send">
             <div v-for="p in photos" :key="p.id" class="relative group">
@@ -589,6 +724,17 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
               >
                 {{ photos.length }}
               </span>
+            </button>
+            <button
+              v-if="hasMeetingTranscribe"
+              type="button"
+              class="btn btn-sm h-9 px-2.5 rounded-lg text-xs font-semibold gap-1 shrink-0 text-muted hover:text-fg hover:bg-surface-2 transition-colors"
+              :disabled="isRecording || uploading"
+              title="Rakam mesyuarat untuk ditranskrip oleh Notulis"
+              @click="startMeetingRecording"
+            >
+              <span>🎙️</span>
+              <span>Rakam</span>
             </button>
             <button
               v-if="canDictate()"

@@ -100,4 +100,40 @@ describe("Telegram: chat with an agent, approve drafts", () => {
     expect(decided.find((d) => d.id === a.id)?.status).toBe("approved");
     expect(reject).toContain(":n:");
   }, 30_000);
+
+  test("voice notes: a voice note becomes voice-note.ogg attached to the chat job; audio over 20 MB is refused", async () => {
+    await setup();
+    const pub = ((await env.api("/api/agents")).body.agents as { id: string; slug: string }[]).find((a) => a.slug === "publisher")!;
+    await env.api(`/api/agents/${pub.id}`, { method: "PATCH", body: { provider: "mock", model: "mock-echo" } });
+
+    // a voice note: message.voice with mime_type: "audio/ogg", no file name
+    tg!.push({
+      message: {
+        message_id: 20,
+        chat: { id: OWNER },
+        from: { id: OWNER },
+        voice: { file_id: "voice-note-1", file_size: 1_500_000, mime_type: "audio/ogg" },
+      },
+    });
+
+    await waitFor(() => said("Publisher:"), 8000, "agent reply for voice note");
+    const job = Object.values(env.hub.hub.store.state.jobs).find((j) => j.type === "chat")!;
+    const row = getJob(env.hub.hub.db, job.id)!;
+    expect(row.input.attachments).toMatchObject([
+      { name: "voice-note.ogg", content_type: "audio/ogg" },
+    ]);
+    expect(tg!.sent.find((s) => s.method === "getFile" && s.body.file_id === "voice-note-1")).toBeTruthy();
+
+    // an audio file over 20 MB is refused with the existing "over 20 MB" notice
+    tg!.push({
+      message: {
+        message_id: 21,
+        chat: { id: OWNER },
+        from: { id: OWNER },
+        audio: { file_id: "audio-huge", file_size: 25_000_000, mime_type: "audio/mpeg", file_name: "meeting.mp3" },
+      },
+    });
+    await waitFor(() => said("over 20 MB"), 5000, "audio over 20 MB refused");
+  }, 30_000);
 });
+

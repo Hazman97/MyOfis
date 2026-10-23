@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import {
   BookOpen,
+  Check,
   ChevronDown,
+  Copy,
   Download,
   FileText,
   FolderOpen,
@@ -17,6 +19,7 @@ import {
 import type { DocHit, Project, ProjectDoc } from "@agent-office/shared";
 import { api } from "../api/http.ts";
 import { fmtDateTime } from "../format.ts";
+import { renderMarkdown } from "../markdown.ts";
 
 /**
  * The project's documents (Project Assistant): every PDF / DOCX / note sent in chat or Telegram,
@@ -39,7 +42,84 @@ const totalPages = computed(() => docs.value.reduce((acc, d) => acc + (d.pages |
 async function load() {
   docs.value = (await api.docs(props.project.id)).docs;
 }
-onMounted(load);
+
+// Modal view for .txt and .md documents
+const modalDoc = ref<ProjectDoc | null>(null);
+const modalLoading = ref(false);
+const modalError = ref("");
+const modalRawText = ref("");
+const copied = ref(false);
+
+function isViewable(d: ProjectDoc): boolean {
+  const name = (d.title || "").toLowerCase();
+  const ct = (d.content_type || "").toLowerCase();
+  return name.endsWith(".txt") || name.endsWith(".md") || ct === "text/plain" || ct === "text/markdown";
+}
+
+function isMarkdownDoc(d: ProjectDoc | null): boolean {
+  if (!d) return false;
+  const name = (d.title || "").toLowerCase();
+  const ct = (d.content_type || "").toLowerCase();
+  return name.endsWith(".md") || ct === "text/markdown";
+}
+
+async function openDocModal(doc: ProjectDoc) {
+  modalDoc.value = doc;
+  modalLoading.value = true;
+  modalError.value = "";
+  modalRawText.value = "";
+  copied.value = false;
+
+  try {
+    const url = api.uploadUrl(doc.upload_id);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    modalRawText.value = await res.text();
+  } catch (err) {
+    modalError.value = `Gagal memuatkan dokumen: ${(err as Error).message}`;
+  } finally {
+    modalLoading.value = false;
+  }
+}
+
+function closeDocModal() {
+  modalDoc.value = null;
+  modalRawText.value = "";
+  modalError.value = "";
+  copied.value = false;
+}
+
+async function copyModalText() {
+  if (!modalRawText.value) return;
+  try {
+    await navigator.clipboard.writeText(modalRawText.value);
+    copied.value = true;
+    setTimeout(() => {
+      copied.value = false;
+    }, 2000);
+  } catch (err) {
+    console.error("Failed to copy:", err);
+  }
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && modalDoc.value) {
+    closeDocModal();
+  }
+}
+
+onMounted(() => {
+  void load();
+  if (typeof window !== "undefined") {
+    window.addEventListener("keydown", onKeydown);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("keydown", onKeydown);
+  }
+});
 
 async function search() {
   error.value = "";
@@ -356,6 +436,15 @@ const currentDocTitle = computed(() => {
             <span class="text-[11px] text-muted font-medium">
               {{ d.pages }} {{ d.pages === 1 ? "page" : "pages" }} · {{ fmtDateTime(d.created_at) }}
             </span>
+            <button
+              v-if="isViewable(d)"
+              type="button"
+              class="btn btn-sm min-h-8 px-2.5 text-xs font-semibold text-accent hover:bg-surface-2 transition-colors cursor-pointer"
+              :title="`Buka ${d.title}`"
+              @click="openDocModal(d)"
+            >
+              Buka
+            </button>
             <a
               :href="api.uploadUrl(d.upload_id, true)"
               class="btn btn-ghost btn-sm min-h-8 px-2 text-muted hover:text-fg"
@@ -415,6 +504,148 @@ const currentDocTitle = computed(() => {
         </div>
       </article>
     </div>
+
+    <!-- Document Viewer Modal (full screen on phones, responsive) -->
+    <div
+      v-if="modalDoc"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4"
+      @click.self="closeDocModal"
+    >
+      <div
+        class="flex flex-col w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-surface sm:rounded-2xl border border-line shadow-2xl overflow-hidden"
+      >
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between border-b border-line bg-surface-2/60 px-4 py-3 shrink-0">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span
+              class="shrink-0 inline-flex items-center justify-center rounded-md border px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-tight"
+              :class="getDocTypeInfo(modalDoc).badgeClass"
+            >
+              {{ getDocTypeInfo(modalDoc).ext }}
+            </span>
+            <span class="text-sm font-semibold text-fg truncate">{{ modalDoc.title }}</span>
+          </div>
+
+          <div class="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm h-8 px-2.5 text-xs gap-1.5 hover:bg-surface-2 transition-colors"
+              :disabled="modalLoading || !modalRawText"
+              title="Salin teks mentah (untuk NoteHub)"
+              @click="copyModalText"
+            >
+              <component :is="copied ? Check : Copy" :size="13" :class="copied ? 'text-emerald-500' : 'text-accent'" />
+              <span>{{ copied ? "Disalin!" : "Salin" }}</span>
+            </button>
+            <a
+              :href="api.uploadUrl(modalDoc.upload_id, true)"
+              download
+              class="btn btn-ghost btn-sm h-8 px-2.5 text-xs gap-1.5 hover:bg-surface-2 transition-colors"
+              title="Download original file"
+            >
+              <Download :size="13" />
+              <span>Muat turun</span>
+            </a>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm h-8 w-8 p-0 text-muted hover:text-fg hover:bg-surface-2 transition-colors rounded-lg"
+              title="Tutup (Esc)"
+              aria-label="Tutup dokumen"
+              @click="closeDocModal"
+            >
+              <X :size="16" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Modal Content Area -->
+        <div class="flex-1 overflow-y-auto p-4 sm:p-6 bg-sunken/20">
+          <div v-if="modalLoading" class="flex flex-col items-center justify-center py-16 text-muted gap-3">
+            <Loader2 :size="24" class="animate-spin text-accent" />
+            <span class="text-xs">Memuatkan dokumen…</span>
+          </div>
+          <p v-else-if="modalError" class="p-3 text-xs text-danger bg-danger-soft rounded-lg border border-danger/30">
+            {{ modalError }}
+          </p>
+          <!-- Markdown view without v-html on raw text -->
+          <div
+            v-else-if="isMarkdownDoc(modalDoc)"
+            class="markdown-doc max-w-none text-fg"
+            v-html="renderMarkdown(modalRawText)"
+          />
+          <!-- Plain text view (preformatted, wrapping, monospace times [12:30] kept) -->
+          <pre
+            v-else
+            class="whitespace-pre-wrap break-words font-mono text-xs sm:text-sm leading-relaxed text-fg select-text bg-surface p-4 rounded-xl border border-line shadow-xs"
+          >{{ modalRawText }}</pre>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.markdown-doc :deep(h1) {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--fg);
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.375rem;
+}
+.markdown-doc :deep(h2) {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin-top: 1rem;
+  margin-bottom: 0.375rem;
+}
+.markdown-doc :deep(h3) {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.markdown-doc :deep(p) {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.65;
+  color: var(--fg);
+}
+.markdown-doc :deep(ul) {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.markdown-doc :deep(li) {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+}
+.markdown-doc :deep(strong) {
+  font-weight: 600;
+  color: var(--fg);
+}
+.markdown-doc :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8125rem;
+}
+.markdown-doc :deep(th) {
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.75rem;
+  background: var(--surface-2);
+  font-weight: 600;
+  text-align: left;
+}
+.markdown-doc :deep(td) {
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.75rem;
+}
+</style>
 
