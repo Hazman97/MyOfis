@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { DOC_TYPES, MAX_DOC_BYTES, PublishInfo, VIDEO_TYPES, WebPost, fixEscapedNewlines, freshFetch, type RenderInfo, type WebPostEdit } from "@agent-office/shared";
+import { DOC_TYPES, MAX_DOC_BYTES, PublishInfo, MEDIA_TYPES, WebPost, fixEscapedNewlines, freshFetch, type RenderInfo, type WebPostEdit } from "@agent-office/shared";
 import { keyHint, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { contentDrafts, projects, uploads, type ProjectPublish } from "./db/schema.ts";
@@ -44,6 +44,9 @@ export function signRequest(secret: string, body: string, ts = Math.floor(Date.n
   return { "x-ao-timestamp": String(ts), "x-ao-signature": `v1=${createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex")}` };
 }
 
+/** The stored name of an upload: safe in a download header, at most 120 characters. */
+export const cleanUploadName = (name: string) => name.replace(/[—–]/g, "-").replace(/[^\w.\- ]+/g, "_").slice(0, 120);
+
 export class Publisher {
   constructor(
     private readonly db: Db,
@@ -66,17 +69,17 @@ export class Publisher {
     mkdirSync(dir, { recursive: true });
     const path = join("uploads", `${id}.${ext}`);
     writeFileSync(join(this.filesDir, path), bytes);
-    const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `file.${ext}`;
+    const clean = cleanUploadName(name) || `file.${ext}`;
     return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size: bytes.length, path, workspace_id: workspaceId }).returning().get();
   }
 
   /**
-   * Take a finished file (a video sent in parts, or Editor's render) into the uploads table.
+   * Take a finished file (a video or recording sent in parts, or Editor's render) into the uploads table.
    * `tmpPath` is moved, not copied.
    */
   adoptUpload(name: string, contentType: string, tmpPath: string, runId: string | null = null, workspaceId = "owner") {
-    const ext = VIDEO_TYPES[contentType] ?? IMAGE_TYPES[contentType];
-    if (!ext) throw new HttpError(400, "only photos (JPEG, PNG, WebP, GIF) or videos (MP4, MOV, WebM, MKV)");
+    const ext = MEDIA_TYPES[contentType] ?? IMAGE_TYPES[contentType];
+    if (!ext) throw new HttpError(400, "only photos (JPEG, PNG, WebP, GIF), videos (MP4, MOV, WebM, MKV) or recordings (M4A, MP3, WAV, OGG, AAC, FLAC)");
     const id = newId("upl");
     mkdirSync(join(this.filesDir, "uploads"), { recursive: true });
     const path = join("uploads", `${id}.${ext}`);

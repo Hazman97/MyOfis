@@ -7,6 +7,7 @@ import { DIRECT_JOBS } from "./video.ts";
 const TOOL_PROGRAMS: Record<string, string> = {
   video_probe: "ffmpeg",
   video_transcribe: "whisper",
+  meeting_transcribe: "whisper",
   video_edit: "ffmpeg",
   video_tiktok_hd: "ffmpeg",
   clip_library: "ffmpeg",

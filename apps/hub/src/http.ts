@@ -392,16 +392,29 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
 
   /** Project Assistant: documents and log, scoped to the run's room; each action needs its tool. */
-  const PROJECT_TOOL: Record<string, string> = { search: "docs_search", read: "doc_read", summary: "doc_summary", log_add: "project_log_add", log_list: "project_log_list", log_update: "project_log_update" };
+  const PROJECT_TOOL: Record<string, string[]> = {
+    search: ["docs_search"],
+    read: ["doc_read"],
+    summary: ["doc_summary"],
+    log_add: ["project_log_add"],
+    log_list: ["project_log_list"],
+    log_update: ["project_log_update"],
+    save_text: ["doc_save", "meeting_transcribe"],
+    find_doc: ["meeting_transcribe"],
+  };
   app.post("/api/runner/project-data", async (c) => {
     const header = c.req.header("authorization") ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
     if (!runner) throw new HttpError(401, "unauthorized");
-    const body = z.object({ run_id: z.string(), action: z.enum(["search", "read", "summary", "log_add", "log_list", "log_update"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
+    const body = z
+      .object({ run_id: z.string(), action: z.enum(["search", "read", "summary", "log_add", "log_list", "log_update", "save_text", "find_doc"]), params: z.record(z.string(), z.unknown()).default({}) })
+      .parse(await c.req.json());
     const run = getRun(db, body.run_id);
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
-    if (!getAgent(db, run.agent_id)?.tools.includes(PROJECT_TOOL[body.action]!)) throw new HttpError(403, `this agent may not use ${PROJECT_TOOL[body.action]}`);
+    const allowed = PROJECT_TOOL[body.action]!;
+    const tools = getAgent(db, run.agent_id)?.tools ?? [];
+    if (!allowed.some((t) => tools.includes(t))) throw new HttpError(403, `this agent may not use ${allowed.join(" / ")}`);
     const ws = getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
     const p = body.params;
     const project = typeof p.project_id === "string" && p.project_id ? ownProject(db, p.project_id, ws).id : null;
@@ -425,6 +438,16 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         return c.json({ data: { entries: docs.log(ws, { project_id: project, status: p.status === "open" || p.status === "done" ? p.status : undefined, kind: typeof p.kind === "string" ? p.kind : undefined }) } });
       case "log_update":
         return c.json({ data: { entry: docs.updateLog(z.string().parse(p.id), ws, z.record(z.string(), z.unknown()).parse(p.patch) as never) } });
+      case "save_text": {
+        const title = z.string().trim().min(3).max(200).parse(p.title);
+        const text = z.string().min(1).max(2_000_000).parse(p.text);
+        const doc = await docs.saveText(ws, project, title, text, p.ext === "md" ? "md" : "txt");
+        return c.json({ data: { doc: { id: doc.id, title: doc.title, pages: doc.pages } } });
+      }
+      case "find_doc": {
+        const found = docs.findByTitle(z.string().trim().min(3).max(200).parse(p.title), ws);
+        return c.json({ data: found ? { doc: { id: found.doc.id, title: found.doc.title, pages: found.doc.pages }, text: found.text } : { doc: null } });
+      }
     }
   });
 

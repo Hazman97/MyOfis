@@ -93,7 +93,7 @@ export interface ToolContext {
   /** Videos this run made (video_edit), in order; save_draft may attach them. */
   renders: { id: string; name: string; content_type: string }[];
   /** Project documents and log, through the hub (scoped to this job's room). */
-  projectData(action: "search" | "read" | "summary" | "log_add" | "log_list" | "log_update", params: Record<string, unknown>): Promise<unknown>;
+  projectData(action: "search" | "read" | "summary" | "log_add" | "log_list" | "log_update" | "save_text" | "find_doc", params: Record<string, unknown>): Promise<unknown>;
   /**
    * Put a clip from the agent's clip folder on this job (clip_library): uploads it once (or reuses
    * `uploadId` from an earlier day) and adds it to `attachments`; video tools then call it video `number`.

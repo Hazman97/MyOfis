@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { MAX_VIDEO_BYTES, UPLOAD_PART_BYTES, VIDEO_TYPES } from "@agent-office/shared";
+import { MAX_VIDEO_BYTES, MEDIA_TYPES, UPLOAD_PART_BYTES, mediaTypeFromName } from "@agent-office/shared";
 import type { Publisher } from "./publisher.ts";
 import { HttpError } from "./repo.ts";
 
@@ -18,7 +18,7 @@ interface Pending {
 }
 
 /**
- * Videos arrive in parts (≤ UPLOAD_PART_BYTES each) because Cloudflare refuses request bodies over
+ * Videos and sound recordings arrive in parts (≤ UPLOAD_PART_BYTES each) because Cloudflare refuses request bodies over
  * 100 MB. The client picks a random key and sends each part with its byte offset; a part that was
  * already received is ignored (safe retry), and a gap answers 409 with what we have so the client
  * can resume. When the last byte arrives the file becomes a normal upload.
@@ -41,8 +41,10 @@ export class UploadParts {
   ): { received: number; total: number; upload?: ReturnType<Publisher["adoptUpload"]> } {
     this.#sweep();
     if (!KEY.test(key)) throw new HttpError(400, "invalid upload key");
-    if (!VIDEO_TYPES[p.content_type]) throw new HttpError(400, "only videos (MP4, MOV, WebM, MKV) are sent in parts");
-    if (!Number.isSafeInteger(p.total) || p.total < 1 || p.total > MAX_VIDEO_BYTES) throw new HttpError(400, `the video must be under ${MAX_VIDEO_BYTES / 1024 ** 3} GB`);
+    // phones and some browsers send no type (or octet-stream) for .m4a, .opus, .mkv: go by the name
+    if (!MEDIA_TYPES[p.content_type]) p = { ...p, content_type: mediaTypeFromName(p.name) ?? p.content_type };
+    if (!MEDIA_TYPES[p.content_type]) throw new HttpError(400, "only videos (MP4, MOV, WebM, MKV) or recordings (M4A, MP3, WAV, OGG/Opus, AAC, FLAC) are sent in parts");
+    if (!Number.isSafeInteger(p.total) || p.total < 1 || p.total > MAX_VIDEO_BYTES) throw new HttpError(400, `the file must be under ${MAX_VIDEO_BYTES / 1024 ** 3} GB`);
     if (bytes.length > UPLOAD_PART_BYTES) throw new HttpError(400, "part too large");
     const id = `${owner}:${key}`;
     let cur = this.#pending.get(id);

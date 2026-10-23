@@ -14,3 +14,4 @@ export * from "./docs.ts";
 export * from "./programs.ts";
 export * from "./models.ts";
 export * from "./transcript.ts";
+export * from "./meeting.ts";

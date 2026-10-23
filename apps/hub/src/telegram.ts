@@ -2,7 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { DOC_TYPES, VIDEO_TYPES, freshFetch, redactString, type AgentEvent } from "@agent-office/shared";
+import { AUDIO_TYPES, DOC_TYPES, MEDIA_TYPES, VIDEO_TYPES, freshFetch, redactString, type AgentEvent } from "@agent-office/shared";
 import type { Hub } from "./core.ts";
 import { agents, approvals, contentDrafts, projects, settings } from "./db/schema.ts";
 import type { Integrations } from "./integrations.ts";
@@ -52,6 +52,9 @@ interface TgMessage {
   photo?: TgPhoto[];
   video?: TgFile;
   document?: TgFile;
+  /** A music/recording file, and a voice note (OGG/Opus, no file name). */
+  audio?: TgFile;
+  voice?: TgFile;
   media_group_id?: string;
 }
 interface TgUpdate {
@@ -515,8 +518,8 @@ export class TelegramBot {
         if (!file.file_path) continue;
         const res = await freshFetch(`${this.apiBase}/file/bot${token}/${file.file_path}`, { timeoutMs: 5 * 60_000 });
         if (!res.ok) throw new Error(`could not download ${f.name} (${res.status})`);
-        // photos and documents are small (saved whole); videos are streamed to disk
-        if (!VIDEO_TYPES[f.type]) {
+        // photos and documents are small (saved whole); videos and recordings are streamed to disk
+        if (!MEDIA_TYPES[f.type]) {
           attachments.push(this.hub.publisher.saveUpload(file.file_path.split("/").pop() ?? f.name, f.type, new Uint8Array(await res.arrayBuffer())).id);
         } else {
           const tmp = join(this.hub.config.filesDir, "uploads", `tg-${randomUUID()}.part`);
@@ -555,16 +558,17 @@ export class TelegramBot {
   }
 }
 
-/** The file in a message: a photo (largest size), a video, or a photo/video sent as a document. */
+/** The file in a message: a photo (largest size), a video, a recording or voice note, or one of these / a document sent as a file. */
 function fileOf(msg: TgMessage): InFile | null {
   if (msg.photo?.length) {
     const best = [...msg.photo].sort((a, b) => (b.file_size ?? b.width ?? 0) - (a.file_size ?? a.width ?? 0))[0]!;
     return { file_id: best.file_id, file_size: best.file_size, name: "photo.jpg", type: "image/jpeg" };
   }
-  const f = msg.video ?? msg.document;
-  const type = f?.mime_type ?? (msg.video ? "video/mp4" : "");
-  if (!f || !(VIDEO_TYPES[type] || DOC_TYPES[type] || ["image/jpeg", "image/png", "image/webp"].includes(type))) return null;
-  return { file_id: f.file_id, file_size: f.file_size, name: f.file_name ?? (type.startsWith("video/") ? `video.${VIDEO_TYPES[type]}` : DOC_TYPES[type] ? `document.${DOC_TYPES[type]}` : "photo.jpg"), type };
+  const f = msg.video ?? msg.audio ?? msg.voice ?? msg.document;
+  const type = f?.mime_type ?? (msg.video ? "video/mp4" : msg.voice ? "audio/ogg" : msg.audio ? "audio/mpeg" : "");
+  if (!f || !(MEDIA_TYPES[type] || DOC_TYPES[type] || ["image/jpeg", "image/png", "image/webp"].includes(type))) return null;
+  const name = VIDEO_TYPES[type] ? `video.${VIDEO_TYPES[type]}` : AUDIO_TYPES[type] ? `${msg.voice ? "voice-note" : "rakaman"}.${AUDIO_TYPES[type]}` : DOC_TYPES[type] ? `document.${DOC_TYPES[type]}` : "photo.jpg";
+  return { file_id: f.file_id, file_size: f.file_size, name: f.file_name ?? name, type };
 }
 
 const clip = (s: string) => (s.length > MESSAGE_MAX ? `${s.slice(0, MESSAGE_MAX)}…` : s);

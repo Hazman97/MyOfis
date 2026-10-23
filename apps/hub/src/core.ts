@@ -72,7 +72,7 @@ const TERMINAL = new Set(["done", "failed", "cancelled"]);
 /** Tester -> Coder -> ... stops after this many hops (prevents ping-pong loops). */
 export const MAX_HANDOFF_DEPTH = 5;
 /** Agents with these tools get at least VIDEO_RUN_MIN_MINUTES per run (renders, transcripts, OpenChatCut). */
-const VIDEO_RUN_TOOLS = new Set(["video_edit", "video_transcribe", "video_tiktok_hd", "openchatcut"]);
+const VIDEO_RUN_TOOLS = new Set(["video_edit", "video_transcribe", "video_tiktok_hd", "openchatcut", "meeting_transcribe"]);
 const VIDEO_RUN_MIN_MINUTES = 60;
 /** owner_feedback on drafts an agent posted without approval (counts toward its daily limit). */
 export const AUTO_PUBLISHED = "auto-published";

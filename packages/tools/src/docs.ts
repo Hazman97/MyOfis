@@ -114,4 +114,23 @@ export const logUpdateTool = defineTool({
   },
 });
 
-export const DOC_TOOLS = [docsSearchTool, docReadTool, docSummaryTool, logAddTool, logListTool, logUpdateTool];
+export const docSaveTool = defineTool({
+  name: "doc_save",
+  description:
+    "Save a text you wrote (meeting notes, minutes, a report) as a new project document in Markdown. " +
+    "It is indexed like the owner's files (docs_search finds it later) and the owner can download it from Projects → Docs.",
+  category: "write",
+  input: z.object({
+    title: z.string().trim().min(3).max(100).describe("e.g. 'Nota mesyuarat 2026-10-22 — CowBarn'"),
+    text: z.string().trim().min(20).max(60_000).describe("Markdown"),
+    project: projectArg,
+  }),
+  risk: () => "safe",
+  describe: (i) => `save document "${i.title}"`,
+  async execute(i, ctx) {
+    const r = (await ctx.projectData("save_text", { title: i.title, text: i.text, ext: "md", project_id: i.project ?? ctx.projectId })) as { doc: { id: string; title: string } };
+    return { ok: true, summary: `saved "${r.doc.title}"`, output: r };
+  },
+});
+
+export const DOC_TOOLS = [docsSearchTool, docReadTool, docSummaryTool, docSaveTool, logAddTool, logListTool, logUpdateTool];

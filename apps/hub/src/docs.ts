@@ -4,7 +4,7 @@ import mammoth from "mammoth";
 import { DOC_TYPES, LogEntryInput, dayKey, type DocHit, type LogEntry, type ProjectDoc } from "@agent-office/shared";
 import type { Db } from "./db/client.ts";
 import { projectDocs, projectLog, projects } from "./db/schema.ts";
-import type { Publisher } from "./publisher.ts";
+import { cleanUploadName, type Publisher } from "./publisher.ts";
 import { HttpError, newId } from "./repo.ts";
 
 /**
@@ -48,6 +48,26 @@ export class Docs {
     const insert = this.#sqlite().query("INSERT INTO docs_index (doc_id, workspace_id, project_id, page, title, body) VALUES (?, ?, ?, ?, ?, ?)");
     pages.forEach((text, i) => insert.run(row.id, ws, projectId ?? "", i + 1, f.row.name, text));
     return toDoc(row);
+  }
+
+  /** A text an agent wrote (meeting notes) or made (a transcript), kept as a project document like an upload. */
+  async saveText(ws: string, projectId: string | null, title: string, text: string, ext: "md" | "txt"): Promise<ProjectDoc> {
+    const up = this.publisher.saveUpload(`${title.slice(0, 110)}.${ext}`, ext === "md" ? "text/markdown" : "text/plain", new TextEncoder().encode(text), ws);
+    return this.ingest(up.id, ws, projectId);
+  }
+
+  /** The newest document of this room saved with this title (saveText), with its whole text. */
+  findByTitle(title: string, ws: string): { doc: ProjectDoc; text: string } | null {
+    const names = (["txt", "md"] as const).map((ext) => cleanUploadName(`${title.slice(0, 110)}.${ext}`));
+    const row = this.db
+      .select()
+      .from(projectDocs)
+      .where(and(eq(projectDocs.workspace_id, ws), or(...names.map((n) => eq(projectDocs.title, n)))))
+      .orderBy(desc(projectDocs.created_at))
+      .get();
+    if (!row) return null;
+    const pages = this.#sqlite().query("SELECT body FROM docs_index WHERE doc_id = ? ORDER BY page").all(row.id) as { body: string }[];
+    return { doc: toDoc(row), text: pages.map((p) => p.body).join("\n") };
   }
 
   list(ws: string, projectId?: string | null): ProjectDoc[] {

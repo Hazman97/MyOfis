@@ -519,7 +519,7 @@ export const api = {
     if (!res.ok || !data.upload) throw new ApiError(res.status, data.error ?? res.statusText);
     return data.upload;
   },
-  /** Videos go in 32 MB parts (Cloudflare refuses bodies over 100 MB); `onProgress` gets 0–1. */
+  /** Videos and recordings go in 32 MB parts (Cloudflare refuses bodies over 100 MB); `onProgress` gets 0–1. */
   uploadVideo: async (file: File, onProgress?: (done: number) => void): Promise<ChatAttachment> => {
     const PART = 32 * 1024 * 1024;
     const key = crypto.randomUUID().replace(/-/g, "");
@@ -527,7 +527,8 @@ export const api = {
     for (;;) {
       const part = file.slice(offset, offset + PART);
       const q = new URLSearchParams({ name: file.name, total: String(file.size), offset: String(offset) });
-      const res = await fetch(`/api/uploads/parts/${key}?${q}`, { method: "PUT", body: part, headers: { "content-type": file.type || "video/mp4" }, credentials: "same-origin" });
+      // no type from the browser (.opus, .mkv on some systems): the hub works it out from the name
+      const res = await fetch(`/api/uploads/parts/${key}?${q}`, { method: "PUT", body: part, headers: { "content-type": file.type || "application/octet-stream" }, credentials: "same-origin" });
       const data = (await res.json().catch(() => ({}))) as { received?: number; upload?: ChatAttachment; error?: string };
       if (res.status === 401) onUnauthorized();
       if (!res.ok) throw new ApiError(res.status, data.error ?? res.statusText);

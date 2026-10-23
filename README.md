@@ -305,6 +305,15 @@ Each website exposes one signed endpoint. Set it per project in **Projects → B
 - what is connected;
 - the safety rules.
 
+## Notulis: meeting recordings → notes
+
+Record a meeting on your phone and send the file to **Notulis** (Chat, up to 2 GB; Telegram voice notes / audio up to 20 MB). Pick the project first and write the names and terms in the message.
+- whisper transcribes it **on your PC** (offline, about 2 minutes per hour of audio on the GPU) with settings that stop the invented lines quiet recordings give.
+- Notulis writes the notes: summary, what changed against the project's documents, decisions and action items marked **(sahkan)** where unsure. It saves the transcript and the notes in **Projects → Docs**, and the decisions and actions in the **Log**.
+- Ask later ("apa keputusan pasal kipas?") and it answers from the transcript with the time in the recording.
+
+Without MyOfis: right-click a recording → **Send to → Transkrip (Whisper)** gives `.txt` + `.srt` next to the file. See [docs/notulis.md](docs/notulis.md).
+
 ## Project Assistant: your project's memory
 
 Use it when you lead a project for a client (e.g. "MARDI Automatic Goat Shed Gate").

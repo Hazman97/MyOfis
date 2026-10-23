@@ -180,8 +180,10 @@ const uploading = ref(false);
 const uploadPct = ref<number | null>(null);
 const photoInput = ref<HTMLInputElement>();
 const isVideo = (a: { content_type: string }) => a.content_type.startsWith("video/");
+/** Meeting recordings and voice notes (Notulis). */
+const isAudio = (a: { content_type: string }) => a.content_type.startsWith("audio/");
 /** PDF / DOCX / TXT / MD for the Project Assistant (shown as a file chip, not a picture). */
-const isDoc = (a: { content_type: string }) => !a.content_type.startsWith("video/") && !a.content_type.startsWith("image/");
+const isDoc = (a: { content_type: string }) => !isVideo(a) && !isAudio(a) && !a.content_type.startsWith("image/");
 async function addPhotos(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = [...(input.files ?? [])].slice(0, MAX_PHOTOS - photos.value.length);
@@ -191,7 +193,8 @@ async function addPhotos(e: Event) {
   error.value = "";
   try {
     for (const file of files) {
-      const video = file.type.startsWith("video/") || /\.(mp4|mov|webm|mkv|m4v)$/i.test(file.name);
+      // videos and recordings can be large: sent in parts with progress
+      const video = file.type.startsWith("video/") || file.type.startsWith("audio/") || /\.(mp4|mov|webm|mkv|m4v|m4a|mp3|wav|ogg|oga|opus|weba|aac|flac|amr)$/i.test(file.name);
       uploadPct.value = video ? 0 : null;
       const up = video ? await api.uploadVideo(file, (d) => (uploadPct.value = Math.round(d * 100))) : await api.uploadImage(file);
       photos.value.push({ ...up, preview: URL.createObjectURL(file) });
@@ -210,7 +213,7 @@ function removePhoto(id: string) {
 }
 
 async function send(body = text.value) {
-  const t = (body + (interim.value ? ` ${interim.value}` : "")).trim() || (photos.value.length ? (photos.value.some(isVideo) ? "(video)" : "(photo)") : "");
+  const t = (body + (interim.value ? ` ${interim.value}` : "")).trim() || (photos.value.length ? (photos.value.some(isAudio) ? "(rakaman)" : photos.value.some(isVideo) ? "(video)" : "(photo)") : "");
   if (!t || !agent.value || sending.value || uploading.value) return;
   listening.value?.stop();
   sending.value = true;
@@ -469,6 +472,10 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                 <div v-if="m.attachments?.length" class="mb-2 flex flex-wrap gap-1.5">
                   <template v-for="a in m.attachments" :key="a.id">
                     <video v-if="isVideo(a)" :src="api.uploadUrl(a.id)" controls preload="metadata" class="h-40 max-w-full rounded-xl border border-white/20 bg-black shadow-xs" :aria-label="a.name" />
+                    <span v-else-if="isAudio(a)" class="flex max-w-full flex-col gap-1 text-xs">
+                      <span class="truncate">🎙️ {{ a.name }}</span>
+                      <audio :src="api.uploadUrl(a.id)" controls preload="none" class="h-9 w-64 max-w-full" :aria-label="a.name" />
+                    </span>
                     <a v-else-if="isDoc(a)" :href="api.uploadUrl(a.id, true)" class="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-2 py-1 text-xs" download>
                       📄 <span class="truncate">{{ a.name }}</span>
                     </a>
@@ -548,8 +555,8 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
           <div v-if="photos.length || uploading" class="mb-2.5 flex flex-wrap items-center gap-2" aria-label="Photos to send">
             <div v-for="p in photos" :key="p.id" class="relative group">
               <video v-if="isVideo(p)" :src="p.preview" muted preload="metadata" class="size-16 rounded-xl border border-line bg-black object-cover shadow-xs" :aria-label="p.name" />
-              <div v-else-if="isDoc(p)" class="flex h-16 w-28 flex-col items-center justify-center rounded-xl border border-line bg-surface-2 p-1 text-center text-[10px] shadow-xs" :title="p.name">
-                <span class="text-lg">📄</span><span class="w-full truncate">{{ p.name }}</span>
+              <div v-else-if="isDoc(p) || isAudio(p)" class="flex h-16 w-28 flex-col items-center justify-center rounded-xl border border-line bg-surface-2 p-1 text-center text-[10px] shadow-xs" :title="p.name">
+                <span class="text-lg">{{ isAudio(p) ? "🎙️" : "📄" }}</span><span class="w-full truncate">{{ p.name }}</span>
               </div>
               <img v-else :src="p.preview" :alt="p.name" class="size-16 rounded-xl border border-line object-cover shadow-xs" />
               <button
@@ -567,7 +574,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
             </span>
           </div>
           <div class="flex items-end gap-2">
-            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v,application/pdf,.pdf,.docx,.txt,.md" multiple class="hidden" @change="addPhotos" />
+            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v,audio/*,.m4a,.mp3,.wav,.ogg,.opus,.aac,.flac,.amr,application/pdf,.pdf,.docx,.txt,.md" multiple class="hidden" @change="addPhotos" />
             <button
               class="btn relative shrink-0 size-9 p-0 rounded-lg text-muted hover:text-fg"
               :disabled="uploading || photos.length >= MAX_PHOTOS"

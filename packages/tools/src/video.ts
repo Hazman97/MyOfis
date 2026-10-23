@@ -8,6 +8,7 @@ import {
   EditSuggestionsInput,
   Transcript,
   VIDEO_PRESETS,
+  MEDIA_TYPES,
   VIDEO_TYPES,
   isFiller,
   packTranscript,
@@ -279,8 +280,8 @@ let nvencOk: boolean | null = null;
 export async function attachmentFile(ctx: ToolContext, n: number): Promise<{ file: string; name: string }> {
   const a = ctx.attachments[n - 1];
   if (!a) throw new ToolDenied(`there is no file ${n}; the owner sent ${ctx.attachments.length}`);
-  const ext = VIDEO_TYPES[a.content_type];
-  if (!ext) throw new ToolDenied(`file ${n} (${a.name}) is not a video`);
+  const ext = MEDIA_TYPES[a.content_type];
+  if (!ext) throw new ToolDenied(`file ${n} (${a.name}) is not a video or a sound recording`);
   const dir = mediaDir(ctx);
   const file = `in-${n}.${ext}`;
   if (!existsSync(join(dir, file))) await ctx.downloadAttachment(a.id, join(dir, file));
@@ -490,8 +491,25 @@ export function whisperModel(): string | null {
   if (env && existsSync(env)) return env;
   for (const dir of ["C:\\whisper\\models", join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".whisper", "models")]) {
     if (!existsSync(dir)) continue;
-    const bins = readdirSync(dir).filter((f) => f.startsWith("ggml-") && f.endsWith(".bin")).map((f) => join(dir, f));
+    // ggml-silero-*.bin is the voice-activity model (whisperVadModel), not a speech model
+    const bins = readdirSync(dir).filter((f) => f.startsWith("ggml-") && f.endsWith(".bin") && !f.includes("silero")).map((f) => join(dir, f));
     if (bins.length) return bins.sort((a, b) => statSync(b).size - statSync(a).size)[0]!;
+  }
+  return null;
+}
+
+/**
+ * Silero voice-activity model for whisper.cpp's --vad: WHISPER_VAD_MODEL, else ggml-silero-*.bin next to the
+ * speech model. With it whisper only hears the stretches where someone speaks, so quiet rooms do not
+ * become invented text. Optional: without it transcription still works, just less clean.
+ */
+export function whisperVadModel(): string | null {
+  const env = process.env.WHISPER_VAD_MODEL;
+  if (env && existsSync(env)) return env;
+  for (const dir of ["C:\\whisper\\models", join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".whisper", "models")]) {
+    if (!existsSync(dir)) continue;
+    const vad = readdirSync(dir).filter((f) => f.startsWith("ggml-silero") && f.endsWith(".bin")).sort().at(-1);
+    if (vad) return join(dir, vad);
   }
   return null;
 }

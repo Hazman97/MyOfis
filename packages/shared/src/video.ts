@@ -42,6 +42,38 @@ export const UPLOAD_PART_BYTES = 32 * 1024 ** 2;
 
 export const isVideoType = (type: string) => type in VIDEO_TYPES;
 
+/** Sound recordings the owner may send (meetings, voice notes) for Notulis to transcribe. Sent in parts like videos. */
+export const AUDIO_TYPES: Record<string, string> = {
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/m4a": "m4a",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/wave": "wav",
+  "audio/ogg": "ogg",
+  "audio/opus": "opus",
+  "audio/webm": "weba",
+  "audio/aac": "aac",
+  "audio/x-aac": "aac",
+  "audio/flac": "flac",
+  "audio/x-flac": "flac",
+  "audio/amr": "amr",
+};
+export const isAudioType = (type: string) => type in AUDIO_TYPES;
+
+/** Videos and sound recordings: the large files that arrive in parts and are streamed to disk. */
+export const MEDIA_TYPES: Record<string, string> = { ...VIDEO_TYPES, ...AUDIO_TYPES };
+
+/** A content type from a file name, for browsers and phones that send none (or octet-stream) for .m4a, .opus, .mkv… */
+export function mediaTypeFromName(name: string): string | null {
+  const ext = name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  if (!ext) return null;
+  const byExt: Record<string, string> = { mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska", m4v: "video/x-m4v", m4a: "audio/mp4", mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", weba: "audio/webm", aac: "audio/aac", flac: "audio/flac", amr: "audio/amr" };
+  return byExt[ext] ?? null;
+}
+
 /**
  * Jobs the runner does without the AI (no provider, key or tokens): the one tool each may use.
  * video_render = the Video Studio's "Render again"; video_transcribe = its "Transcribe".
