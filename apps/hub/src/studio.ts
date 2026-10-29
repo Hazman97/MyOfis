@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { EditPlan, EditSuggestionsInput, RenderInfo, Transcript, VIDEO_PRESETS, VideoShotIndex, type EditSuggestions, type Job, type TikTokHdMode } from "@agent-office/shared";
+import { EditPlan, EditSuggestionsInput, RenderInfo, Transcript, VIDEO_PRESETS, VideoShotIndex, ClipCandidateSchema, type ClipCandidate, type EditSuggestions, type Job, type TikTokHdMode } from "@agent-office/shared";
+import { z } from "zod";
 import type { Hub } from "./core.ts";
 import { contentDrafts, editSuggestions, events, jobs, runs, settings, uploads } from "./db/schema.ts";
 import { HttpError, getRun, newId } from "./repo.ts";
@@ -99,6 +100,21 @@ export class Studio {
   setShotIndex(uploadId: string, idx: VideoShotIndex): void {
     const value = VideoShotIndex.parse(idx);
     const key = `video.index.${uploadId}`;
+    this.hub.db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+  }
+
+  clipResults(uploadId: string, ws = "owner"): ClipCandidate[] | null {
+    const row = this.hub.db.select({ ws: uploads.workspace_id }).from(uploads).where(eq(uploads.id, uploadId)).get();
+    if (!row || row.ws !== ws) return null;
+    const raw = this.hub.db.select({ value: settings.value }).from(settings).where(eq(settings.key, `video.clips.${uploadId}`)).get()?.value;
+    if (!raw) return null;
+    const parsed = z.array(ClipCandidateSchema).safeParse(raw);
+    return parsed.success ? parsed.data : null;
+  }
+
+  setClipResults(uploadId: string, clips: ClipCandidate[]): void {
+    const value = z.array(ClipCandidateSchema).parse(clips);
+    const key = `video.clips.${uploadId}`;
     this.hub.db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
   }
 

@@ -187,6 +187,18 @@ export const Caption = z.object({
 });
 export type Caption = z.infer<typeof Caption>;
 
+/** Monochrome vector emoji font for libass (avoids COLRv0/COLRv1 broken hollow rings and missing-glyph tofu). Pure. */
+export function emojiFontName(platformName: string = typeof process !== "undefined" ? process.platform : "linux"): string {
+  return platformName === "win32" ? "Segoe UI Symbol" : "Noto Emoji";
+}
+
+const EMOJI_RUN_RE = /[\p{Extended_Pictographic}\u2600-\u27BF]+(?:\uFE0F|\u200D[\p{Extended_Pictographic}\u2600-\u27BF]+)*/gu;
+
+/** Wrap emoji codepoints in an explicit monochrome outline font override for libass. Pure. */
+export function wrapAssEmoji(cleanedText: string, emojiFont = emojiFontName()): string {
+  return cleanedText.replace(EMOJI_RUN_RE, (m) => `{\\fn${emojiFont}\\b0}${m}{\\fnArial\\b1}`);
+}
+
 export const Subtitles = z.object({
   style: z.enum(["pop", "line"]).default("pop").describe("pop = 2 words at a time (TikTok style); line = up to 6 words"),
   uppercase: z.boolean().default(true),

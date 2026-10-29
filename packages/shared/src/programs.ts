@@ -13,6 +13,8 @@ const TOOL_PROGRAMS: Record<string, string> = {
   video_edit: "ffmpeg",
   video_tiktok_hd: "ffmpeg",
   motion_render: "hyperframes",
+  clip_find: "ffmpeg",
+  clip_render: "ffmpeg",
   clip_library: "ffmpeg",
   openchatcut: "openchatcut",
   openchatcut_import: "openchatcut",

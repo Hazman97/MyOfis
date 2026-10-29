@@ -21,6 +21,8 @@ import {
   TikTokHdMode,
   tiktokHdPlan,
   type VideoPreset,
+  emojiFontName,
+  wrapAssEmoji,
 } from "@agent-office/shared";
 import { scrubbedEnv } from "./safety.ts";
 import { ToolDenied, defineTool, type ToolContext } from "./types.ts";
@@ -88,7 +90,7 @@ export function parseProbe(json: unknown): VideoProbe {
   };
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+export const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // ---------------------------------------------------------------- edit plan → ffmpeg argv (pure)
 
@@ -231,17 +233,7 @@ const ANIMATION: Record<EditPlan["captions"][number]["animation"], string> = {
   pop: "\\fad(80,250)\\fscx70\\fscy70\\t(0,160,\\fscx100\\fscy100)",
 };
 
-/** Monochrome vector emoji font for libass (avoids COLRv0/COLRv1 broken hollow rings and missing-glyph tofu). */
-export function emojiFontName(platformName: string = process.platform): string {
-  return platformName === "win32" ? "Segoe UI Symbol" : "Noto Emoji";
-}
-
-const EMOJI_RUN_RE = /[\p{Extended_Pictographic}\u2600-\u27BF]+(?:\uFE0F|\u200D[\p{Extended_Pictographic}\u2600-\u27BF]+)*/gu;
-
-/** Wrap emoji codepoints in an explicit monochrome outline font override for libass. Pure. */
-export function wrapAssEmoji(cleanedText: string, emojiFont = emojiFontName()): string {
-  return cleanedText.replace(EMOJI_RUN_RE, (m) => `{\\fn${emojiFont}\\b0}${m}{\\fnArial\\b1}`);
-}
+export { emojiFontName, wrapAssEmoji };
 
 /** ASS subtitles for burned-in captions: big white bold text with a black outline, clear of TikTok's buttons. */
 type AssCaption = Omit<EditPlan["captions"][number], "animation"> & { animation?: EditPlan["captions"][number]["animation"] };
@@ -588,7 +580,7 @@ async function detectSourceCrop(ctx: ToolContext, file: string, p: VideoProbe): 
   return parseCropdetect(r.log, p.width, p.height);
 }
 
-async function savedShotIndex(ctx: ToolContext, n: number): Promise<VideoShotIndex | null> {
+export async function savedShotIndex(ctx: ToolContext, n: number): Promise<VideoShotIndex | null> {
   const a = ctx.attachments[n - 1];
   if (!a) return null;
   try {
@@ -1022,7 +1014,7 @@ export function parseSilences(log: string, duration: number): { s: number; e: nu
   return out.slice(0, 20_000);
 }
 
-async function savedTranscript(ctx: ToolContext, n: number): Promise<Transcript | null> {
+export async function savedTranscript(ctx: ToolContext, n: number): Promise<Transcript | null> {
   const a = ctx.attachments[n - 1];
   if (!a) return null;
   const r = (await ctx.videoData("transcript_get", { upload_id: a.id })) as { transcript: Transcript | null };

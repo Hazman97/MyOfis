@@ -102,7 +102,7 @@ export interface ToolContext {
   /** Ask the run's own model what some pictures show (thumbnails of a clip). "" when the model cannot see. */
   describeImages(paths: string[], prompt: string): Promise<string>;
   /** Video Studio data through the hub: a source video's transcript, and Editor's edit options. */
-  videoData(action: "transcript_get" | "transcript_put" | "suggestions" | "index_get" | "index_put", params: Record<string, unknown>): Promise<unknown>;
+  videoData(action: "transcript_get" | "transcript_put" | "suggestions" | "index_get" | "index_put" | "clips_get" | "clips_put", params: Record<string, unknown>): Promise<unknown>;
   /** Data a project's website shares with Agent Office (Kerani: bookings). */
   siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
   /** Change or remove a live website post (after the owner approved the tool call). */

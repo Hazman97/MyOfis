@@ -27,6 +27,7 @@ import {
   type Agent,
   Transcript,
   VideoShotIndex,
+  ClipCandidateSchema,
   UPLOAD_PART_BYTES,
   WebPostEdit,
   TikTokHdMode,
@@ -335,7 +336,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
     if (!runner) throw new HttpError(401, "unauthorized");
-    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions", "index_get", "index_put"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
+    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions", "index_get", "index_put", "clips_get", "clips_put"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
     const run = getRun(db, body.run_id);
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tools = getAgent(db, run.agent_id)?.tools ?? [];
@@ -345,6 +346,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       suggestions: ["suggest_edits"],
       index_get: ["video_probe", "video_index", "video_edit", "suggest_edits"],
       index_put: ["video_probe", "video_index"],
+      clips_get: ["clip_find", "video_edit"],
+      clips_put: ["clip_find"],
     }[body.action];
     if (!need.some((t) => tools.includes(t))) throw new HttpError(403, `this agent may not use ${need.join(" / ")}`);
     const job = getJob(db, run.job_id);
@@ -368,6 +371,11 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         return c.json({ data: { index: hub.studio.shotIndex(fileOf(body.params.upload_id), ws) } });
       case "index_put":
         hub.studio.setShotIndex(fileOf(body.params.upload_id), VideoShotIndex.parse(body.params.index));
+        return c.json({ data: { saved: true } });
+      case "clips_get":
+        return c.json({ data: { clips: hub.studio.clipResults(fileOf(body.params.upload_id), ws) } });
+      case "clips_put":
+        hub.studio.setClipResults(fileOf(body.params.upload_id), z.array(ClipCandidateSchema).parse(body.params.clips));
         return c.json({ data: { saved: true } });
     }
   });
@@ -1076,6 +1084,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   // Video Studio: how a video was made, render it again without the AI, or use your own edit
   api.get("/videos", (c) => c.json({ videos: hub.studio.list(W(c)) }));
   api.get("/videos/:id", (c) => c.json(hub.studio.info(c.req.param("id"), W(c))));
+  api.get("/videos/:id/clips", (c) => c.json({ clips: hub.studio.clipResults(c.req.param("id"), W(c)) }));
   api.post("/videos/:id/transcribe", (c) => c.json({ job: hub.studio.transcribe(c.req.param("id"), W(c)) }, 201));
   // TikTok HD (owner, 2026-10-20): remux or re-encode a finished video for TikTok, no AI
   api.get("/tiktok-hd", (c) => c.json({ items: hub.studio.tiktokHdList(W(c)) }));
