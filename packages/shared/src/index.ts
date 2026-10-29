@@ -17,3 +17,6 @@ export * from "./transcript.ts";
 export * from "./meeting.ts";
 export * from "./motion.ts";
 export * from "./clipFactory.ts";
+export * from "./explainer.ts";
+export * from "./explainerIcons.ts";
+export * from "./motionExplainer.ts";

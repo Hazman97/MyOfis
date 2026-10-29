@@ -16,7 +16,7 @@ import {
   type ViralitySubscores,
   type Sentence,
 } from "../src/clipFactory.ts";
-import type { Transcript } from "../src/video.ts";
+import type { Transcript } from "../src/transcript.ts";
 
 describe("Clip Factory Pure Logic (Task 028 Step 1-3)", () => {
   const sampleTranscript: Transcript = {

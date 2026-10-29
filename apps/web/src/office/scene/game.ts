@@ -66,6 +66,7 @@ interface CharSprites {
   body: Phaser.GameObjects.Image;
   shadow: Phaser.GameObjects.Image;
   bubble: Phaser.GameObjects.Image;
+  speechText: Phaser.GameObjects.Text;
   fx: Phaser.GameObjects.Image;
   doc: Phaser.GameObjects.Image;
   last: CharacterSnapshot | null;
@@ -279,7 +280,7 @@ class OfficeScene extends Phaser.Scene {
     }
     for (const [id, s] of this.#chars) {
       if (seen.has(id)) continue;
-      for (const o of [s.body, s.shadow, s.bubble, s.fx, s.doc]) o.destroy();
+      for (const o of [s.body, s.shadow, s.bubble, s.speechText, s.fx, s.doc]) o.destroy();
       this.#chars.delete(id);
       if (this.#hover === id) this.#hover = null;
     }
@@ -325,6 +326,19 @@ class OfficeScene extends Phaser.Scene {
       body,
       shadow: this.add.image(0, 0, "props", "fx/shadow").setOrigin(0.5, 0.5),
       bubble,
+      speechText: this.add
+        .text(0, 0, "", {
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontSize: "9px",
+          color: "#ffffff",
+          backgroundColor: "#101613f0",
+          padding: { x: 5, y: 3 },
+          wordWrap: { width: 140 },
+          align: "center",
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(D.bubble + 10)
+        .setVisible(false),
       fx: this.add.image(0, 0, "props", "fx/dizzy1").setOrigin(0.5, 1).setDepth(D.bubble).setVisible(false),
       doc: this.add.image(0, 0, "props", "fx/doc").setOrigin(0.5, 1).setVisible(false),
       last: null,
@@ -349,6 +363,12 @@ class OfficeScene extends Phaser.Scene {
       const pulse = c.needsApproval ? Math.round(Math.abs(Math.sin(time / 220)) * 2) : 0;
       s.bubble.setFrame(bubble).setPosition(x, top - pulse).setAlpha(c.alpha).setVisible(true);
     } else s.bubble.setVisible(false);
+
+    if (c.speechText && c.alpha > 0.1) {
+      s.speechText.setText(c.speechText).setPosition(x, top - (bubble ? 16 : 4)).setAlpha(c.alpha).setVisible(true);
+    } else {
+      s.speechText.setVisible(false);
+    }
 
     if (c.effect === "dizzy") s.fx.setFrame(Math.floor(time / 250) % 2 ? "fx/dizzy1" : "fx/dizzy2").setPosition(x, top + 3).setVisible(true);
     else s.fx.setVisible(false);

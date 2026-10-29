@@ -15,6 +15,7 @@ const TOOL_PROGRAMS: Record<string, string> = {
   motion_render: "hyperframes",
   clip_find: "ffmpeg",
   clip_render: "ffmpeg",
+  explainer_render: "ffmpeg",
   clip_library: "ffmpeg",
   openchatcut: "openchatcut",
   openchatcut_import: "openchatcut",

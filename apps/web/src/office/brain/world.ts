@@ -2,6 +2,7 @@ import { dayKey, type OfficeState } from "@agent-office/shared";
 import { hashString, outfitFor } from "../art/characters.ts";
 import type { Facing, OfficeLayout, Place } from "../map/tmj.ts";
 import { Pathfinder } from "./path.ts";
+import { clipSpeechBubble } from "../../chat/chatThreadHelpers.ts";
 import {
   busyFamilies,
   intentStep,
@@ -68,6 +69,8 @@ export interface CharacterSnapshot {
   held: boolean;
   /** Your own character (id "me"). */
   isMe: boolean;
+  /** Temporary speech bubble text (e.g. recent chat reply, ~60 chars max). */
+  speechText?: string | null;
 }
 
 export type RackState = "on" | "off" | "error";
@@ -124,6 +127,10 @@ export class OfficeWorld {
   #notes = 0;
   #racks: RackState[] = [];
   #lamp: LampState = "warn";
+  /** Speech bubbles active over agents (text + expiry). */
+  #speechBubbles = new Map<string, { text: string; expiresAt: number }>();
+  /** IDs of done runs already processed for speech bubbles, so old runs don't pop up bubbles. */
+  #seenChatRuns = new Set<string>();
   /** Your own character, walking where you tap (not an agent: reconcile never touches it). */
   #me: Char | null = null;
 
@@ -156,10 +163,20 @@ export class OfficeWorld {
 
   update(dtMs: number): void {
     this.#t += dtMs;
+    for (const [id, s] of this.#speechBubbles) {
+      if (this.#t >= s.expiresAt) this.#speechBubbles.delete(id);
+    }
     if (this.#state && this.#t - this.#lastReconcile >= RECONCILE_MS) this.#reconcile(false);
     for (const ch of this.#chars.values()) this.#tick(ch, dtMs);
     if (this.#me) this.#tick(this.#me, dtMs);
     for (const [id, ch] of this.#chars) if (ch.phase === "gone") this.#chars.delete(id);
+  }
+
+  /** Show a temporary speech bubble over an agent for durationMs (default 6000 ms). */
+  saySpeech(agentId: string, text: string, durationMs = 6000): void {
+    const clean = clipSpeechBubble(text, 60);
+    if (!clean) return;
+    this.#speechBubbles.set(agentId, { text: clean, expiresAt: this.#t + durationMs });
   }
 
   characters(): CharacterSnapshot[] {
@@ -175,6 +192,7 @@ export class OfficeWorld {
       if (!seated && pose !== "hand") pose = "stand";
       // the agent next to you turns to look at you
       const facing = near === ch.id && this.#me && !seated && ch.arrived ? faceTowards(ch, this.#me) : ch.facing;
+      const speech = this.#speechBubbles.get(ch.id);
       return {
         id: ch.id,
         name: ch.name,
@@ -192,6 +210,7 @@ export class OfficeWorld {
         needsApproval: ch.id !== ME_ID && ch.intent.bubble === "alert",
         held: ch.held,
         isMe: ch.id === ME_ID,
+        speechText: speech ? speech.text : null,
       };
     });
   }
@@ -427,6 +446,23 @@ export class OfficeWorld {
     if (this.#trayBase < 0) {
       const today = dayKey(new Date().toISOString());
       this.#trayBase = Object.values(state.runs).filter((r) => r.status === "done" && r.ended_at && dayKey(r.ended_at) === today).length;
+    }
+
+    // track completed chat runs and trigger speech bubbles
+    if (first) {
+      for (const r of Object.values(state.runs)) {
+        if (r.status === "done") this.#seenChatRuns.add(r.id);
+      }
+    } else {
+      for (const r of Object.values(state.runs)) {
+        if (r.status === "done" && !this.#seenChatRuns.has(r.id)) {
+          this.#seenChatRuns.add(r.id);
+          const job = state.jobs[r.job_id];
+          if (job && job.type === "chat" && r.output?.trim()) {
+            this.saySpeech(r.agent_id, r.output, 6000);
+          }
+        }
+      }
     }
 
     // a handoff chain with both ends busy for a while -> meeting room

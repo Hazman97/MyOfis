@@ -40,6 +40,7 @@ export interface RunContext {
   consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
   /** Runner-owned folder (outside the workspace) for this agent's screenshot baselines. */
   baselineDir: string | null;
+  tts(text: string, voice?: string): Promise<string | null>;
 }
 
 export interface RunResult {

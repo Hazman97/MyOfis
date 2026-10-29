@@ -10,7 +10,7 @@ import { useOffice } from "../../stores/office.ts";
  * pointer. They are the same as the agent panel's (chat, new job, pause, memory) plus a poke.
  */
 const props = defineProps<{ agentId: string; x: number; y: number }>();
-const emit = defineEmits<{ close: []; memory: [id: string]; poke: [id: string] }>();
+const emit = defineEmits<{ close: []; memory: [id: string]; poke: [id: string]; chat: [id: string] }>();
 const router = useRouter();
 const office = useOffice();
 const agent = computed(() => office.agentById[props.agentId]);
@@ -55,7 +55,7 @@ const adjustedPos = computed(() => {
 async function pick(key: string) {
   const a = agent.value;
   if (!a) return emit("close");
-  if (key === "chat") await router.push({ path: "/chat", query: { agent: a.slug } });
+  if (key === "chat") emit("chat", a.id);
   else if (key === "job") await router.push({ path: "/jobs/new", query: { agent: a.slug } });
   else if (key === "memory") emit("memory", a.id);
   else if (key === "poke") emit("poke", a.id);

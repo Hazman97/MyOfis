@@ -23,6 +23,7 @@ import type {
   Schedule,
   Transcript,
   WebPost,
+  ClipCandidate,
 } from "@agent-office/shared";
 
 export interface ToolInfo {
@@ -112,6 +113,14 @@ export interface TelegramSettings {
   token_hint: string | null;
   chat_id: string;
   enabled: boolean;
+}
+
+export interface TtsSettings {
+  base_url: string;
+  has_key: boolean;
+  key_hint: string | null;
+  voice: string;
+  speed: number;
 }
 
 export type MemoryTarget = "memory" | "user";
@@ -440,6 +449,7 @@ export const api = {
   addLog: (body: Record<string, unknown>) => request<{ entry: LogEntry }>("/log", { body }),
   updateLog: (id: string, body: Record<string, unknown>) => request<{ entry: LogEntry }>(`/log/${id}`, { method: "PATCH", body }),
   video: (id: string) => request<VideoInfo>(`/videos/${encodeURIComponent(id)}`),
+  getClips: (id: string) => request<{ clips: ClipCandidate[] | null }>(`/videos/${encodeURIComponent(id)}/clips`),
   videos: () => request<{ videos: VideoListItem[] }>("/videos"),
   /** Transcribe the video's source files with whisper on the runner PC (no AI tokens). */
   transcribeVideo: (id: string) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/transcribe`, { method: "POST" }),
@@ -457,7 +467,11 @@ export const api = {
   tiktokHd: (id: string, mode: "auto" | "remux" | "reencode" = "auto") => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/tiktok-hd`, { body: { mode } }),
   setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),
 
-  integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings; assistant?: { enabled: boolean; tokens: string[] } }>("/settings/integrations"),
+  integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings; tts?: TtsSettings; assistant?: { enabled: boolean; tokens: string[] } }>("/settings/integrations"),
+  saveTts: (body: { base_url?: string; api_key?: string; voice?: string; speed?: number }) =>
+    request<{ tts: TtsSettings }>("/settings/integrations/tts", { method: "PUT", body }),
+  testTts: (body: { text?: string; voice?: string } = {}) =>
+    request<{ ok: boolean; bytes?: number; duration_estimate_s?: number; error?: string }>("/settings/integrations/tts/test", { method: "POST", body }),
   saveWebSearch: (body: { provider: WebSearchProvider; searxng_url?: string; key_provider?: "tavily" | "brave"; api_key?: string }) =>
     request<{ web_search: WebSearchSettings }>("/settings/integrations/web-search", { method: "PUT", body }),
   testWebSearch: () =>

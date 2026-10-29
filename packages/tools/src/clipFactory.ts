@@ -4,7 +4,9 @@ import { z } from "zod";
 import {
   CaptionPresetSchema,
   ClipCandidateSchema,
+  EditPlan,
   ReframeModeSchema,
+  WebPost,
   buildScoringPrompt,
   calculateViralityScore,
   findCandidateWindows,
@@ -78,7 +80,7 @@ export const clipFindTool = defineTool({
 
     // 2. Get shot index (from cache or via video_index tool)
     let index = await savedShotIndex(ctx, i.video);
-    if (!index) {
+    if (!index && p.width > 0 && p.height > 0) {
       try {
         await videoIndexTool.execute({ video: i.video }, ctx);
         index = await savedShotIndex(ctx, i.video);
@@ -117,13 +119,24 @@ export const clipFindTool = defineTool({
       const thumbName = `thumb-${win.id}.jpg`;
       const thumbPath = join(dir, thumbName);
 
-      await spawn(
-        [bin, "-hide_banner", "-nostdin", "-ss", String(thumbTime), "-i", file, "-vframes", "1", "-q:v", "3", "-y", thumbName],
-        dir,
-        ctx.signal,
-        undefined,
-        30_000,
-      );
+      if (p.width > 0 && p.height > 0) {
+        await spawn(
+          [bin, "-hide_banner", "-nostdin", "-ss", String(thumbTime), "-i", file, "-vframes", "1", "-q:v", "3", "-y", thumbName],
+          dir,
+          ctx.signal,
+          undefined,
+          30_000,
+        );
+      } else {
+        // Audio-only media: generate a dark placeholder frame so describeImages can run
+        await spawn(
+          [bin, "-hide_banner", "-nostdin", "-f", "lavfi", "-i", "color=c=0x18181b:s=720x1280:d=1", "-vframes", "1", "-y", thumbName],
+          dir,
+          ctx.signal,
+          undefined,
+          10_000,
+        );
+      }
 
       const scoringPrompt = buildScoringPrompt({
         transcript: win.transcript,
@@ -133,7 +146,7 @@ export const clipFindTool = defineTool({
       });
 
       let modelReply = "";
-      if (existsSync(thumbPath)) {
+      if (existsSync(thumbPath) && typeof ctx.describeImages === "function") {
         modelReply = await ctx.describeImages([thumbPath], scoringPrompt);
       }
 
@@ -259,34 +272,31 @@ export const clipRenderTool = defineTool({
     const editPlanName = (i.headline || `clip_${Math.round(i.start)}_${Math.round(i.end)}`).slice(0, 40).replace(/[^\w.-]+/g, "_");
 
     // Call existing videoEditTool to render 9:16 vertical video
-    const renderResult = await videoEditTool.execute(
-      {
-        clips: [
-          {
-            video: i.video,
-            start: i.start,
-            end: i.end,
-            fit: fitMode,
-          },
-        ],
-        preset: "tiktok_fhd",
-        fit: fitMode,
-        captions: captions.map((c) => ({
-          text: c.text,
-          start: c.start,
-          end: c.end,
-          position: "bottom" as const,
-          animation: c.animation,
-        })),
-        normalize_audio: true,
-        name: editPlanName,
-      },
-      ctx,
-    );
+    const plan = EditPlan.parse({
+      clips: [
+        {
+          video: i.video,
+          start: i.start,
+          end: i.end,
+          fit: fitMode,
+        },
+      ],
+      preset: "tiktok_fhd",
+      fit: fitMode,
+      captions: captions.map((c) => ({
+        text: c.text,
+        start: c.start,
+        end: c.end,
+        position: "bottom" as const,
+        animation: c.animation,
+      })),
+      normalize_audio: true,
+      name: editPlanName,
+    });
+    const renderResult = await videoEditTool.execute(plan, ctx);
 
     const out = renderResult.output as { video_id: string; file: string; size_mb: number; seconds: number };
 
-    let draftId: string | null = null;
     if (i.save_draft) {
       const check = {
         facts_match_brief: true,
@@ -303,10 +313,10 @@ export const clipRenderTool = defineTool({
         title: i.headline || `Clip ${Math.round(i.start)}s-${Math.round(i.end)}s`,
         body: `${i.headline || "Viral Short"}\n\n${i.hook ? `"${i.hook}"\n\n` : ""}#viral #fyp #shorts #reels`,
         self_check: check,
-        meta: {
+        meta: WebPost.parse({
           post_type: "social",
           video_upload_id: out.video_id,
-        },
+        }),
       });
     }
 

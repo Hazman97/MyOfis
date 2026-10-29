@@ -1,5 +1,14 @@
 import { z } from "zod";
 import type { TranscriptWord } from "./transcript.ts";
+import {
+  SpectrumVisual,
+  CompareTableVisual,
+  BarChartVisual,
+  BigStatVisual,
+  TimelineVisual,
+  DiagramVisual,
+} from "./explainer.ts";
+import { renderInfographicHtml } from "./motionExplainer.ts";
 
 /**
  * Motion text / kinetic typography compositions rendered with HyperFrames (HTML/CSS/JS timeline → MP4).
@@ -119,6 +128,12 @@ export const MotionTemplateId = z.enum([
   "countdown",
   "lower_third",
   "outro_cta",
+  "spectrum",
+  "compare_table",
+  "bar_chart",
+  "big_stat",
+  "timeline",
+  "diagram",
 ]);
 export type MotionTemplateId = z.infer<typeof MotionTemplateId>;
 
@@ -139,6 +154,7 @@ export const MotionCommonParams = z.object({
     })
     .optional(),
 });
+export type MotionCommonParams = z.infer<typeof MotionCommonParams>;
 
 export const HookTemplateParams = MotionCommonParams.extend({
   lines: z.array(z.string().trim().min(1).max(120)).min(1).max(3).optional(),
@@ -353,6 +369,18 @@ export function parseTemplateParams(template: MotionTemplateId, raw: unknown) {
       return LowerThirdTemplateParams.parse(raw);
     case "outro_cta":
       return OutroCtaTemplateParams.parse(raw);
+    case "spectrum":
+      return SpectrumVisual.parse(raw);
+    case "compare_table":
+      return CompareTableVisual.parse(raw);
+    case "bar_chart":
+      return BarChartVisual.parse(raw);
+    case "big_stat":
+      return BigStatVisual.parse(raw);
+    case "timeline":
+      return TimelineVisual.parse(raw);
+    case "diagram":
+      return DiagramVisual.parse(raw);
   }
 }
 
@@ -362,13 +390,39 @@ export function parseTemplateParams(template: MotionTemplateId, raw: unknown) {
  */
 export function buildComposition(template: MotionTemplateId, rawParams: unknown): BuiltComposition {
   const parsed = parseTemplateParams(template, rawParams);
-  const preset = MOTION_PRESETS[parsed.size];
-  const palette = MOTION_PALETTES[parsed.palette];
-  const fontStack = MOTION_FONTS[parsed.font];
+
+  if (
+    template === "spectrum" ||
+    template === "compare_table" ||
+    template === "bar_chart" ||
+    template === "big_stat" ||
+    template === "timeline" ||
+    template === "diagram"
+  ) {
+    const rawObj = (rawParams ?? {}) as Record<string, unknown>;
+    const dur = typeof rawObj.duration === "number" ? rawObj.duration : 5;
+    const palId = typeof rawObj.palette === "string" ? (rawObj.palette as MotionPaletteId) : "cyber_yellow";
+    const visual = parsed as any;
+    const html = renderInfographicHtml(visual, { durationSeconds: dur, paletteId: palId });
+    return {
+      html,
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      duration: dur,
+      template,
+      transparent: false,
+    };
+  }
+
+  const common = parsed as MotionCommonParams;
+  const preset = MOTION_PRESETS[common.size];
+  const palette = MOTION_PALETTES[common.palette];
+  const fontStack = MOTION_FONTS[common.font];
   const { width, height } = preset;
-  const fps = parsed.fps;
-  const transparent = parsed.transparent;
-  const bgColor = transparent ? "transparent" : (parsed.background_color ?? palette.bg);
+  const fps = common.fps;
+  const transparent = common.transparent;
+  const bgColor = transparent ? "transparent" : (common.background_color ?? palette.bg);
   const minDim = Math.min(width, height);
 
   let duration = 3;
@@ -706,10 +760,11 @@ export function buildComposition(template: MotionTemplateId, rawParams: unknown)
     `;
   }
 
-  const bgMediaHtml = parsed.background_media
-    ? parsed.background_media.kind === "video"
-      ? `<video class="bg-media" id="bg-video" src="${escapeHtml(parsed.background_media.src)}" muted playsinline preload="auto"></video>`
-      : `<img class="bg-media" id="bg-image" src="${escapeHtml(parsed.background_media.src)}" alt="" />`
+  const bgMedia = common.background_media;
+  const bgMediaHtml = bgMedia
+    ? bgMedia.kind === "video"
+      ? `<video class="bg-media" id="bg-video" src="${escapeHtml(bgMedia.src)}" muted playsinline preload="auto"></video>`
+      : `<img class="bg-media" id="bg-image" src="${escapeHtml(bgMedia.src)}" alt="" />`
     : "";
 
   const html = `<!DOCTYPE html>

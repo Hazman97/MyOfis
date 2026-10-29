@@ -8,7 +8,7 @@ export const newId = (prefix: string) => `${prefix}_${ulid().toLowerCase()}`;
 
 export class HttpError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 429,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 429 | 502,
     message: string,
   ) {
     super(message);

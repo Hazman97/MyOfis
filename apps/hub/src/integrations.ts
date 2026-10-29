@@ -119,6 +119,10 @@ export class Integrations {
   get webSearch() {
     return webSearchSettings(this.db, this.secrets);
   }
+
+  get tts() {
+    return ttsSettings(this.db, this.secrets);
+  }
 }
 
 const TELEGRAM_KEY = "integrations.telegram";
@@ -215,6 +219,83 @@ export function webSearchSettings(db: Db, secrets: Secrets) {
         key_hint: keyChanged ? (data.api_key ? keyHint(data.api_key) : null) : prev.key_hint,
       };
       db.insert(settings).values({ key: WEB_SEARCH_KEY, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+      return pub();
+    },
+  };
+}
+
+// ---------------------------------------------------------------- TTS (Cikgu Tech / explainer)
+
+const TTS_KEY = "integrations.tts";
+
+const StoredTts = z.object({
+  base_url: z.string().default(""),
+  key_enc: z.string().nullable().default(null),
+  key_hint: z.string().nullable().default(null),
+  voice: z.string().default("af_sarah"),
+  speed: z.number().default(1.0),
+});
+
+export const TtsSettingsInput = z.object({
+  base_url: z.string().max(500),
+  /** Write-only. Omit to keep, "" to clear. */
+  api_key: z.string().max(500).optional(),
+  voice: z.string().max(50).optional(),
+  speed: z.number().min(0.25).max(4.0).optional(),
+});
+
+export interface TtsPublic {
+  base_url: string;
+  has_key: boolean;
+  key_hint: string | null;
+  voice: string;
+  speed: number;
+}
+
+export function ttsSettings(db: Db, secrets: Secrets) {
+  const read = () => {
+    const row = db.select().from(settings).where(eq(settings.key, TTS_KEY)).get();
+    const parsed = StoredTts.safeParse(row?.value);
+    return parsed.success ? parsed.data : StoredTts.parse({});
+  };
+
+  const pub = (): TtsPublic => {
+    const s = read();
+    return {
+      base_url: s.base_url,
+      has_key: !!s.key_enc,
+      key_hint: s.key_hint,
+      voice: s.voice,
+      speed: s.speed,
+    };
+  };
+
+  return {
+    public: pub,
+    plan(): { base_url: string; key: string | null; voice: string; speed: number } | null {
+      const envBase = process.env.TTS_API_BASE?.trim();
+      const s = read();
+      const base = envBase || s.base_url.replace(/\/$/, "");
+      if (!base) return null;
+      return {
+        base_url: base,
+        key: s.key_enc ? secrets.decrypt(s.key_enc) : null,
+        voice: s.voice || "af_sarah",
+        speed: s.speed || 1.0,
+      };
+    },
+    set(input: z.input<typeof TtsSettingsInput>): TtsPublic {
+      const data = TtsSettingsInput.parse(input);
+      const prev = read();
+      const keyChanged = data.api_key !== undefined;
+      const value = {
+        base_url: data.base_url.replace(/\/$/, ""),
+        key_enc: keyChanged ? (data.api_key ? secrets.encrypt(data.api_key) : null) : prev.key_enc,
+        key_hint: keyChanged ? (data.api_key ? keyHint(data.api_key) : null) : prev.key_hint,
+        voice: data.voice ?? prev.voice ?? "af_sarah",
+        speed: data.speed ?? prev.speed ?? 1.0,
+      };
+      db.insert(settings).values({ key: TTS_KEY, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
       return pub();
     },
   };

@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { ShotInfo, Transcript, VideoPreset } from "./video.ts";
+import type { ShotInfo, VideoPreset } from "./video.ts";
 import { emojiFontName, wrapAssEmoji } from "./video.ts";
+import type { Transcript, TranscriptWord } from "./transcript.ts";
 
 /**
  * Clip Factory Pure Schemas & Domain Logic (Task 028).
@@ -30,9 +31,11 @@ export type ViralityReasons = z.infer<typeof ViralityReasonsSchema>;
 
 export const ReframeModeSchema = z.enum(["blur_fit", "crop_center", "crop_speaker", "split_screen"]);
 export type ReframeMode = z.infer<typeof ReframeModeSchema>;
+export const REFRAME_MODES = ["blur_fit", "crop_center", "crop_speaker", "split_screen"] as const;
 
 export const CaptionPresetSchema = z.enum(["pop", "neon", "bold_box", "karaoke", "minimal"]);
 export type CaptionPreset = z.infer<typeof CaptionPresetSchema>;
+export const CAPTION_PRESETS = ["pop", "neon", "bold_box", "karaoke", "minimal"] as const;
 
 export const ClipCandidateSchema = z.object({
   id: z.string(),
@@ -105,7 +108,7 @@ export function extractSentences(transcript: Transcript): Sentence[] {
     const isMaxWords = currentWords.length >= 35;
 
     if (hasTerminator || isLongPause || isMaxWords || !nextW) {
-      const text = currentWords.map((cw) => cw.w).join(" ").trim();
+      const text = currentWords.map((cw: TranscriptWord) => cw.w).join(" ").trim();
       if (text) {
         sentences.push({
           text,
@@ -246,7 +249,7 @@ export function findCandidateWindows(opts: {
 
       const dur = winEnd - winStart;
       if (dur >= minDur && dur <= maxDur) {
-        const text = curWords.map((w) => w.w).join(" ").trim();
+        const text = curWords.map((w: TranscriptWord) => w.w).join(" ").trim();
         windows.push({
           id: `win_s_${windows.length + 1}`,
           start: Number(winStart.toFixed(2)),
@@ -300,7 +303,7 @@ export function findCandidateWindows(opts: {
           duration: Number(dur.toFixed(2)),
           transcript: shots
             .slice(shotIdx, i + 1)
-            .map((s) => s.desc || `Shot ${s.index}`)
+            .map((s) => s.description || `Shot ${s.index}`)
             .join(". "),
           words: [],
           source: "visual_shots",
@@ -579,7 +582,7 @@ export function generateAnimatedCaptions(
   preset: CaptionPreset = "pop",
   emojiFont = emojiFontName(),
 ): { start: number; end: number; text: string; animation: "pop" | "fade" | "none" }[] {
-  const inRange = words.filter((w) => w.s >= clipStart - 0.2 && w.e <= clipEnd + 0.2);
+  const inRange = words.filter((w: TranscriptWord) => w.s >= clipStart - 0.2 && w.e <= clipEnd + 0.2);
   if (!inRange.length) return [];
 
   const chunks: Transcript["words"][] = [];
@@ -612,7 +615,7 @@ export function generateAnimatedCaptions(
       }
     }
 
-    const rawSentence = c.map((w) => w.w).join(" ") + emoji;
+    const rawSentence = c.map((w: TranscriptWord) => w.w).join(" ") + emoji;
     const wrappedText = wrapAssEmoji(rawSentence, emojiFont);
 
     results.push({

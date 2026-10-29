@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { renameSync, rmSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { arch, platform } from "node:os";
 import { join } from "node:path";
 import {
@@ -424,6 +424,26 @@ export class RunnerClient {
     return body.results ?? [];
   }
 
+  async #tts(runId: string, workspace: string, text: string, voice?: string): Promise<string | null> {
+    const res = await freshFetch(new URL("/api/runner/tts", this.#opts.hubUrl), {
+      method: "POST",
+      timeoutMs: 60_000,
+      headers: { ...this.#opts.extraHeaders, authorization: `Bearer ${this.#opts.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ run_id: runId, text, voice }),
+    });
+    if (res.status === 404 || res.status === 204) return null;
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `TTS failed (${res.status})`);
+    }
+    const buf = await res.arrayBuffer();
+    const media = join(workspace, "media");
+    mkdirSync(media, { recursive: true });
+    const dest = join(media, `tts-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.mp3`);
+    writeFileSync(dest, Buffer.from(buf));
+    return dest;
+  }
+
   /** Ask another agent through the hub and wait for its answer (or the timeout / cancel). */
   #consult(runId: string, toAgent: string, question: string, timeoutMs: number, signal: AbortSignal): Promise<ConsultAnswer> {
     const consultId = randomUUID();
@@ -488,6 +508,7 @@ export class RunnerClient {
         proposeSkill: (p) => this.#sendRun(a.run_id, { type: "run.skill", ...p }),
         searchSessions: (query, allAgents) => this.#search(a.run_id, query, allAgents),
         webSearch: (query, count) => this.#webSearch(a.run_id, query, count),
+        tts: (text: string, voice?: string) => this.#tts(a.run_id, workspace, text, voice),
         fetchUpload: (id) => this.#fetchUpload(a.run_id, id),
         downloadUpload: (id, dest) => this.#downloadUpload(a.run_id, id, dest),
         uploadVideo: (path, name, render) => this.#uploadVideo(a.run_id, path, name, render),

@@ -12,6 +12,8 @@ import { tiktokPosterAgent, tiktokPosterUpgrade } from "./tiktokPoster.ts";
 import { projectAssistantAgent, projectAssistantSchedule } from "./projectAssistant.ts";
 import { keraniAgent, keraniSchedule } from "./kerani.ts";
 import { notulisAgent } from "./notulis.ts";
+import { CLIP_FACTORY_PLAYBOOK_SKILL, CLIP_FACTORY_PROMPT, clipFactoryAgent } from "./clipFactory.ts";
+import { cikguTechAgent, techExplainerBmSkill } from "./explainer.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
 import { pakGuardAgent, pakGuardSchedule } from "./pakGuard.ts";
 import { testerAgent, testerSchedule } from "./tester.ts";
@@ -32,6 +34,8 @@ export { openchatcutAgent, OPENCHATCUT_PROMPT } from "./openchatcutEditor.ts";
 export { tiktokAgent, tiktokSchedule, TIKTOK_PROMPT, TIKTOK_CAPTIONS_SKILL } from "./tiktok.ts";
 export { tiktokPosterAgent, TIKTOK_POSTER_PROMPT } from "./tiktokPoster.ts";
 export { notulisAgent, NOTULIS_PROMPT } from "./notulis.ts";
+export { clipFactoryAgent, CLIP_FACTORY_PROMPT, CLIP_FACTORY_PLAYBOOK_SKILL } from "./clipFactory.ts";
+export { cikguTechAgent, techExplainerBmSkill } from "./explainer.ts";
 
 export interface BuiltinAgent {
   agent: AgentInput;
@@ -49,6 +53,8 @@ export const BUILTIN_SKILLS: { name: string; content: string }[] = [
   { name: "short-video-editing", content: SHORT_VIDEO_EDITING_SKILL },
   { name: "tiktok-captions-bm", content: TIKTOK_CAPTIONS_SKILL },
   { name: "motion-text-tiktok", content: MOTION_TEXT_TIKTOK_SKILL },
+  { name: "clip-factory-playbook", content: CLIP_FACTORY_PLAYBOOK_SKILL },
+  { name: "tech-explainer-bm", content: techExplainerBmSkill.content },
 ];
 
 /** Seeded on first boot by slug; never overwrites owner edits. */
@@ -68,5 +74,7 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   { agent: openchatcutAgent, needsLlm: true, upgrade: openchatcutUpgrade },
   { agent: tiktokAgent, needsLlm: true, schedules: (id) => [tiktokSchedule(id)], upgrade: tiktokUpgrade },
   { agent: tiktokPosterAgent, needsLlm: true, upgrade: tiktokPosterUpgrade },
+  clipFactoryAgent,
+  { agent: cikguTechAgent, needsLlm: true },
   { agent: notulisAgent, needsLlm: true },
 ];

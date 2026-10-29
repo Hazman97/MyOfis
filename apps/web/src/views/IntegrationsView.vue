@@ -1,19 +1,24 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { Archive, GitBranch, Globe, LoaderCircle, Send } from "lucide-vue-next";
+import { Archive, GitBranch, Globe, LoaderCircle, Send, Volume2 } from "lucide-vue-next";
 import ConfirmButton from "../components/ConfirmButton.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SettingsTabs from "../components/SettingsTabs.vue";
-import { api, type BackupInfo, type GiteaSettings, type TelegramSettings, type WebSearchProvider, type WebSearchSettings } from "../api/http.ts";
+import { api, type BackupInfo, type GiteaSettings, type TelegramSettings, type TtsSettings, type WebSearchProvider, type WebSearchSettings } from "../api/http.ts";
 import { fmtDateTime } from "../format.ts";
 
 const gitea = ref<GiteaSettings | null>(null);
 const telegram = ref<TelegramSettings | null>(null);
+const tts = ref<TtsSettings | null>(null);
 const assistant = ref<{ enabled: boolean; tokens: string[] } | null>(null);
 const tg = reactive({ token: "", chat_id: "", enabled: true });
 const tgMsg = ref("");
 const tgError = ref("");
 const form = reactive({ url: "", token: "" });
+const ttsForm = reactive({ base_url: "", api_key: "", voice: "af_sarah", speed: 1.0 });
+const ttsMsg = ref("");
+const ttsError = ref("");
+const ttsTesting = ref(false);
 const msg = ref("");
 const error = ref("");
 
@@ -24,10 +29,61 @@ onMounted(async () => {
   telegram.value = r.telegram;
   tg.chat_id = r.telegram.chat_id;
   tg.enabled = r.telegram.enabled;
+  if (r.tts) {
+    tts.value = r.tts;
+    ttsForm.base_url = r.tts.base_url;
+    ttsForm.voice = r.tts.voice;
+    ttsForm.speed = r.tts.speed;
+  }
   fillWebSearch(r.web_search);
   assistant.value = r.assistant ?? null;
   await loadBackups();
 });
+
+async function saveTts() {
+  ttsError.value = ttsMsg.value = "";
+  try {
+    const res = await api.saveTts({
+      base_url: ttsForm.base_url.trim(),
+      voice: ttsForm.voice.trim(),
+      speed: Number(ttsForm.speed) || 1.0,
+      ...(ttsForm.api_key ? { api_key: ttsForm.api_key } : {}),
+    });
+    tts.value = res.tts;
+    ttsForm.api_key = "";
+    ttsMsg.value = "Saved.";
+  } catch (e) {
+    ttsError.value = (e as Error).message;
+  }
+}
+
+async function clearTtsKey() {
+  try {
+    const res = await api.saveTts({ base_url: ttsForm.base_url.trim(), api_key: "" });
+    tts.value = res.tts;
+    ttsForm.api_key = "";
+    ttsMsg.value = "Key removed.";
+  } catch (e) {
+    ttsError.value = (e as Error).message;
+  }
+}
+
+async function testTts() {
+  ttsError.value = ttsMsg.value = "";
+  ttsTesting.value = true;
+  try {
+    const res = await api.testTts({ voice: ttsForm.voice.trim() });
+    if (res.ok) {
+      ttsMsg.value = `Suara berjaya diuji! (${res.bytes ?? 0} bait, ~${res.duration_estimate_s ?? 0}s).`;
+    } else {
+      ttsError.value = `Ujian gagal: ${res.error}`;
+    }
+  } catch (e) {
+    ttsError.value = (e as Error).message;
+  } finally {
+    ttsTesting.value = false;
+  }
+}
 
 async function saveTelegram() {
   tgError.value = tgMsg.value = "";
@@ -278,6 +334,54 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
         <div class="flex flex-wrap gap-2 border-t border-line pt-4">
           <ConfirmButton v-if="webSearch?.has_key" small confirm-label="Remove key?" @confirm="clearWebSearch">Remove key</ConfirmButton>
           <button type="button" class="btn btn-sm ml-auto" @click="testWebSearch">Test search</button>
+          <button class="btn btn-primary btn-sm">Save</button>
+        </div>
+      </form>
+
+      <form class="card space-y-4 p-5" @submit.prevent="saveTts">
+        <div class="flex items-center gap-2.5">
+          <span class="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent"><Volume2 :size="18" /></span>
+          <div>
+            <h2 class="font-semibold">Text-to-Speech (TTS)</h2>
+            <p class="text-xs text-muted">{{ tts?.has_key ? `Key stored ${tts.key_hint} · ${tts.base_url || 'default'}` : (tts?.base_url ? tts.base_url : "Not configured") }}</p>
+          </div>
+        </div>
+        <p class="text-sm text-muted">
+          Used by Cikgu Tech (<code>explainer_render</code>) for Malay tech explainer voice-overs. Supports OpenAI-compatible speech endpoints (e.g. CanopyAI TTS on GPU 3). The key is encrypted on the hub and never sent to browsers.
+        </p>
+        <div>
+          <label class="label" for="tts-url">Endpoint base URL</label>
+          <input id="tts-url" v-model="ttsForm.base_url" type="url" class="input font-mono" placeholder="https://canopy-ai.example.com" />
+        </div>
+        <div>
+          <label class="label" for="tts-key">API key</label>
+          <input
+            id="tts-key"
+            v-model="ttsForm.api_key"
+            type="password"
+            autocomplete="off"
+            class="input font-mono"
+            :placeholder="tts?.has_key ? `Key stored ${tts.key_hint}: leave empty to keep` : 'Bearer key (optional)'"
+          />
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label class="label" for="tts-voice">Voice model / ID</label>
+            <input id="tts-voice" v-model="ttsForm.voice" class="input font-mono" placeholder="af_sarah" />
+          </div>
+          <div>
+            <label class="label" for="tts-speed">Speed ({{ ttsForm.speed }}x)</label>
+            <input id="tts-speed" v-model.number="ttsForm.speed" type="range" min="0.5" max="2.0" step="0.1" class="w-full accent-accent mt-2" />
+          </div>
+        </div>
+        <p v-if="ttsMsg" class="rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">{{ ttsMsg }}</p>
+        <p v-if="ttsError" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ ttsError }}</p>
+        <div class="flex flex-wrap gap-2 border-t border-line pt-4">
+          <ConfirmButton v-if="tts?.has_key" small confirm-label="Remove key?" @confirm="clearTtsKey">Remove key</ConfirmButton>
+          <button type="button" class="btn btn-sm ml-auto inline-flex items-center gap-1.5" :disabled="ttsTesting || !ttsForm.base_url" @click="testTts">
+            <LoaderCircle v-if="ttsTesting" :size="13" class="animate-spin text-accent" />
+            <span>{{ ttsTesting ? "Testing…" : "Uji Suara" }}</span>
+          </button>
           <button class="btn btn-primary btn-sm">Save</button>
         </div>
       </form>

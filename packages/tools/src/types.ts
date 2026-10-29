@@ -82,6 +82,8 @@ export interface ToolContext {
   searchSessions(query: string, allAgents: boolean): Promise<{ run_id: string; agent_id: string; job_type: string; ts: string; title: string; snippet: string }[]>;
   /** Web search through the hub (it holds the search API key). Throws when search is not set up. */
   webSearch(query: string, count: number): Promise<WebSearchResult[]>;
+  /** Voice-over speech synthesis through the hub (the hub holds the key and endpoint). Null if not configured. */
+  tts(text: string, voice?: string): Promise<string | null>;
   /** Ask another agent (by slug) and wait for its answer, up to `timeoutMs`. Never throws. */
   consult(toAgent: string, question: string, timeoutMs: number): Promise<ConsultAnswer>;
   /** Photos and videos the owner sent with this job's message (chat), in order. */

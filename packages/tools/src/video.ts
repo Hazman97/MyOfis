@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import {
@@ -63,7 +63,22 @@ export function parseProbe(json: unknown): VideoProbe {
     streams?: { codec_type?: string; codec_name?: string; width?: number; height?: number; avg_frame_rate?: string; r_frame_rate?: string; duration?: string; pix_fmt?: string; tags?: { rotate?: string }; side_data_list?: { rotation?: number }[] }[];
   };
   const v = j.streams?.find((s) => s.codec_type === "video");
-  if (!v?.width || !v.height) throw new ToolDenied("this file has no video stream");
+  const audio = j.streams?.find((s) => s.codec_type === "audio");
+  if (!v?.width || !v.height) {
+    if (!audio) throw new ToolDenied("this file has no video or audio stream");
+    return {
+      duration: round2(Number(j.format?.duration ?? 0)),
+      width: 0,
+      height: 0,
+      fps: 0,
+      has_audio: true,
+      video_codec: "none",
+      size_bytes: Number(j.format?.size ?? 0),
+      pix_fmt: "none",
+      audio_codec: audio.codec_name ?? null,
+      format: j.format?.format_name,
+    };
+  }
   const rate = (r?: string) => {
     const [a, b] = (r ?? "").split("/").map(Number);
     return a && b ? a / b : 0;
@@ -72,7 +87,6 @@ export function parseProbe(json: unknown): VideoProbe {
   const turned = rotationRaw % 180 === 90;
   const avg = rate(v.avg_frame_rate);
   const nominal = rate(v.r_frame_rate);
-  const audio = j.streams?.find((s) => s.codec_type === "audio");
   return {
     duration: round2(Number(j.format?.duration ?? v.duration ?? 0)),
     width: turned ? v.height : v.width,
@@ -1017,8 +1031,12 @@ export function parseSilences(log: string, duration: number): { s: number; e: nu
 export async function savedTranscript(ctx: ToolContext, n: number): Promise<Transcript | null> {
   const a = ctx.attachments[n - 1];
   if (!a) return null;
-  const r = (await ctx.videoData("transcript_get", { upload_id: a.id })) as { transcript: Transcript | null };
-  return r.transcript ? Transcript.parse(r.transcript) : null;
+  try {
+    const r = (await ctx.videoData("transcript_get", { upload_id: a.id })) as { transcript: Transcript | null };
+    return r?.transcript ? Transcript.parse(r.transcript) : null;
+  } catch {
+    return null;
+  }
 }
 
 export const videoTranscribeTool = defineTool({
@@ -1051,6 +1069,7 @@ export const videoTranscribeTool = defineTool({
       if (x.code !== 0) throw new ToolDenied(`ffmpeg could not read the sound: ${x.stderr.slice(-300)}`);
       ctx.emit({ type: "agent.thinking", payload: { summary: `Transcribing video ${i.video} (${Math.round(p.duration)} s) with whisper` } });
       const out = `in-${i.video}`;
+      try { rmSync(join(dir, `${out}.json`), { force: true }); } catch {}
       const r = await spawn([bin, "-m", model, "-f", wav, "-l", i.language, "-ojf", "-of", out, "-ml", "1", "-sow", "-np"], dir, ctx.signal, undefined, 60 * 60_000);
       if (r.code !== 0 || !existsSync(join(dir, `${out}.json`))) throw new ToolDenied(`whisper failed: ${r.stderr.slice(-400)}`);
       t = parseWhisperJson(JSON.parse(readFileSync(join(dir, `${out}.json`), "utf8")), p.duration, model.split(/[\\/]/).pop() ?? "whisper");

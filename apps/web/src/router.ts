@@ -20,6 +20,7 @@ export const router = createRouter({
     { path: "/projects", name: "projects", component: () => import("./views/ProjectsView.vue") },
     { path: "/studio", name: "studio-home", component: () => import("./views/VideoStudioHomeView.vue") },
     { path: "/tiktok-hd", name: "tiktok-hd", component: () => import("./views/TikTokHdView.vue") },
+    { path: "/clip-factory", name: "clip-factory", component: () => import("./views/ClipFactoryView.vue") },
     { path: "/studio/:id", name: "studio", component: () => import("./views/VideoStudioView.vue"), props: true },
     { path: "/rooms", name: "rooms", component: () => import("./views/RoomsView.vue") },
     { path: "/members", name: "members", component: () => import("./views/MembersView.vue") },

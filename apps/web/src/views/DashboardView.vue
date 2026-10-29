@@ -9,6 +9,7 @@ import StatusBadge from "../components/StatusBadge.vue";
 import AgentPanel from "../components/office/AgentPanel.vue";
 import AgentRadialMenu from "../components/office/AgentRadialMenu.vue";
 import OfficePlayHint from "../components/office/OfficePlayHint.vue";
+import QuickChat from "../components/office/QuickChat.vue";
 import WorkFeed from "../components/office/WorkFeed.vue";
 import { api, type Room } from "../api/http.ts";
 import { me } from "../me.ts";
@@ -46,6 +47,20 @@ watch(view, (v) => {
 /** Agent whose panel is open (clicked in the office). */
 const inspected = ref<string | null>(null);
 
+// Quick chat dock state
+const quickChatOpen = ref(false);
+const quickChatAgentId = ref<string | null>(null);
+
+function onSelectAgent(id: string | null) {
+  inspected.value = id;
+  if (id) {
+    const a = office.agentById[id];
+    if (a && !a.config.external) {
+      quickChatAgentId.value = id;
+    }
+  }
+}
+
 // playing with the agents: radial menu (long-press / right-click), drops that open pages, and the
 // agent standing next to your own character
 const canvas = ref<{ poke(id: string): void } | null>(null);
@@ -59,13 +74,22 @@ function onDrop(action: { open: "drafts" } | { open: "chat"; agent: string }) {
   if (action.open === "drafts") void router.push("/drafts");
   else {
     const a = office.agentById[action.agent];
-    const slug = a && !a.config.external ? a.slug : null;
-    if (slug) void router.push({ path: "/chat", query: { agent: slug } });
+    if (a && !a.config.external) {
+      quickChatAgentId.value = a.id;
+      quickChatOpen.value = true;
+    }
   }
 }
 function chatNear() {
-  const slug = nearAgent.value ? office.agentById[nearAgent.value]?.slug : null;
-  if (slug) void router.push({ path: "/chat", query: { agent: slug } });
+  const a = nearAgent.value ? office.agentById[nearAgent.value] : null;
+  if (a && !a.config.external) {
+    quickChatAgentId.value = a.id;
+    quickChatOpen.value = true;
+  }
+}
+function onRadialChat(id: string) {
+  quickChatAgentId.value = id;
+  quickChatOpen.value = true;
 }
 
 const columns: { key: string; title: string; statuses: JobStatus[]; empty: string }[] = [
@@ -212,7 +236,7 @@ const roomSign = computed(() => (isHq.value ? "HQ Workspace" : `${currentRoom.va
         <OfficeCanvas
           ref="canvas"
           :selected="inspected"
-          @select="inspected = $event"
+          @select="onSelectAgent"
           @approval="inspected = $event"
           @menu="(id, x, y) => (menu = { id, x, y })"
           @action="onDrop"
@@ -226,6 +250,7 @@ const roomSign = computed(() => (isHq.value ? "HQ Workspace" : `${currentRoom.va
           @close="menu = null"
           @memory="(id) => (inspected = id)"
           @poke="(id) => canvas?.poke(id)"
+          @chat="onRadialChat"
         />
         <Transition
           enter-active-class="transition-all duration-300 ease-out"
@@ -349,5 +374,11 @@ const roomSign = computed(() => (isHq.value ? "HQ Workspace" : `${currentRoom.va
     </section>
 
     <AgentPanel v-if="inspected" :key="inspected" :agent-id="inspected" @close="inspected = null" />
+    <QuickChat
+      v-if="view === 'office'"
+      v-model:open="quickChatOpen"
+      :agent-id="quickChatAgentId"
+      @select-agent="quickChatAgentId = $event"
+    />
   </div>
 </template>

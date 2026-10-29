@@ -50,9 +50,11 @@ interface CharView {
   person: Person;
   label: HTMLDivElement;
   bubble: HTMLDivElement;
+  speechBubble: HTMLDivElement;
   /** Shown / hidden through `visible`: CSS2DRenderer rewrites the element's display every frame. */
   labelObj: CSS2DObject;
   bubbleObj: CSS2DObject;
+  speechBubbleObj: CSS2DObject;
   last: CharacterSnapshot | null;
 }
 
@@ -219,7 +221,13 @@ export function createOffice3d(parent: HTMLElement, o: OfficeGameOptions): Offic
     bubbleObj.position.set(0, 1.9, 0);
     bubbleObj.visible = false;
     person.root.add(bubbleObj);
-    const v: CharView = { person, label, bubble, labelObj, bubbleObj, last: null };
+    const speechBubble = document.createElement("div");
+    speechBubble.className = "office3d-speech-bubble";
+    const speechBubbleObj = new CSS2DObject(speechBubble);
+    speechBubbleObj.position.set(0, 2.25, 0);
+    speechBubbleObj.visible = false;
+    person.root.add(speechBubbleObj);
+    const v: CharView = { person, label, bubble, speechBubble, labelObj, bubbleObj, speechBubbleObj, last: null };
     chars.set(c.id, v);
     return v;
   };
@@ -431,6 +439,12 @@ export function createOffice3d(parent: HTMLElement, o: OfficeGameOptions): Offic
         v.bubbleObj.visible = true;
         v.bubble.classList.toggle("needs-you", c.needsApproval);
       } else v.bubbleObj.visible = false;
+      if (c.speechText && c.alpha > 0.1) {
+        if (v.speechBubble.textContent !== c.speechText) v.speechBubble.textContent = c.speechText;
+        v.speechBubbleObj.visible = true;
+      } else {
+        v.speechBubbleObj.visible = false;
+      }
       if (c.id === selected) {
         ring.position.set(c.x / T, 0.02, c.y / T);
         ring.visible = c.alpha > 0.1;
@@ -443,6 +457,7 @@ export function createOffice3d(parent: HTMLElement, o: OfficeGameOptions): Offic
       for (const m of v.person.materials) m.dispose();
       v.label.remove();
       v.bubble.remove();
+      v.speechBubble.remove();
       chars.delete(id);
       if (hover === id) hover = null;
     }

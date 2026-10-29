@@ -14,6 +14,7 @@ import { DOC_TOOLS } from "./docs.ts";
 import { meetingTranscribeTool } from "./meeting.ts";
 import { motionRenderTool } from "./motion.ts";
 import { clipFindTool, clipRenderTool } from "./clipFactory.ts";
+import { explainerRenderTool } from "./explainer.ts";
 import type { ToolDef } from "./types.ts";
 
 export * from "./types.ts";
@@ -51,6 +52,7 @@ export { EditPlan } from "@agent-office/shared";
 export { openchatcutToken, parseMcpBody } from "./openchatcut.ts";
 export { meetingWhisperArgs } from "./meeting.ts";
 export { clipFindTool, clipRenderTool } from "./clipFactory.ts";
+export { explainerRenderTool } from "./explainer.ts";
 export { buildHyperframesArgs, hyperframesBinary, motionEnv, motionRenderTool } from "./motion.ts";
 export { chooseClips, clipKey, musicTracks, readIndex, scanFolder, type ClipEntry } from "./clips.ts";
 
@@ -80,6 +82,7 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     motionRenderTool,
     clipFindTool,
     clipRenderTool,
+    explainerRenderTool,
   ].map((t) => [t.name, t as unknown as ToolDef]),
 );
 

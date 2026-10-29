@@ -301,6 +301,68 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     }
   });
 
+  /** Runner asks for TTS audio synthesis (explainer_render tool). API key never leaves the hub. */
+  const ttsLimit = limiter(60, 60_000);
+  app.post("/api/runner/tts", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
+    if (!runner) throw new HttpError(401, "unauthorized");
+    const body = z
+      .object({
+        run_id: z.string(),
+        text: z.string().min(1).max(2000),
+        voice: z.string().max(50).optional(),
+      })
+      .parse(await c.req.json());
+    const run = getRun(db, body.run_id);
+    if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
+
+    const agent = getAgent(db, run.agent_id);
+    if (!agent || !agent.tools.includes("explainer_render")) {
+      throw new HttpError(403, "agent is not permitted to use TTS");
+    }
+
+    if (!ttsLimit()) throw new HttpError(429, "too many tts requests, wait a minute");
+
+    const plan = integrations.tts.plan();
+    if (!plan) {
+      return c.json({ ok: false, error: "no_tts_configured" }, 404);
+    }
+
+    try {
+      const res = await fetch(`${plan.base_url}/v1/audio/speech`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(plan.key ? { Authorization: `Bearer ${plan.key}` } : {}),
+        },
+        body: JSON.stringify({
+          model: "canopy-tts",
+          input: body.text,
+          voice: body.voice ?? plan.voice,
+          speed: plan.speed,
+          response_format: "mp3",
+          language: "ms",
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new HttpError(502, `TTS upstream failed (${res.status}): ${errText.slice(0, 200)}`);
+      }
+      const audioBytes = await res.arrayBuffer();
+      return new Response(audioBytes, {
+        headers: {
+          "Content-Type": "audio/mpeg",
+          "Content-Length": String(audioBytes.byteLength),
+        },
+      });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw new HttpError(502, `TTS service error: ${(err as Error).message}`);
+    }
+  });
+
   /** Runner fetches a photo the owner sent with the job it is running (Publisher). */
   app.get("/api/runner/uploads/:id", (c) => {
     const header = c.req.header("authorization") ?? "";
@@ -589,6 +651,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       gitea: integrations.giteaPublic(),
       telegram: integrations.telegramPublic(),
       web_search: integrations.webSearch.public(),
+      tts: integrations.tts.public(),
       assistant: {
         enabled: (config.cfAccess.ownerServiceTokens?.length ?? 0) > 0,
         tokens: (config.cfAccess.ownerServiceTokens ?? []).map((t) => `…${t.slice(-6)}`),
@@ -622,6 +685,35 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (!res.ok) return c.json({ ok: false, error: `Gitea answered ${res.status}` });
     const user = (await res.json()) as { login?: string };
     return c.json({ ok: true, login: user.login ?? null });
+  });
+  api.put("/settings/integrations/tts", async (c) => c.json({ tts: integrations.tts.set(await c.req.json()) }));
+  api.post("/settings/integrations/tts/test", async (c) => {
+    const plan = integrations.tts.plan();
+    if (!plan) return c.json({ ok: false, error: "Set the TTS URL first" }, 400);
+    try {
+      const res = await fetch(`${plan.base_url}/v1/audio/speech`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(plan.key ? { Authorization: `Bearer ${plan.key}` } : {}),
+        },
+        body: JSON.stringify({
+          model: "canopy-tts",
+          input: "Ujian suara penjelas teknologi MyOfis.",
+          voice: plan.voice,
+          speed: plan.speed,
+          response_format: "mp3",
+          language: "ms",
+        }),
+      });
+      if (!res.ok) {
+        return c.json({ ok: false, error: `TTS server answered ${res.status}` }, 400);
+      }
+      const buf = await res.arrayBuffer();
+      return c.json({ ok: true, audio_bytes: buf.byteLength, bytes: buf.byteLength, duration_estimate_s: Math.round((buf.byteLength / 16000) * 10) / 10 });
+    } catch (err) {
+      return c.json({ ok: false, error: (err as Error).message }, 400);
+    }
   });
 
   // members (owner only): invite by email, disable, share agents with a daily limit

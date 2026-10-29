@@ -460,4 +460,82 @@ describe("playing with the agents", () => {
     o.run(2000);
     expect(o.char("me")!.x).toBeGreaterThan(target.x + 16);
   });
+
+  test("Task 030: saySpeech displays speech bubble and expires after duration", () => {
+    const o = new Office([qa, dev]);
+    o.run(100);
+    expect(o.char(qa.id)!.speechText).toBeNull();
+
+    o.world.saySpeech(qa.id, "Hello! I am ready to help.", 6000);
+    expect(o.char(qa.id)!.speechText).toBe("Hello! I am ready to help.");
+
+    // Still active at 3000ms
+    o.run(3000);
+    expect(o.char(qa.id)!.speechText).toBe("Hello! I am ready to help.");
+
+    // Expired at 6000ms
+    o.run(3100);
+    expect(o.char(qa.id)!.speechText).toBeNull();
+  });
+
+  test("Task 030: finished chat job run automatically triggers speech bubble on agent", () => {
+    const o = new Office([qa, dev]);
+    o.run(100);
+
+    // Create chat job
+    o.emit({
+      type: "job.created",
+      payload: {
+        job_id: "job_chat_1",
+        agent_id: qa.id,
+        project_id: null,
+        type: "chat",
+        title: "Quick Chat",
+        trigger: "manual",
+        parent_job_id: null,
+      },
+    });
+
+    // Start run
+    o.emit(
+      {
+        type: "run.started",
+        payload: { run_id: "run_chat_1", job_id: "job_chat_1", agent_id: qa.id, runner_id: "rn1" },
+      },
+      { run_id: "run_chat_1", agent_id: qa.id },
+    );
+
+    // Agent message streamed
+    o.emit(
+      {
+        type: "agent.message",
+        payload: { text: "Semua sistem berjalan lancar bos!" },
+      },
+      { run_id: "run_chat_1", agent_id: qa.id },
+    );
+
+    // Run finished
+    o.emit(
+      {
+        type: "run.finished",
+        payload: {
+          run_id: "run_chat_1",
+          job_id: "job_chat_1",
+          status: "done",
+          tokens_in: 50,
+          tokens_out: 25,
+          cost_usd: 0.0001,
+          cost_unknown: false,
+        },
+      },
+      { run_id: "run_chat_1", agent_id: qa.id },
+    );
+
+    // Speech bubble triggered on agent!
+    expect(o.char(qa.id)!.speechText).toBe("Semua sistem berjalan lancar bos!");
+
+    // Expires after 6s
+    o.run(6100);
+    expect(o.char(qa.id)!.speechText).toBeNull();
+  });
 });

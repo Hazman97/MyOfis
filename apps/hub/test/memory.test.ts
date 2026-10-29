@@ -107,7 +107,7 @@ describe("skills", () => {
       { tool: "skill_manage", input: { action: "patch", name: "tiktok-caption", old_text: "Read the brief.", new_text: "Read the brief and past drafts.", reason: "owner feedback" } },
       { text: "ok" },
     ]);
-    expect(sent[0]!.skills.map((s) => s.name)).toEqual(["motion-text-tiktok", "tiktok-caption"]);
+    expect(sent[0]!.skills.map((s) => s.name)).toEqual(["clip-factory-playbook", "motion-text-tiktok", "tech-explainer-bm", "tiktok-caption"]);
     // usage is counted from the skill_view calls in past runs
     const listed = ((await env.api("/api/skills")).body.skills as { name: string; usage: unknown }[]).find((s) => s.name === "tiktok-caption")!;
     expect(listed.usage).toMatchObject({ runs: 1, bad_runs: 0, stale: null });
@@ -119,7 +119,7 @@ describe("skills", () => {
 
     // the owner can import a skill (e.g. one from Hermes) and delete it
     expect((await env.api("/api/skills", { body: { content: skill("imported-skill") } })).status).toBe(201);
-    expect((await env.api("/api/skills")).body.skills.map((s: { name: string }) => s.name)).toEqual(["imported-skill", "motion-text-tiktok", "tiktok-caption"]);
+    expect((await env.api("/api/skills")).body.skills.map((s: { name: string }) => s.name)).toEqual(["clip-factory-playbook", "imported-skill", "motion-text-tiktok", "tech-explainer-bm", "tiktok-caption"]);
     await env.api("/api/skills/imported-skill", { method: "DELETE" });
     expect(existsSync(join(env.dir, "skills", "imported-skill"))).toBe(false);
   });
@@ -136,14 +136,14 @@ describe("skills", () => {
       return sent.at(-1)!.skills.map((s) => s.name).sort();
     };
     // default: everything, new skills too
-    expect(await seen(a)).toEqual(["alpha-skill", "beta-skill", "motion-text-tiktok", "short-video-editing", "tiktok-captions-bm"]);
+    expect(await seen(a)).toEqual(["alpha-skill", "beta-skill", "clip-factory-playbook", "motion-text-tiktok", "short-video-editing", "tech-explainer-bm", "tiktok-captions-bm"]);
 
     // per skill: beta only for b (gets the skill tools); a was on "all" and loses beta
     expect((await env.api("/api/skills/beta-skill/agents", { method: "PUT", body: { agent_ids: [b] } })).status).toBe(200);
     const asg = (await env.api("/api/skills/assignments")).body;
-    expect(asg.agents.find((x: { id: string }) => x.id === a).skills).toEqual(["alpha-skill", "motion-text-tiktok", "short-video-editing", "tiktok-captions-bm"]);
+    expect(asg.agents.find((x: { id: string }) => x.id === a).skills).toEqual(["alpha-skill", "clip-factory-playbook", "motion-text-tiktok", "short-video-editing", "tech-explainer-bm", "tiktok-captions-bm"]);
     expect(asg.agents.find((x: { id: string }) => x.id === b)).toMatchObject({ skills: ["beta-skill"], reads_skills: true });
-    expect(await seen(a)).toEqual(["alpha-skill", "motion-text-tiktok", "short-video-editing", "tiktok-captions-bm"]);
+    expect(await seen(a)).toEqual(["alpha-skill", "clip-factory-playbook", "motion-text-tiktok", "short-video-editing", "tech-explainer-bm", "tiktok-captions-bm"]);
     expect(await seen(b)).toEqual(["beta-skill"]);
 
     // saving the agent in the Agents form (config without "skills") keeps the choice
@@ -154,7 +154,7 @@ describe("skills", () => {
 
     // per agent: back to all; none
     await env.api(`/api/agents/${b}/skills`, { method: "PUT", body: { skills: "all" } });
-    expect(await seen(b)).toEqual(["alpha-skill", "beta-skill", "motion-text-tiktok", "short-video-editing", "tiktok-captions-bm"]);
+    expect(await seen(b)).toEqual(["alpha-skill", "beta-skill", "clip-factory-playbook", "motion-text-tiktok", "short-video-editing", "tech-explainer-bm", "tiktok-captions-bm"]);
     await env.api(`/api/agents/${a}/skills`, { method: "PUT", body: { skills: [] } });
     expect(await seen(a)).toEqual([]);
     expect((await env.api("/api/skills/nope/agents", { method: "PUT", body: { agent_ids: [] } })).status).toBe(404);

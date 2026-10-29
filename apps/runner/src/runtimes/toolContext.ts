@@ -47,6 +47,7 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     videoData: (action, params) => ctx.videoData(action, params),
     siteData: (p, r, params) => ctx.siteData(p, r, params),
     webPost: (a, id, edits) => ctx.webPost(a, id, edits),
+    tts: (text, voice) => ctx.tts(text, voice),
   };
 }
 

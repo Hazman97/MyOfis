@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clipFindTool, clipRenderTool } from "../src/clipFactory.ts";
 import { makeCtx } from "./helpers.ts";
+import { ToolDenied } from "../src/types.ts";
 
 describe("Clip Factory Runner Tools (clip_find & clip_render)", () => {
   test("clip_find discovers moments, calculates virality scores, and saves to hub", async () => {
     const ws = mkdtempSync(join(tmpdir(), "cf-test-"));
-    const { ctx } = makeCtx(ws);
+    const { ctx, drafts } = makeCtx(ws);
     const dir = join(ctx.workspace, ".media");
     mkdirSync(dir, { recursive: true });
 
@@ -73,19 +74,17 @@ Title: Cara Jimat Modal Bina Kandang
 Summary: Tips elak kesilapan bina bumbung kandang untuk jimat modal.
 `;
 
-    // Note: since this is a unit test without real ffmpeg probing in this mock environment,
-    // we verify clipFindTool schema and validation
     expect(clipFindTool.name).toBe("clip_find");
     expect(clipFindTool.category).toBe("write");
-    expect(clipFindTool.risk({}, ctx)).toBe("safe");
+    expect(clipFindTool.risk({ video: 1, min_duration: 15, max_duration: 90, max_clips: 6 }, ctx)).toBe("safe");
   });
 
   test("clip_render tool validates boundaries and creates draft", async () => {
     const ws = mkdtempSync(join(tmpdir(), "cf-test-2-"));
-    const ctx = makeCtx(ws);
+    const { ctx, drafts } = makeCtx(ws);
     expect(clipRenderTool.name).toBe("clip_render");
     expect(clipRenderTool.category).toBe("write");
-    expect(clipRenderTool.risk({} as any, ctx)).toBe("safe");
+    expect(clipRenderTool.risk({ video: 1, start: 0, end: 15, caption_preset: "pop", reframe_mode: "blur_fit", save_draft: true }, ctx)).toBe("safe");
 
     // Invalid start/end throws ToolDenied
     expect(

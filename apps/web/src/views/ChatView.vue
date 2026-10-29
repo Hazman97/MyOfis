@@ -12,8 +12,16 @@ import { isOwner } from "../me.ts";
 import PageHeader from "../components/PageHeader.vue";
 import { api, type ChatAttachment, type ChatMessage, type ChatThread } from "../api/http.ts";
 import { useOffice } from "../stores/office.ts";
-import { canDictate, canSpeak, dictate, speak, stopSpeaking, type Dictation } from "../speech.ts";
+import { canDictate, canSpeak, stopSpeaking } from "../speech.ts";
 import { fmtTime } from "../format.ts";
+import { useChatThread } from "../chat/useChatThread.ts";
+import {
+  extractOccLinks as occLinks,
+  formatLiteMarkdown as lite,
+  isAudioAttachment as isAudio,
+  isDocAttachment as isDoc,
+  isVideoAttachment as isVideo,
+} from "../chat/chatThreadHelpers.ts";
 
 /**
  * Chat with one agent. Each message is a normal job (budgets, approvals and the
@@ -25,26 +33,53 @@ const router = useRouter();
 
 const agents = computed(() => office.agents.filter((a) => a.enabled && !a.config.external));
 const agent = computed<Agent | undefined>(() => agents.value.find((a) => a.slug === route.query.agent) ?? agents.value.find((a) => a.slug === "english-coach") ?? agents.value[0]);
-const threads = ref<ChatThread[]>([]);
-const threadId = ref<string | null>(null);
+
+const scroller = ref<HTMLElement>();
 const threadsDrawerOpen = ref(false);
-const messages = ref<ChatMessage[]>([]);
 const projects = ref<Project[]>([]);
 const projectId = ref("");
-const text = ref("");
-const interim = ref("");
-const sending = ref(false);
-const error = ref("");
-const listening = ref<Dictation | null>(null);
 const autoSpeak = ref(false);
-const speaking = ref<string | null>(null);
-const scroller = ref<HTMLElement>();
+const photoInput = ref<HTMLInputElement>();
 
 const isMarketing = computed(() => !!agent.value?.tools.includes("save_draft"));
 const hasMeetingTranscribe = computed(() => !!agent.value?.tools.includes("meeting_transcribe"));
 const isCoach = computed(() => agent.value?.slug === "english-coach");
 // the coach listens for English; other agents get Malay recognition (handles Manglish better)
 const lang = computed(() => (isCoach.value ? "en-US" : "ms-MY"));
+
+const MAX_PHOTOS = 10;
+
+const chat = useChatThread(agent, {
+  maxPhotos: MAX_PHOTOS,
+  initialThreadId: (route.query.thread as string) || null,
+  onMessageSent: () => scrollDown(true),
+  onThreadChanged: () => scrollDown(true),
+});
+
+const {
+  threads,
+  threadId,
+  messages,
+  text,
+  interim,
+  sending,
+  error,
+  photos,
+  uploading,
+  uploadPct,
+  stopping,
+  listening,
+  speaking,
+  loadThreads,
+  openThread,
+  addPhotos,
+  removePhoto,
+  send: chatSend,
+  stopReply,
+  live,
+  toggleMic: chatToggleMic,
+  say: chatSay,
+} = chat;
 
 const STARTERS: Record<string, string[]> = {
   "english-coach": [
@@ -89,53 +124,6 @@ async function saveModel() {
   }
 }
 
-/** OpenChatCut editor links in a reply, cleaned to the exact project URL. */
-const OCC_LINK = /https?:\/\/(?:localhost|127\.0\.0\.1):\d{2,5}\/#\/editor\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-const occLinks = (text: string) => [...new Set(text.match(OCC_LINK) ?? [])];
-
-/** Stop a reply that takes too long (cancels its job; the run ends within seconds). */
-const stopping = ref<string | null>(null);
-async function stopReply(jobId: string) {
-  stopping.value = jobId;
-  try {
-    await api.cancelJob(jobId);
-  } finally {
-    stopping.value = null;
-  }
-}
-
-function live(m: ChatMessage) {
-  const runId = office.state.jobs[m.job_id]?.run_ids.at(-1) ?? m.run_id;
-  const run = runId ? office.state.runs[runId] : undefined;
-  const status = office.state.jobs[m.job_id]?.status ?? m.status;
-  return { reply: run?.output?.trim() || m.reply || "", status, error: run?.error ?? null, runId };
-}
-
-/** The part worth reading aloud: the coach's conversational reply, not the correction notes. */
-const speakable = (t: string) => t.split(/\n\s*(?:\*\*)?(?:More natural|Useful phrase)\b/i)[0]!.trim();
-
-/** Escape, then a little markdown (bold, inline code, bullets) and the arrows some models write in LaTeX. */
-function lite(t: string) {
-  const esc = t
-    .replace(/\$\\(?:rightarrow|to|Rightarrow|longrightarrow)\$/g, "→")
-    .replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-  return esc
-    .replace(/^\s*[*-]\s+/gm, "• ")
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`\n]+)`/g, "<code>$1</code>");
-}
-
-async function loadThreads() {
-  if (!agent.value) return;
-  threads.value = (await api.chatThreads(agent.value.id)).threads;
-}
-
-async function openThread(id: string | null) {
-  threadId.value = id;
-  messages.value = id ? (await api.chatThread(id)).messages : [];
-  await scrollDown(true);
-}
-
 /** Keep following new text only while the owner is at the bottom; never pull them down while they read. */
 const atBottom = ref(true);
 const newBelow = ref(false);
@@ -161,83 +149,26 @@ async function scrollDown(force = false) {
 
 watch(
   agent,
-  async (a, prev) => {
-    if (!a || a.id === prev?.id) return;
-    stopSpeaking();
-    autoSpeak.value = a.slug === "english-coach";
-    await loadThreads();
-    await openThread(threads.value[0]?.thread_id ?? null);
+  (a) => {
+    if (a) autoSpeak.value = a.slug === "english-coach";
   },
   { immediate: true },
 );
+
 onMounted(async () => {
   projects.value = (await api.projects()).projects.filter((p) => p.enabled);
 });
 
-// Photos and videos to send with the next message (uploaded right away; Publisher and Editor use them)
-const MAX_PHOTOS = 10;
-const photos = ref<(ChatAttachment & { preview: string })[]>([]);
-const uploading = ref(false);
-/** Upload progress of the current video, 0–100 (null for photos). */
-const uploadPct = ref<number | null>(null);
-const photoInput = ref<HTMLInputElement>();
-const isVideo = (a: { content_type: string }) => a.content_type.startsWith("video/");
-/** Meeting recordings and voice notes (Notulis). */
-const isAudio = (a: { content_type: string }) => a.content_type.startsWith("audio/");
-/** PDF / DOCX / TXT / MD for the Project Assistant (shown as a file chip, not a picture). */
-const isDoc = (a: { content_type: string }) => !isVideo(a) && !isAudio(a) && !a.content_type.startsWith("image/");
-async function addPhotos(e: Event) {
+async function onPhotosChange(e: Event) {
   const input = e.target as HTMLInputElement;
-  const files = [...(input.files ?? [])].slice(0, MAX_PHOTOS - photos.value.length);
+  const files = input.files;
+  if (!files?.length) return;
   input.value = "";
-  if (!files.length) return;
-  uploading.value = true;
-  error.value = "";
-  try {
-    for (const file of files) {
-      // videos and recordings can be large: sent in parts with progress
-      const video = file.type.startsWith("video/") || file.type.startsWith("audio/") || /\.(mp4|mov|webm|mkv|m4v|m4a|mp3|wav|ogg|oga|opus|weba|aac|flac|amr)$/i.test(file.name);
-      uploadPct.value = video ? 0 : null;
-      const up = video ? await api.uploadVideo(file, (d) => (uploadPct.value = Math.round(d * 100))) : await api.uploadImage(file);
-      photos.value.push({ ...up, preview: URL.createObjectURL(file) });
-    }
-  } catch (err) {
-    error.value = (err as Error).message;
-  } finally {
-    uploading.value = false;
-    uploadPct.value = null;
-  }
-}
-function removePhoto(id: string) {
-  const p = photos.value.find((x) => x.id === id);
-  if (p) URL.revokeObjectURL(p.preview);
-  photos.value = photos.value.filter((x) => x.id !== id);
+  await addPhotos(files);
 }
 
-async function send(body = text.value) {
-  const t = (body + (interim.value ? ` ${interim.value}` : "")).trim() || (photos.value.length ? (photos.value.some(isAudio) ? "(rakaman)" : photos.value.some(isVideo) ? "(video)" : "(photo)") : "");
-  if (!t || !agent.value || sending.value || uploading.value) return;
-  listening.value?.stop();
-  sending.value = true;
-  error.value = "";
-  try {
-    const sent = photos.value.map(({ id, name, content_type }) => ({ id, name, content_type }));
-    const res = await api.chat({ agent_id: agent.value.id, text: t, thread_id: threadId.value, project_id: projectId.value || null, attachments: sent.map((p) => p.id) });
-    if (!threadId.value) {
-      threadId.value = res.thread_id;
-      void loadThreads();
-    }
-    messages.value.push({ job_id: res.job.id, agent_id: agent.value.id, text: t, created_at: res.job.created_at, status: res.job.status, run_id: null, reply: null, attachments: sent });
-    for (const p of photos.value) URL.revokeObjectURL(p.preview);
-    photos.value = [];
-    text.value = "";
-    interim.value = "";
-    await scrollDown(true);
-  } catch (e) {
-    error.value = (e as Error).message;
-  } finally {
-    sending.value = false;
-  }
+function send(body = text.value) {
+  return chatSend(body, projectId.value);
 }
 
 function onKey(e: KeyboardEvent) {
@@ -253,38 +184,11 @@ function onPickSuggestion(key: string) {
 }
 
 function toggleMic() {
-  if (listening.value) {
-    listening.value.stop();
-    return;
-  }
-  error.value = "";
-  const base = text.value ? `${text.value.trimEnd()} ` : "";
-  let finals = "";
-  listening.value = dictate(
-    lang.value,
-    (f, i) => {
-      finals += f;
-      text.value = base + finals;
-      interim.value = i;
-    },
-    (err) => {
-      listening.value = null;
-      interim.value = "";
-      if (err) error.value = err;
-    },
-  );
-  if (!listening.value) error.value = "This browser cannot do dictation. Try Chrome or Edge.";
+  chatToggleMic(lang.value);
 }
 
 function say(m: ChatMessage) {
-  const { reply } = live(m);
-  if (speaking.value === m.job_id) {
-    stopSpeaking();
-    speaking.value = null;
-    return;
-  }
-  speaking.value = m.job_id;
-  speak(isCoach.value ? speakable(reply) : reply, lang.value, () => (speaking.value = null));
+  chatSay(m, lang.value, isCoach.value);
 }
 
 // read new coach replies aloud once they finish, and keep the newest message in view
@@ -709,7 +613,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
             </span>
           </div>
           <div class="flex items-end gap-2">
-            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v,audio/*,.m4a,.mp3,.wav,.ogg,.opus,.aac,.flac,.amr,application/pdf,.pdf,.docx,.txt,.md" multiple class="hidden" @change="addPhotos" />
+            <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv,.m4v,audio/*,.m4a,.mp3,.wav,.ogg,.opus,.aac,.flac,.amr,application/pdf,.pdf,.docx,.txt,.md" multiple class="hidden" @change="onPhotosChange" />
             <button
               class="btn relative shrink-0 size-9 p-0 rounded-lg text-muted hover:text-fg"
               :disabled="uploading || photos.length >= MAX_PHOTOS"

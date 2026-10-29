@@ -51,6 +51,7 @@ export function makeCtx(
     proposeSkill: () => {},
     searchSessions: async () => [],
     webSearch: async () => [],
+    tts: async () => null,
     consult: async () => ({ ok: false, answer: "", error: "no hub in tests" }),
     attachments: [],
     downloadAttachment: async () => {},

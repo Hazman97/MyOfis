@@ -105,6 +105,7 @@ export function systemInfo(hub: Hub, integrations: Integrations) {
       telegram: !!integrations.telegram(),
       gitea: !!integrations.gitea(),
       web_search: ws.provider,
+      tts: !!integrations.tts.plan(),
       websites: projects.filter((p) => p.publish?.info).map((p) => p.name),
       social: Object.fromEntries(projects.map((p) => [p.name, hub.social.connected(p.id)]).filter(([, s]) => (s as string[]).length)),
       backups: hub.backups.list().length,
