@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EditPlan, transitionSeconds, type Clip } from "./video.ts";
+import { EditPlan, transitionsForCuts, transitionSeconds, type Clip } from "./video.ts";
 
 /**
  * Speech in a video, word by word (whisper.cpp on the runner PC). Editor reads it to suggest
@@ -133,9 +133,10 @@ export function subtitleCues(
   const cues: SubtitleCue[] = [];
   // with transitions every cut overlaps the clips, so later clips start earlier
   const lengths = plan.clips.map((c) => Math.max(0, (c.end ?? durations[c.video] ?? transcripts[c.video]?.duration ?? c.start) - c.start) / c.speed);
-  const overlap = plan.transition ? transitionSeconds({ transition: plan.transition }, lengths) : 0;
+  const cuts = plan.transition ? transitionsForCuts({ transition: plan.transition }, lengths) : [];
   let offset = 0;
-  for (const c of plan.clips) {
+  for (let idx = 0; idx < plan.clips.length; idx++) {
+    const c = plan.clips[idx]!;
     const t = transcripts[c.video];
     const end = c.end ?? durations[c.video] ?? t?.duration ?? c.start;
     let cue: TranscriptWord[] = [];
@@ -154,7 +155,7 @@ export function subtitleCues(
       cue.push({ ...x, s: Math.max(x.s, c.start), e: Math.min(x.e, end) });
     }
     push();
-    offset += Math.max(0, end - c.start) / c.speed - overlap;
+    offset += Math.max(0, end - c.start) / c.speed - (cuts[idx]?.seconds ?? 0);
   }
   return cues;
 }

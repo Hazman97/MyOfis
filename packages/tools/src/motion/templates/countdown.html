@@ -1,0 +1,9 @@
+<!-- HyperFrames template: countdown (3..1 pop-in numbers + final callout) -->
+<div class="stage-center" data-template="countdown">
+  {{#label}}<div class="cd-label" id="cd-label">{{label}}</div>{{/label}}
+  <div class="cd-stage">
+    {{#steps}}<div class="cd-num" id="cd-step-{{index}}">{{value}}</div>{{/steps}}
+    <div class="cd-final" id="cd-final">{{final_text}}</div>
+  </div>
+</div>
+

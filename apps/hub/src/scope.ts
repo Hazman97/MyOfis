@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { OWNER_WORKSPACE, dayKey, type Agent } from "@agent-office/shared";
 import type { Db } from "./db/client.ts";
-import { agentShares, agents, approvals, contentDrafts, jobs, projects, providers, roomMembers, runs, schedules, uploads, workspaces } from "./db/schema.ts";
+import { agentShares, agents, approvals, contentDrafts, jobs, projects, providers, roomMembers, runs, schedules, settings, uploads, workspaces } from "./db/schema.ts";
 import { HttpError, toAgent } from "./repo.ts";
 
 /**
@@ -50,8 +50,14 @@ export function ownAgent(db: Db, id: string, ws: string) {
 }
 
 /** Own agents, then agents shared with this workspace (marked `shared`). */
+export function withExternalHint(db: Db, a: Agent): Agent {
+  if (!a.config.external) return a;
+  const rec = db.select().from(settings).where(eq(settings.key, `external.token.${a.id}`)).get()?.value as { token_hint?: string } | undefined;
+  return { ...a, external_token_hint: rec?.token_hint ?? null };
+}
+
 export function visibleAgents(db: Db, ws: string): Agent[] {
-  const own = db.select().from(agents).where(eq(agents.workspace_id, ws)).orderBy(agents.created_at).all().map(toAgent);
+  const own = db.select().from(agents).where(eq(agents.workspace_id, ws)).orderBy(agents.created_at).all().map((r) => withExternalHint(db, toAgent(r)));
   if (isOwnerWs(ws)) return own;
   const ids = db.select({ id: agentShares.agent_id }).from(agentShares).where(eq(agentShares.workspace_id, ws)).all().map((r) => r.id);
   const shared = ids.length ? db.select().from(agents).where(inArray(agents.id, ids)).all().map((a) => ({ ...toAgent(a), shared: true })) : [];

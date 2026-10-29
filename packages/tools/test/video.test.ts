@@ -2,8 +2,29 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VIDEO_PRESETS, tiktokHdPlan } from "@agent-office/shared";
-import { EditPlan, TOOL_REGISTRY, chooseClips, type ClipEntry, buildEditArgs, captionsAss, isTiktokHdPrepared, parseProbe, parseSilences, parseWhisperJson, remuxArgs, runTool } from "../src/index.ts";
+import { VIDEO_PRESETS, finishedSeconds, subtitleCues, tiktokHdPlan } from "@agent-office/shared";
+import {
+  EditPlan,
+  TOOL_REGISTRY,
+  chooseClipFit,
+  chooseClips,
+  type ClipEntry,
+  buildEditArgs,
+  captionsAss,
+  evaluateReview,
+  isTiktokHdPrepared,
+  parseBlackdetect,
+  parseCropdetect,
+  parseLoudness,
+  parseProbe,
+  parseSignalstats,
+  parseSilences,
+  parseVisionShotLine,
+  parseWhisperJson,
+  remuxArgs,
+  runTool,
+  shotsFromScenes,
+} from "../src/index.ts";
 import { makeCtx } from "./helpers.ts";
 
 const probe = { duration: 10, width: 1920, height: 1080, fps: 30, has_audio: true, video_codec: "h264", size_bytes: 1 };
@@ -299,5 +320,185 @@ describe.skipIf(!ffmpeg || !ffprobe)("TikTok HD with real ffmpeg", () => {
     expect(r.output).toMatchObject({ video_id: "upl_src", mode: "remux", reasons: [] });
     expect(a.sent.length).toBe(0);
     expect(a.ctx.renders.length).toBe(0);
+  });
+});
+
+describe("Task 024 & Task 026: overlays, per-boundary transitions, letterbox crop, emoji, shot index & review", () => {
+  test("EditPlan.overlays adds overlay inputs and colorkey/overlay filter chain in buildEditArgs", () => {
+    const plan = EditPlan.parse({
+      clips: [{ video: 1, start: 0, end: 5 }],
+      overlays: [{ video: 2, start: 0.5, end: 2.5, chromakey: "#00FF00", opacity: 0.9 }],
+    });
+    const ovProbe = { ...probe, duration: 2 };
+    const args = buildEditArgs(
+      plan,
+      [{ file: "in-1.mp4", probe }],
+      "x264",
+      "out.mp4",
+      "caps.ass",
+      null,
+      [{ file: "motion-hook.mp4", probe: ovProbe }],
+    );
+    expect(args).toContain("motion-hook.mp4");
+    const fc = args[args.indexOf("-filter_complex") + 1]!;
+    expect(fc).toContain("colorkey=0x00FF00:0.25:0.15");
+    expect(fc).toContain("colorchannelmixer=aa=0.9");
+    expect(fc).toContain("overlay=x=(W-w)/2:y=(H-h)/2:enable='between(t,0.5,2.5)':eof_action=pass[vov0]");
+    expect(fc).toContain("[vov0]ass=caps.ass[vo]");
+  });
+
+  test("per-boundary transition list computes finishedSeconds, subtitleCues, and xfade per cut", () => {
+    const plan = EditPlan.parse({
+      clips: [
+        { video: 1, start: 0, end: 4 },
+        { video: 1, start: 4, end: 8 },
+        { video: 1, start: 8, end: 12 },
+      ],
+      transition: [
+        { type: "fade", seconds: 0.5 },
+        { type: "slide", seconds: 1.0 },
+      ],
+      subtitles: { style: "pop", uppercase: true, position: "bottom" },
+    });
+    const lengths = [4, 4, 4];
+    expect(finishedSeconds(plan, lengths)).toBe(10.5); // 12 - (0.5 + 1.0)
+    const args = buildEditArgs(plan, [{ file: "a.mp4", probe }, { file: "a.mp4", probe }, { file: "a.mp4", probe }], "x264", "out.mp4", null);
+    const fc = args[args.indexOf("-filter_complex") + 1]!;
+    expect(fc).toContain("xfade=transition=fade:duration=0.5:offset=3.5[x1]");
+    expect(fc).toContain("xfade=transition=slideleft:duration=1:offset=6.5[vc]");
+
+    const transcript = {
+      language: "ms",
+      duration: 12,
+      model: "whisper",
+      words: [
+        { w: "Satu", s: 0.5, e: 1.0 },
+        { w: "Dua", s: 5.0, e: 5.5 }, // in clip 2 (starts at 4s, shifted by -0.5s overlap -> 4.5s)
+        { w: "Tiga", s: 9.0, e: 9.5 }, // in clip 3 (starts at 8s, shifted by -1.5s total overlap -> 7.5s)
+      ],
+    };
+    const cues = subtitleCues(plan, { 1: transcript }, { 1: 12 });
+    expect(cues).toHaveLength(3);
+    expect(cues[0]!.start).toBe(0.5);
+    expect(cues[1]!.start).toBe(4.5);
+    expect(cues[2]!.start).toBe(7.5);
+  });
+
+  test("letterbox crop and per-clip fit override apply before 9:16 reframing", () => {
+    const plan = EditPlan.parse({
+      clips: [
+        { video: 1, start: 0, end: 3, fit: "blur" },
+        { video: 1, start: 3, end: 6, crop: "1280:536:0:92", fit: "crop" },
+      ],
+      fit: "crop",
+    });
+    const args = buildEditArgs(
+      plan,
+      [
+        { file: "sintel.mp4", probe, crop: "1280:544:0:88" },
+        { file: "sintel.mp4", probe, crop: "1280:544:0:88" },
+      ],
+      "x264",
+      "out.mp4",
+      null,
+    );
+    const fc = args[args.indexOf("-filter_complex") + 1]!;
+    // Clip 1 uses ClipInput.crop + per-clip fit="blur"
+    expect(fc).toContain("[0:v]setpts=(PTS-STARTPTS)/1,crop=1280:544:0:88,split[f0a][f0b]");
+    // Clip 2 overrides crop with Clip.crop + fit="crop"
+    expect(fc).toContain("[1:v]setpts=(PTS-STARTPTS)/1,crop=1280:536:0:92,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[f1]");
+  });
+
+  test("pure helpers: shotsFromScenes, parseCropdetect, parseSignalstats, parseVisionShotLine, chooseClipFit, evaluateReview", () => {
+    const shots = shotsFromScenes([2.5, 2.7, 8.0], 10);
+    expect(shots).toEqual([
+      { start: 0, end: 2.7 },
+      { start: 2.7, end: 8 },
+      { start: 8, end: 10 },
+    ]);
+
+    const cropLog = [
+      "[Parsed_cropdetect_0] x1:0 x2:1279 y1:88 y2:631 w:1280 h:544 x:0 y:88 pts:100 t:1.0 crop=1280:544:0:88",
+      "[Parsed_cropdetect_0] x1:0 x2:1279 y1:88 y2:631 w:1280 h:544 x:0 y:88 pts:200 t:2.0 crop=1280:544:0:88",
+    ].join("\n");
+    expect(parseCropdetect(cropLog, 1280, 720)).toEqual({ crop: "1280:544:0:88", letterboxed: true });
+    expect(parseCropdetect("crop=1280:720:0:0", 1280, 720)).toEqual({ crop: null, letterboxed: false });
+
+    expect(parseSignalstats("lavfi.signalstats.YAVG=24.5\nlavfi.blur=8.2")).toEqual({
+      lumaMean: 24.5,
+      dark: true,
+      blurry: true,
+    });
+    expect(parseSignalstats("lavfi.signalstats.YAVG=110.0\nlavfi.blur=1.2")).toEqual({
+      lumaMean: 110,
+      dark: false,
+      blurry: false,
+    });
+
+    const vis = parseVisionShotLine("Line 1: Wide title card reading THE GIANT PANDA | text:yes | faces:no | dark:no | blurry:no");
+    expect(vis).toEqual({
+      description: "Wide title card reading THE GIANT PANDA",
+      text_on_screen: true,
+      faces: false,
+      dark: false,
+      blurry: false,
+    });
+    expect(chooseClipFit(vis, "crop", true, true)).toBe("blur");
+    expect(chooseClipFit({ text_on_screen: false, faces: false }, "crop", true, true)).toBe("crop");
+
+    const blacks = parseBlackdetect("black_start:0 black_end:0.8 black_duration:0.8");
+    expect(blacks).toEqual([{ start: 0, end: 0.8, duration: 0.8 }]);
+    expect(parseLoudness("[Parsed_ebur128_0] I: -14.2 LUFS")).toEqual({ integratedLufs: -14.2 });
+
+    const revBad = evaluateReview({
+      duration: 39.5,
+      targetMin: 25,
+      targetMax: 30,
+      blackSegments: blacks,
+      lumaMean: 30,
+      letterboxed: true,
+      visionText: "cut_text:yes | bars:yes | hook_ok:no",
+      expectHook: true,
+    });
+    expect(revBad.passed).toBe(false);
+    expect(revBad.score).toBeLessThan(0.7);
+    expect(revBad.problems.length).toBeGreaterThanOrEqual(4);
+
+    const revGood = evaluateReview({
+      duration: 28.0,
+      targetMin: 25,
+      targetMax: 30,
+      blackSegments: [],
+      lumaMean: 115,
+      letterboxed: false,
+      visionText: "cut_text:no | bars:no | tofu:no | hook_ok:yes | notes:Clean vertical edit",
+      expectHook: true,
+    });
+    expect(revGood.passed).toBe(true);
+    expect(revGood.score).toBe(1);
+    expect(revGood.problems).toEqual([]);
+  });
+
+  test("captionsAss wraps emoji 🔥 in a monochrome outline font override so libass never renders tofu", () => {
+    const ass = captionsAss([{ text: "Panaskan suasana 🔥 sekarang!", start: 0, end: 2, position: "middle" }], VIDEO_PRESETS.tiktok_fhd);
+    expect(ass).toMatch(/\{\\fn(Segoe UI Symbol|Noto Emoji)\\b0\}🔥\{\\fnArial\\b1\}/);
+  });
+
+  test("repeat guard refuses the 3rd identical failed tool call with a clear error message", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "ao-repeat-guard-"));
+    try {
+      const { ctx } = makeCtx(tmp);
+      // video 9 does not exist -> fails
+      const r1 = await runTool(TOOL_REGISTRY.video_probe!, { video: 9 }, ctx);
+      expect(r1.ok).toBe(false);
+      const r2 = await runTool(TOOL_REGISTRY.video_probe!, { video: 9 }, ctx);
+      expect(r2.ok).toBe(false);
+      const r3 = await runTool(TOOL_REGISTRY.video_probe!, { video: 9 }, ctx);
+      expect(r3.ok).toBe(false);
+      expect((r3.output as { refused_repeat?: boolean; error?: string }).refused_repeat).toBe(true);
+      expect((r3.output as { error?: string }).error).toMatch(/already failed 2 times with the exact same input/);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

@@ -18,7 +18,7 @@ import {
 import { aiSdkRuntime } from "./runtimes/aiSdk.ts";
 import { mockRuntime } from "./runtimes/mock.ts";
 import { directRuntime } from "./runtimes/direct.ts";
-import { openchatcutToken, whisperBinary, type ApprovalRequest, type ConsultAnswer } from "@agent-office/tools";
+import { hyperframesBinary, openchatcutToken, whisperBinary, type ApprovalRequest, type ConsultAnswer } from "@agent-office/tools";
 import { RunError, type AgentRuntime } from "./runtimes/types.ts";
 import { resolveOpenCode } from "./opencode/binary.ts";
 import { opencodeRuntime } from "./opencode/runtime.ts";
@@ -516,9 +516,9 @@ export class RunnerClient {
 }
 
 /** Programs agents may want on this machine; reported once per connection. */
-const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "whisper", "openchatcut", "opencode", "openscad", "blender", "pandoc", "soffice", "gh"];
+const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "whisper", "hyperframes", "openchatcut", "opencode", "openscad", "blender", "pandoc", "soffice", "gh"];
 // whisper.cpp is found by its own path (WHISPER_CPP) or C:\whisper, rarely on PATH
-export const detectPrograms = (): string[] => PROGRAMS.filter((p) => (p === "whisper" ? !!whisperBinary() : p === "openchatcut" ? !!openchatcutToken() : Bun.which(p)));
+export const detectPrograms = (): string[] => PROGRAMS.filter((p) => (p === "whisper" ? !!whisperBinary() : p === "hyperframes" ? !!hyperframesBinary() : p === "openchatcut" ? !!openchatcutToken() : Bun.which(p)));
 
 /** A download that sends no data for this long is treated as dead. */
 export const STALL_MS = 60_000;

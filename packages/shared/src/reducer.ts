@@ -95,6 +95,8 @@ export interface JobView {
   run_ids: string[];
   /** Why it was cancelled (owner, time limit, pause), when it was. */
   cancel_reason?: string | null;
+  /** Set to "assistant" when created via an owner Cloudflare Access service token (Task 027). */
+  created_by?: "owner" | "assistant";
 }
 
 export interface RunView {
@@ -212,6 +214,7 @@ export function apply(s: OfficeState, event: AgentEvent): boolean {
         status: "queued",
         created_at: event.ts,
         run_ids: [],
+        ...(p.created_by ? { created_by: p.created_by } : {}),
       };
       agentView(s, p.agent_id);
       break;

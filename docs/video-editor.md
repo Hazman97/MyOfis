@@ -63,6 +63,23 @@ The quality is high so that TikTok's own re-encode starts from a clean picture.
 - There is no background music or voice-over yet.
 - Posting to TikTok and YouTube is not connected yet: download and post them yourself.
 
+## Motion graphics & kinetic typography (`motion_render`)
+Editor and TikTok Poster can render animated moving-text videos and overlays using **HyperFrames** (`motion_render`):
+- **Templates (`packages/shared/src/motion.ts`):**
+  - `hook`: 1–3 pop-in lines for the first 2–3 seconds of a TikTok/Reel.
+  - `kinetic_captions`: word-by-word highlighted spoken words (automatically pulls timings from `video_transcribe` when `video_for_transcript` is given).
+  - `title_card`: kicker, headline, accent bar and subtitle card.
+  - `list`: 3–7 numbered or check-marked points sliding in one by one.
+  - `countdown`: 3..1 countdown with a final callout (`JOM! 🔥`).
+  - `lower_third`: speaker name + role banner (`left` or `right`).
+  - `outro_cta`: end-screen call to action card with pulsing button.
+- **Compositing (`EditPlan.overlays`):**
+  - `motion_render` uploads the rendered MP4 to the hub and registers it as `"video N"` in the run.
+  - Pass `transparent: true` in `motion_render` (which renders on a `#00FF00` key canvas) and add `{ video: N, start, end, chromakey: "#00FF00" }` to `EditPlan.overlays` in `video_edit`, or concatenate it as a standalone intro/outro clip in `EditPlan.clips`.
+- **AWS / Linux Runner Setup (`scripts/runner-video-setup.sh`):**
+  - Run `bash scripts/runner-video-setup.sh` on the Amazon Linux 2023 runner to install Node 24.22.1 (verified by SHA-256 into `/opt`), headless Chrome libraries, Noto + Emoji fonts, and the pinned HyperFrames CLI, followed by a smoke-test render and `ffprobe` check.
+  - Once installed, the runner reports `hyperframes` in `capabilities.programs`.
+
 ## Where files live
 - Uploads and renders: `FILES_DIR/uploads/` on the hub. Renders are tied to their run (`uploads.run_id`).
 - While a run works: `<workspace>/media/` on the runner (`in-1.mp4`, `<name>-<preset>.mp4`, `<name>.ass`).

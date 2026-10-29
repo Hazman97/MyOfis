@@ -36,6 +36,7 @@ export interface AgentInfo {
   runner_id: string | null;
   desk_x: number;
   desk_y: number;
+  external?: boolean;
 }
 
 export type Target = { place: string } | { zone: string } | { visit: string } | { here: true } | { tile: { tx: number; ty: number; facing: "up" | "down" | "left" | "right" } };

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { and, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, like, lt, ne } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { serveStatic } from "hono/bun";
 import { setCookie, deleteCookie } from "hono/cookie";
@@ -26,16 +26,18 @@ import {
   rankModels,
   type Agent,
   Transcript,
+  VideoShotIndex,
   UPLOAD_PART_BYTES,
   WebPostEdit,
   TikTokHdMode,
+  ExternalActivityInput,
 } from "@agent-office/shared";
 import { TOOL_REGISTRY } from "@agent-office/tools";
 import { DiskUsage } from "./diskUsage.ts";
-import { SESSION_COOKIE, SESSION_TTL_MS, isHttps, ownerOnly, requireUser, type Authenticator, type Identity } from "./auth.ts";
-import type { Hub } from "./core.ts";
+import { SESSION_COOKIE, SESSION_TTL_MS, assertAssistantAgentPatch, assistantGuard, isHttps, ownerOnly, requireUser, type Authenticator, type Identity } from "./auth.ts";
+import { EXTERNAL_RUNNER_ID, type Hub } from "./core.ts";
 import { hashToken, keyHint, normalizeCode, pairingCode, randomToken } from "./crypto.ts";
-import { agents, approvals, jobs, pairingCodes, projects, providers, runners, runs, schedules, uploads } from "./db/schema.ts";
+import { agents, approvals, contentDrafts, jobs, pairingCodes, projects, providers, runners, runs, schedules, settings, uploads } from "./db/schema.ts";
 import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
@@ -60,6 +62,7 @@ import {
   ownUpload,
   usableAgent,
   visibleAgents,
+  withExternalHint,
 } from "./scope.ts";
 import { CATALOG_SOURCES, SkillCatalog } from "./skillCatalog.ts";
 import type { Integrations } from "./integrations.ts";
@@ -81,6 +84,7 @@ import {
 
 const PAIRING_TTL_MS = 10 * 60 * 1000;
 const MAX_ARTIFACT_BYTES = 10 * 1024 * 1024;
+const MAX_EXTERNAL_BODY_BYTES = 16 * 1024;
 const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.[a-z0-9]{2,4}$/;
 /** Only types that cannot run script in the browser. */
 const ARTIFACT_TYPES: Record<string, string> = { png: "image/png", md: "text/plain; charset=utf-8", txt: "text/plain; charset=utf-8" };
@@ -126,6 +130,38 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (err instanceof SyntaxError) return c.json({ error: "invalid JSON body" }, 400);
     console.error("[hub] unhandled error", err);
     return c.json({ error: "internal error" }, 500);
+  });
+
+  /** Outside AI workers (Claude Code, Gemini CLI, etc.) report live activity with their external token. */
+  const externalLimits = new Map<string, () => boolean>();
+  app.post("/api/external/activity", async (c) => {
+    const header = c.req.header("authorization") ?? "";
+    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    if (!token) throw new HttpError(401, "unauthorized");
+    const tokenHash = hashToken(token);
+    const tokenRow = db
+      .select()
+      .from(settings)
+      .where(like(settings.key, "external.token.%"))
+      .all()
+      .map((r) => r.value as { agent_id?: string; token_hash?: string } | null)
+      .find((v) => v?.token_hash === tokenHash);
+    if (!tokenRow?.agent_id) throw new HttpError(401, "unauthorized");
+
+    const len = Number(c.req.header("content-length") ?? 0);
+    if (len > MAX_EXTERNAL_BODY_BYTES) throw new HttpError(400, "body too large");
+    const rawBytes = new Uint8Array(await c.req.arrayBuffer());
+    if (rawBytes.byteLength > MAX_EXTERNAL_BODY_BYTES) throw new HttpError(400, "body too large");
+
+    let checkLimit = externalLimits.get(tokenHash);
+    if (!checkLimit) {
+      checkLimit = limiter(20, 1000);
+      externalLimits.set(tokenHash, checkLimit);
+    }
+    if (!checkLimit()) throw new HttpError(429, "rate limit exceeded");
+
+    const body = ExternalActivityInput.parse(JSON.parse(new TextDecoder().decode(rawBytes)));
+    return c.json(hub.externalActivity(tokenRow.agent_id, body));
   });
 
   // Same-origin check for state-changing requests (cookie auth is SameSite=Strict too).
@@ -273,7 +309,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const run = getRun(db, c.req.query("run_id") ?? "");
     const job = run && run.runner_id === runner.id && run.status === "running" ? getJob(db, run.job_id) : undefined;
     const attached = Array.isArray(job?.input.attachments) && (job.input.attachments as { id?: unknown }[]).some((a) => a.id === c.req.param("id"));
-    const f = attached ? hub.publisher.uploadFile(c.req.param("id")) : null;
+    const candidate = hub.publisher.uploadFile(c.req.param("id"));
+    const f = attached || (run && candidate?.row.run_id === run.id) ? candidate : null;
     if (!f) throw new HttpError(404, "not found");
     return fileResponse(f.file, f.row.content_type, c.req.header("range"));
   });
@@ -298,11 +335,17 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
     if (!runner) throw new HttpError(401, "unauthorized");
-    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
+    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions", "index_get", "index_put"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
     const run = getRun(db, body.run_id);
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tools = getAgent(db, run.agent_id)?.tools ?? [];
-    const need = { transcript_get: ["video_transcribe", "video_edit", "suggest_edits"], transcript_put: ["video_transcribe"], suggestions: ["suggest_edits"] }[body.action];
+    const need = {
+      transcript_get: ["video_transcribe", "video_edit", "suggest_edits", "motion_render"],
+      transcript_put: ["video_transcribe"],
+      suggestions: ["suggest_edits"],
+      index_get: ["video_probe", "video_index", "video_edit", "suggest_edits"],
+      index_put: ["video_probe", "video_index"],
+    }[body.action];
     if (!need.some((t) => tools.includes(t))) throw new HttpError(403, `this agent may not use ${need.join(" / ")}`);
     const job = getJob(db, run.job_id);
     const ws = job?.workspace_id ?? OWNER_WORKSPACE;
@@ -321,6 +364,11 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         return c.json({ data: { saved: true } });
       case "suggestions":
         return c.json({ data: { suggestions: hub.studio.saveSuggestions(run.id, ws, files, body.params.suggestions) } });
+      case "index_get":
+        return c.json({ data: { index: hub.studio.shotIndex(fileOf(body.params.upload_id), ws) } });
+      case "index_put":
+        hub.studio.setShotIndex(fileOf(body.params.upload_id), VideoShotIndex.parse(body.params.index));
+        return c.json({ data: { saved: true } });
     }
   });
 
@@ -334,7 +382,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const run = getRun(db, q.run_id ?? "");
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tools = getAgent(db, run.agent_id)?.tools ?? [];
-    if (!(q.attach ? tools.includes("clip_library") : tools.includes("video_edit") || tools.includes("video_tiktok_hd"))) throw new HttpError(403, "this agent may not upload videos");
+    if (!(q.attach ? tools.includes("clip_library") || tools.includes("motion_render") : tools.includes("video_edit") || tools.includes("video_tiktok_hd") || tools.includes("motion_render"))) throw new HttpError(403, "this agent may not upload videos");
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
     const ws = getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
     // a library clip is the owner's own video (no run_id); a render belongs to the run that made it
@@ -480,6 +528,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
 
   const api = new Hono<{ Variables: { me: Identity } }>();
   api.use("*", requireUser(auth));
+  api.use("*", assistantGuard);
   const W = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").workspace_id;
   const memberOf = (c: Context<{ Variables: { me: Identity } }>) => c.get("me").role !== "owner";
   for (const path of ["/settings/pause", "/settings/integrations", "/settings/integrations/*", "/backups", "/skills/catalog", "/skills/catalog/*", "/proposals", "/proposals/*", "/system", "/storage", "/storage/*", "/runners", "/runners/*", "/opencut", "/members", "/members/*", "/rooms/:id", "/rooms/:id/*", "/agents/:id/move", "/projects/:id/move"]) {
@@ -488,7 +537,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
 
   api.get("/auth/me", (c) => {
     const me = c.get("me");
-    return c.json({ ok: true, mode: auth.mode, email: me.email, name: me.name, role: me.role, workspace_id: me.workspace_id, home_workspace_id: me.home_workspace_id });
+    return c.json({ ok: true, mode: auth.mode, email: me.email, name: me.name, role: me.role, workspace_id: me.workspace_id, home_workspace_id: me.home_workspace_id, ...(me.via ? { via: me.via } : {}), ...(me.actor ? { actor: me.actor } : {}) });
   });
 
   // rooms: HQ, the owner's rooms (shared with friends), members' personal rooms
@@ -528,7 +577,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
 
   // integrations (Gitea). The token is write-only, like provider keys.
   api.get("/settings/integrations", (c) =>
-    c.json({ gitea: integrations.giteaPublic(), telegram: integrations.telegramPublic(), web_search: integrations.webSearch.public() }),
+    c.json({
+      gitea: integrations.giteaPublic(),
+      telegram: integrations.telegramPublic(),
+      web_search: integrations.webSearch.public(),
+      assistant: {
+        enabled: (config.cfAccess.ownerServiceTokens?.length ?? 0) > 0,
+        tokens: (config.cfAccess.ownerServiceTokens ?? []).map((t) => `…${t.slice(-6)}`),
+      },
+    }),
   );
   api.put("/settings/integrations/web-search", async (c) => c.json({ web_search: integrations.webSearch.set(await c.req.json()) }));
   api.post("/settings/integrations/web-search/test", async (c) => {
@@ -569,32 +626,51 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.get("/agents", (c) => c.json({ agents: visibleAgents(db, W(c)) }));
   api.get("/agents/:id", (c) => {
     const a = usableAgent(db, c.req.param("id"), W(c));
-    return c.json({ agent: { ...toAgent(a), ...(a.workspace_id !== W(c) ? { shared: true } : {}) } });
+    return c.json({ agent: { ...withExternalHint(db, toAgent(a)), ...(a.workspace_id !== W(c) ? { shared: true } : {}) } });
   });
   api.post("/agents", async (c) => {
-    const data = AgentInput.parse(await c.req.json());
+    const raw = z.record(z.string(), z.unknown()).parse(await c.req.json());
+    if (raw.kind === "external") {
+      raw.config = { ...(typeof raw.config === "object" && raw.config ? raw.config : {}), external: true };
+    }
+    const data = AgentInput.parse(raw);
     const ws = W(c);
-    assertAgentRefs(data.provider, data.runner_id, ws);
+    if (data.config.external) {
+      if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
+      data.provider = "external";
+      data.model = "external";
+      data.tools = [];
+      data.runner_id = null;
+      if (!data.sprite || data.sprite === "default") data.sprite = "person-4";
+    } else {
+      assertAgentRefs(data.provider, data.runner_id, ws);
+    }
     assertTools(data.tools);
-    if (memberOf(c)) assertMemberAgent(data.tools, data.config, data.runner_id);
+    if (!data.config.external && memberOf(c)) assertMemberAgent(data.tools, data.config, data.runner_id);
     if (db.select({ id: agents.id }).from(agents).where(and(eq(agents.slug, data.slug), eq(agents.workspace_id, ws))).get()) {
       throw new HttpError(409, "slug already used");
     }
     const row = db.insert(agents).values({ ...data, id: newId("agt"), workspace_id: ws }).returning().get();
-    return c.json({ agent: toAgent(row) }, 201);
+    return c.json({ agent: withExternalHint(db, toAgent(row)) }, 201);
   });
   api.patch("/agents/:id", async (c) => {
     const id = c.req.param("id");
     const ws = W(c);
     const current = ownAgent(db, id, ws);
     const raw = z.record(z.string(), z.unknown()).parse(await c.req.json());
+    if (c.get("me").actor === "assistant") {
+      const denied = assertAssistantAgentPatch(raw, toAgent(current).config as unknown as Record<string, unknown>);
+      if (denied) throw new HttpError(403, denied);
+    }
     const patch = AgentPatch.parse(raw);
     // Partial parse still fills defaults; keep only keys the client actually sent.
     const changes = Object.fromEntries(Object.entries(patch).filter(([k]) => k in raw));
     // a config saved without "skills" (e.g. the Agents form) keeps the agent's skill choice
+    if (toAgent(current).config.external && memberOf(c)) throw new HttpError(403, "only the owner can do this");
     if (changes.config && !("skills" in (raw.config as object))) (changes.config as AgentConfig).skills = toAgent(current).config.skills;
+    if (changes.config && !("external" in (raw.config as object))) (changes.config as AgentConfig).external = toAgent(current).config.external;
     assertTools(changes.tools);
-    if (typeof changes.provider === "string" || changes.runner_id !== undefined) {
+    if (!toAgent(current).config.external && (typeof changes.provider === "string" || changes.runner_id !== undefined)) {
       assertAgentRefs(changes.provider as string | undefined, changes.runner_id as string | null | undefined, ws);
     }
     if (memberOf(c)) {
@@ -606,7 +682,41 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     }
     const row = db.update(agents).set(changes).where(eq(agents.id, id)).returning().get();
     hub.dispatch();
-    return c.json({ agent: toAgent(row!) });
+    return c.json({ agent: withExternalHint(db, toAgent(row!)) });
+  });
+  api.post("/agents/:id/external-token", (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
+    const id = c.req.param("id");
+    const agent = toAgent(ownAgent(db, id, W(c)));
+    if (!agent.config.external) throw new HttpError(400, "only external agents use external tokens");
+    const token = randomToken(32);
+    const hint = keyHint(token);
+    const record = { agent_id: id, token_hash: hashToken(token), token_hint: hint, created_at: new Date().toISOString() };
+    db.insert(settings)
+      .values({ key: `external.token.${id}`, value: record })
+      .onConflictDoUpdate({ target: settings.key, set: { value: record } })
+      .run();
+    return c.json({ token, token_hint: hint });
+  });
+  api.delete("/agents/:id", (c) => {
+    if (memberOf(c)) throw new HttpError(403, "only the owner can do this");
+    const id = c.req.param("id");
+    ownAgent(db, id, W(c));
+    for (const r of db.select({ id: runs.id }).from(runs).where(and(eq(runs.agent_id, id), eq(runs.status, "running"))).all()) {
+      hub.cancelRun(r.id, "agent deleted");
+    }
+    db.transaction((tx) => {
+      tx.delete(approvals).where(eq(approvals.agent_id, id)).run();
+      tx.delete(runs).where(eq(runs.agent_id, id)).run();
+      tx.delete(jobs).where(eq(jobs.agent_id, id)).run();
+      tx.delete(schedules).where(eq(schedules.agent_id, id)).run();
+      tx.delete(contentDrafts).where(eq(contentDrafts.agent_id, id)).run();
+      tx.delete(settings).where(eq(settings.key, `external.token.${id}`)).run();
+      tx.delete(agents).where(eq(agents.id, id)).run();
+    });
+    delete store.state.agents[id];
+    scheduler.reload();
+    return c.json({ ok: true });
   });
 
   function assertTools(tools: unknown) {
@@ -883,7 +993,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       .parse(await c.req.json());
     // documents in the message are read and indexed first (into the chat's project, if any)
     await hub.ingestAttachments(body.attachments ?? [], W(c), body.project_id ?? null);
-    const { job, thread_id } = hub.chat(body, W(c));
+    const { job, thread_id } = hub.chat({ ...body, ...(c.get("me").actor === "assistant" ? { created_by: "assistant" as const } : {}) }, W(c));
     return c.json({ job, thread_id }, 201);
   });
   api.get("/chat/threads", (c) => {
@@ -918,6 +1028,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         text: String(j.input.text ?? j.title),
         created_at: j.created_at,
         status: j.status,
+        ...(j.input.created_by === "assistant" ? { created_by: "assistant" as const } : {}),
         run_id: hub.store.state.jobs[j.id]?.run_ids.at(-1) ?? null,
         reply: hub.chatReply(j),
         attachments: Array.isArray(j.input.attachments) && !j.input.attachments_carried ? j.input.attachments : [],
@@ -992,7 +1103,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
   api.post("/schedules", async (c) => {
     const data = ScheduleInput.parse(await c.req.json());
-    usableAgent(db, data.agent_id, W(c));
+    const agent = usableAgent(db, data.agent_id, W(c));
+    if (toAgent(agent).config.external) throw new HttpError(400, "external agents cannot be scheduled");
     assertValidCron(data.cron);
     const row = db.insert(schedules).values({ ...data, id: newId("sch"), workspace_id: W(c) }).returning().get();
     scheduler.reload();
@@ -1118,11 +1230,16 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ jobs: rows.map(toJob) });
   });
   api.post("/jobs", async (c) => {
-    const job = hub.createJob(JobInput.parse(await c.req.json()), W(c));
+    const parsed = JobInput.parse(await c.req.json());
+    if (c.get("me").actor === "assistant") parsed.input = { ...parsed.input, created_by: "assistant" };
+    const job = hub.createJob(parsed, W(c));
     return c.json({ job }, 201);
   });
   api.post("/jobs/:id/cancel", (c) => {
-    ownJob(db, c.req.param("id"), W(c));
+    const job = ownJob(db, c.req.param("id"), W(c));
+    if (c.get("me").actor === "assistant" && job.input?.created_by !== "assistant") {
+      throw new HttpError(403, "assistant may only cancel jobs it started");
+    }
     hub.cancelJob(c.req.param("id"));
     return c.json({ ok: true });
   });
@@ -1148,13 +1265,16 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ run: toRun(run), events: store.list(0, 5000, run.id) });
   });
   api.post("/runs/:id/cancel", (c) => {
-    ownRun(db, c.req.param("id"), W(c));
+    const run = ownRun(db, c.req.param("id"), W(c));
+    if (c.get("me").actor === "assistant" && getJob(db, run.job_id)?.input?.created_by !== "assistant") {
+      throw new HttpError(403, "assistant may only cancel runs it started");
+    }
     hub.cancelRun(c.req.param("id"));
     return c.json({ ok: true });
   });
 
   // runners (owner only: they are the owner's machines)
-  api.get("/runners", (c) => c.json({ runners: db.select().from(runners).orderBy(runners.created_at).all().map(toRunner) }));
+  api.get("/runners", (c) => c.json({ runners: db.select().from(runners).where(ne(runners.id, EXTERNAL_RUNNER_ID)).orderBy(runners.created_at).all().map(toRunner) }));
   api.post("/runners/pairing-code", (c) => {
     const code = pairingCode();
     const expires = new Date(Date.now() + PAIRING_TTL_MS).toISOString();

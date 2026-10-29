@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { Bot, LoaderCircle, Pause, Pencil, Play, Plus } from "lucide-vue-next";
+import { Bot, Check, Copy, KeyRound, LoaderCircle, Pause, Pencil, Play, Plus, Trash2 } from "lucide-vue-next";
 import { AgentPreferences, dayKey, type Agent, type ProviderPublic, type Runner } from "@agent-office/shared";
 import AgentAvatar from "../components/AgentAvatar.vue";
+import ConfirmButton from "../components/ConfirmButton.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SidePanel from "../components/SidePanel.vue";
 import StatusBadge from "../components/StatusBadge.vue";
@@ -52,6 +53,7 @@ const blank = () => ({
   auto_publish: false,
   auto_publish_daily_max: 3,
   tiktok_account: "" as string,
+  external: false,
 });
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 const form = reactive(blank());
@@ -82,9 +84,9 @@ onMounted(async () => {
   if (a) edit(a);
 });
 
-function edit(a: Agent | null) {
+function edit(a: Agent | null, external = false) {
   error.value = "";
-  Object.assign(form, blank());
+  Object.assign(form, blank(), !a && external ? { external: true, provider: "external", model: "external", role: "Canopy worker · Claude Code" } : {});
   if (a) {
     Object.assign(form, {
       slug: a.slug,
@@ -121,12 +123,18 @@ async function save() {
   error.value = "";
   saving.value = true;
   try {
-    const { shell_allowlist, read_paths, http_allowlist, max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder, auto_publish, auto_publish_daily_max, tiktok_account, slug, ...rest } = form;
+    const { shell_allowlist, read_paths, http_allowlist, max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder, auto_publish, auto_publish_daily_max, tiktok_account, external, slug, ...rest } = form;
     const body = {
       ...rest,
-      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder: clip_folder.trim(), auto_publish, auto_publish_daily_max, tiktok_account: tiktok_account || null },
+      config: { shell_allowlist: lines(shell_allowlist), read_paths: lines(read_paths), http_allowlist: lines(http_allowlist), max_steps, max_run_minutes, max_run_tokens, runtime, self_review, preferences, skills, clip_folder: clip_folder.trim(), auto_publish, auto_publish_daily_max, tiktok_account: tiktok_account || null, external },
     };
-    if (editing.value === "new") await api.createAgent({ ...body, slug });
+    if (editing.value === "new") {
+      const created = await api.createAgent({ ...body, slug, ...(external ? { kind: "external", provider: "external", model: "external" } : {}) });
+      if (external) {
+        const tok = await api.createExternalToken(created.agent.id);
+        issuedTokens[created.agent.id] = tok.token;
+      }
+    }
     else await api.updateAgent(editing.value!, body);
     await office.loadAgents();
     editing.value = null;
@@ -142,6 +150,28 @@ async function toggle(a: Agent) {
   await office.loadAgents();
 }
 
+const issuedTokens = reactive<Record<string, string>>({});
+const copiedId = ref<string | null>(null);
+async function issueToken(id: string) {
+  const r = await api.createExternalToken(id);
+  issuedTokens[id] = r.token;
+  await office.loadAgents();
+}
+async function copyToken(id: string) {
+  const tok = issuedTokens[id];
+  if (!tok) return;
+  await navigator.clipboard?.writeText(tok);
+  copiedId.value = id;
+  setTimeout(() => {
+    if (copiedId.value === id) copiedId.value = null;
+  }, 2000);
+}
+async function removeAgent(id: string) {
+  delete issuedTokens[id];
+  await api.deleteAgent(id);
+  await office.loadAgents();
+}
+
 const tokensToday = (a: Agent) => office.state.agents[a.id]?.tokens_by_day[today()] ?? 0;
 const pct = (a: Agent) => (a.daily_token_budget ? Math.min(100, Math.round((tokensToday(a) / a.daily_token_budget) * 100)) : 0);
 const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity ?? "idle") : "away");
@@ -150,6 +180,7 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
 <template>
   <div>
     <PageHeader sign="Team" title="Agents" description="Who works in the office, which AI brain they use, and what they may do without asking you.">
+      <button v-if="isOwner" class="btn shadow-xs hidden sm:inline-flex" @click="edit(null, true)"><KeyRound :size="15" /> New external agent</button>
       <button class="btn btn-primary shadow-sm" @click="edit(null)"><Plus :size="16" /> New agent</button>
     </PageHeader>
 
@@ -171,7 +202,12 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
           </div>
         </div>
 
-        <div class="mt-3.5 flex flex-wrap gap-1.5 text-[11px]">
+        <div v-if="a.config.external" class="mt-3.5 flex flex-wrap gap-1.5 text-[11px]">
+          <span class="chip font-mono text-[10px] border-accent/40 bg-accent/10 text-accent font-semibold">AWS · external</span>
+          <span class="chip text-[10px] bg-surface text-muted">Outside worker</span>
+          <span v-if="a.external_token_hint" class="chip font-mono text-[10px] bg-surface text-muted">token {{ a.external_token_hint }}</span>
+        </div>
+        <div v-else class="mt-3.5 flex flex-wrap gap-1.5 text-[11px]">
           <span class="chip max-w-full truncate font-mono text-[10px] bg-surface" :title="`${a.provider}:${a.model}`">
             {{ a.provider }}:{{ a.model }}
           </span>
@@ -186,8 +222,20 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
           </span>
         </div>
 
+        <div v-if="a.config.external" class="mt-4 mb-4 space-y-2 text-xs text-muted">
+          <p class="leading-relaxed">Reports live activity to <code class="font-mono text-[11px] text-fg">/api/external/activity</code> (read-only card).</p>
+          <div v-if="issuedTokens[a.id]" class="rounded-lg border border-accent/40 bg-accent/10 p-2.5 space-y-1.5">
+            <div class="flex items-center justify-between gap-2 text-[11px] font-semibold text-accent">
+              <span>External token (shown once)</span>
+              <button type="button" class="btn btn-sm py-0.5 px-2 text-[11px]" @click="copyToken(a.id)">
+                <component :is="copiedId === a.id ? Check : Copy" :size="12" /> {{ copiedId === a.id ? "Copied" : "Copy" }}
+              </button>
+            </div>
+            <code class="block break-all rounded bg-surface px-2 py-1 font-mono text-[11px] text-fg select-all">{{ issuedTokens[a.id] }}</code>
+          </div>
+        </div>
         <!-- Budget bar & counter -->
-        <div class="mt-4 mb-4" :title="`${tokensToday(a)} of ${a.daily_token_budget || 'unlimited'} tokens today`">
+        <div v-else class="mt-4 mb-4" :title="`${tokensToday(a)} of ${a.daily_token_budget || 'unlimited'} tokens today`">
           <div class="mb-1.5 flex items-center justify-between text-[11px]">
             <span class="text-muted font-medium">Tokens today</span>
             <span class="font-mono tabular-nums text-fg">
@@ -213,7 +261,11 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
             <button class="btn btn-sm" @click="toggle(a)">
               <component :is="a.enabled ? Pause : Play" :size="13" /> {{ a.enabled ? "Pause" : "Enable" }}
             </button>
-            <button class="btn btn-sm ml-auto" @click="edit(a)"><Pencil :size="13" /> Edit</button>
+            <template v-if="a.config.external">
+              <button class="btn btn-sm" @click="issueToken(a.id)"><KeyRound :size="13" /> Token</button>
+              <ConfirmButton class="ml-auto" confirm-label="Delete?" @confirm="removeAgent(a.id)"><Trash2 :size="13" /> Delete</ConfirmButton>
+            </template>
+            <button v-else class="btn btn-sm ml-auto" @click="edit(a)"><Pencil :size="13" /> Edit</button>
           </template>
           <span v-else class="chip text-[11px] text-info" title="The owner shared this agent with you: it runs on the owner's AI, within your daily limit">Shared with you</span>
         </div>
@@ -246,9 +298,17 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
               <input id="ag-slug" v-model="form.slug" class="input font-mono" :disabled="editing !== 'new'" pattern="[a-z0-9][a-z0-9\-]*" required />
             </div>
             <div class="sm:col-span-2"><label class="label" for="ag-role">Role</label><input id="ag-role" v-model="form.role" class="input" placeholder="e.g. QA · nightly smoke tests" /></div>
+            <label v-if="editing === 'new' && isOwner" class="sm:col-span-2 flex items-center gap-2.5 pt-1 text-xs font-medium text-fg cursor-pointer">
+              <input v-model="form.external" type="checkbox" class="accent-accent" />
+              <span>External worker (Claude Code / outside CLI reporting via <code class="font-mono text-[11px]">/api/external/activity</code>)</span>
+            </label>
           </div>
         </fieldset>
 
+        <p v-if="form.external" class="rounded-xl border border-info/30 bg-info-soft p-3.5 text-xs text-info leading-relaxed">
+          External agents need no provider or runner: they run outside Agent Office (for example, Claude Code on canopy-ai) and send their live events with a one-time token generated when you save.
+        </p>
+        <template v-if="!form.external">
         <!-- Section: Brain -->
         <fieldset class="card p-4 space-y-3.5 bg-surface/70 border-line">
           <legend class="sign text-[10px] tracking-wider text-accent px-1">Brain</legend>
@@ -494,6 +554,7 @@ const activity = (a: Agent) => (a.enabled ? (office.state.agents[a.id]?.activity
             </div>
           </div>
         </fieldset>
+        </template>
       </form>
       <template #footer>
         <p v-if="error" class="min-w-0 flex-1 truncate text-xs text-danger" :title="error">{{ error }}</p>

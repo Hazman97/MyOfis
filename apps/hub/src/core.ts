@@ -10,6 +10,8 @@ import {
   DIRECT_JOBS,
   DIRECT_JOB_MIN_MINUTES,
   WebPost,
+  externalToolCategory,
+  type ExternalActivityInput,
   type HubToRunner,
   type ContentDraft,
   type Agent,
@@ -70,7 +72,12 @@ export const TIMINGS = {
 
 const TERMINAL = new Set(["done", "failed", "cancelled"]);
 /** Tester -> Coder -> ... stops after this many hops (prevents ping-pong loops). */
+/** Tester -> Coder -> ... stops after this many hops (prevents ping-pong loops). */
 export const MAX_HANDOFF_DEPTH = 5;
+/** Fixed pseudo-runner row for external agents (never listed on the Runners page). */
+export const EXTERNAL_RUNNER_ID = "rnr_external";
+/** Fail running external sessions after 30 minutes of silence. */
+export const EXTERNAL_IDLE_TIMEOUT_MS = 30 * 60_000;
 /** Agents with these tools get at least VIDEO_RUN_MIN_MINUTES per run (renders, transcripts, OpenChatCut). */
 const VIDEO_RUN_TOOLS = new Set(["video_edit", "video_transcribe", "video_tiktok_hd", "openchatcut", "meeting_transcribe"]);
 const VIDEO_RUN_MIN_MINUTES = 60;
@@ -96,6 +103,7 @@ export class Hub {
   readonly #cancelReasons = new Map<string, string>();
   readonly #assignedAt = new Map<string, number>();
   readonly #offlineSince = new Map<string, number>();
+  readonly #lastExternalCall = new Map<string, { callId: string; tool: string }>();
   #dispatching = false;
   /** Set by the server after construction. */
   integrations: Integrations | null = null;
@@ -138,6 +146,7 @@ export class Hub {
     if (stale.length) {
       this.store.transact((tx, emit) => {
         for (const r of stale) {
+          if (r.id === EXTERNAL_RUNNER_ID) continue;
           tx.update(runners).set({ status: "offline" }).where(eq(runners.id, r.id)).run();
           emit({ type: "runner.offline", payload: { runner_id: r.id, name: r.name } });
         }
@@ -145,7 +154,7 @@ export class Hub {
     }
     const now = Date.now();
     for (const r of this.db.select({ id: runs.runner_id }).from(runs).where(eq(runs.status, "running")).all()) {
-      this.#offlineSince.set(r.id, now);
+      if (r.id !== EXTERNAL_RUNNER_ID) this.#offlineSince.set(r.id, now);
     }
     // Agents sent home for their budget before a restart: the sweep lets them back once they have budget again.
     for (const a of Object.values(this.store.state.agents)) if (a.activity === "away") this.#overBudget.set(a.id, "");
@@ -172,6 +181,7 @@ export class Hub {
     // a workspace gives work to its own agents, or to agents the owner shared with it
     if (!agent || (agent.workspace_id !== workspaceId && !shareOf(this.db, agent.id, workspaceId))) throw new HttpError(404, "agent not found");
     if (!agent.enabled) throw new HttpError(409, "agent is disabled");
+    if (toAgent(agent).config.external) throw new HttpError(400, "external agents report their own work and cannot be given jobs here");
     if (!getProviderBySlug(this.db, agent.provider, aiWorkspace(this.db, agent.workspace_id))) {
       throw new HttpError(409, `agent's provider "${agent.provider}" is not configured`);
     }
@@ -201,6 +211,7 @@ export class Hub {
             title: data.title,
             trigger: data.trigger,
             parent_job_id: data.parent_job_id,
+            ...(data.input.created_by === "assistant" ? { created_by: "assistant" as const } : {}),
           },
         },
         meta,
@@ -347,7 +358,7 @@ Error: ${r.error}` : ""}` });
   }
 
   chat(
-    input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[]; source?: "telegram" },
+    input: { agent_id: string; text: string; thread_id?: string | null; project_id?: string | null; attachments?: string[]; source?: "telegram"; created_by?: "assistant" },
     workspaceId: string = OWNER_WORKSPACE,
   ): { job: Job; thread_id: string } {
     const threadId = input.thread_id || newId("cht");
@@ -378,7 +389,7 @@ Error: ${r.error}` : ""}` });
       project_id: input.project_id ?? prior.at(-1)?.project_id ?? null,
       type: "chat",
       title: input.text.trim().replace(/\s+/g, " ").slice(0, 80) || "Chat",
-      input: { text: input.text, thread_id: threadId, history, ...(attachments.length ? { attachments } : {}), ...(carried ? { attachments_carried: true } : {}), ...(input.source ? { source: input.source } : {}) },
+      input: { text: input.text, thread_id: threadId, history, ...(attachments.length ? { attachments } : {}), ...(carried ? { attachments_carried: true } : {}), ...(input.source ? { source: input.source } : {}), ...(input.created_by ? { created_by: input.created_by } : {}) },
       trigger: "manual",
     }, workspaceId);
     return { job, thread_id: threadId };
@@ -844,9 +855,11 @@ Error: ${r.error}` : ""}` });
         feature_id: featureId,
       });
     });
-    // "Post without approval" (owner's switch per agent): approve and post it now
+    // "Post without approval" (owner's switch per agent): approve and post it now.
+    // Never for jobs the assistant started (task 027): those drafts wait for the owner.
     const agent = getAgent(this.db, run.agent_id);
-    if (saved && agent && toAgent(agent).config.auto_publish && job?.workspace_id === agent.workspace_id) void this.#autoPublish(saved.id, toAgent(agent), meta);
+    const byAssistant = job?.input?.created_by === "assistant";
+    if (saved && agent && !byAssistant && toAgent(agent).config.auto_publish && job?.workspace_id === agent.workspace_id) void this.#autoPublish(saved.id, toAgent(agent), meta);
   }
 
   /** Set by the server: tells the owner (Telegram) how an auto-published draft went. */
@@ -908,7 +921,7 @@ Error: ${r.error}` : ""}` });
       this.db.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
       conn.send({ type: "consult.answer", run_id: run.id, consult_id: msg.consult_id, ok: false, answer: "", error });
     };
-    if (!target || !target.enabled) return refuse(`agent "${msg.to_agent}" is unknown or disabled`);
+    if (!target || !target.enabled || toAgent(target).config.external) return refuse(`agent "${msg.to_agent}" is unknown or disabled`);
     if (target.id === run.agent_id) return refuse("an agent cannot consult itself");
     if (parentJob?.type === "consult") return refuse("you are answering a consult yourself: answer with what you know");
     const text =
@@ -1043,6 +1056,7 @@ Error: ${r.error}` : ""}` });
       for (const b of busy) if (!waiting.has(b.id)) load.set(b.runner_id, (load.get(b.runner_id) ?? 0) + 1);
 
       for (const { job, agent } of queued) {
+        if (toAgent(agent).config.external) continue;
         const render = !!DIRECT_JOBS[job.type];
         // over today's token budget: the job waits (for tomorrow, or for a higher budget); a re-render uses no tokens
         if (!render && !this.#checkBudget(agent)) continue;
@@ -1170,7 +1184,7 @@ Error: ${r.error}` : ""}` });
         .where(and(eq(projects.enabled, true), eq(projects.workspace_id, ws)))
         .all(),
       handoff_targets: visibleAgents(this.db, ws)
-        .filter((a) => a.enabled && a.id !== agent.id)
+        .filter((a) => a.enabled && a.id !== agent.id && !a.config.external)
         .map((a) => ({ slug: a.slug, name: a.name, role: a.role })),
     };
     this.#assignedAt.set(runId, Date.now());
@@ -1183,6 +1197,170 @@ Error: ${r.error}` : ""}` });
     } catch {
       console.error("[hub] could not decrypt the Gitea token (did SECRETS_KEY change?)");
       return null;
+    }
+  }
+
+  // ---------------------------------------------------------------- external agents (outside AI workers)
+
+  /**
+   * Record live activity from an outside AI worker (e.g. Claude Code on canopy-ai) so the office
+   * reducer and Work Feed show it exactly like a built-in run.
+   */
+  externalActivity(agentId: string, input: ExternalActivityInput): { job_id: string; run_id: string; status: string } {
+    const agent = getAgent(this.db, agentId);
+    if (!agent || !toAgent(agent).config.external) throw new HttpError(401, "unauthorized");
+    if (!agent.enabled) throw new HttpError(409, "agent is disabled");
+
+    const ws = agent.workspace_id || OWNER_WORKSPACE;
+    let active = this.db
+      .select({ run: runs, job: jobs })
+      .from(runs)
+      .innerJoin(jobs, eq(runs.job_id, jobs.id))
+      .where(
+        and(
+          eq(runs.agent_id, agent.id),
+          eq(runs.status, "running"),
+          eq(jobs.type, "external"),
+          sql`json_extract(${jobs.input}, '$.session_id') = ${input.session_id}`,
+        ),
+      )
+      .orderBy(asc(runs.started_at))
+      .get();
+
+    if (!active) {
+      const title = (input.event === "start" ? input.title?.trim() : undefined)?.slice(0, 200) || "(external work)";
+      this.db
+        .insert(runners)
+        .values({ id: EXTERNAL_RUNNER_ID, name: "External", token_hash: "external:none", status: "offline" })
+        .onConflictDoNothing()
+        .run();
+      active = this.store.transact((tx, emit) => {
+        const jobId = newId("job");
+        const runId = newId("run");
+        const jobRow = tx
+          .insert(jobs)
+          .values({
+            id: jobId,
+            workspace_id: ws,
+            agent_id: agent.id,
+            project_id: null,
+            type: "external",
+            title,
+            input: { session_id: input.session_id },
+            trigger: "event",
+            status: "running",
+          })
+          .returning()
+          .get();
+        const runRow = tx
+          .insert(runs)
+          .values({
+            id: runId,
+            job_id: jobId,
+            agent_id: agent.id,
+            runner_id: EXTERNAL_RUNNER_ID,
+            status: "running",
+            accepted: true,
+            log_path: `runs/${runId}.ndjson`,
+          })
+          .returning()
+          .get();
+        emit(
+          {
+            type: "job.created",
+            payload: {
+              job_id: jobId,
+              agent_id: agent.id,
+              project_id: null,
+              type: "external",
+              title,
+              trigger: "event",
+              parent_job_id: null,
+            },
+          },
+          { agent_id: agent.id, workspace_id: ws },
+        );
+        emit({ type: "job.queued", payload: { job_id: jobId } }, { agent_id: agent.id, workspace_id: ws });
+        emit(
+          {
+            type: "run.started",
+            payload: { run_id: runId, job_id: jobId, agent_id: agent.id, runner_id: EXTERNAL_RUNNER_ID },
+          },
+          { run_id: runId, agent_id: agent.id, workspace_id: ws },
+        );
+        return { run: runRow, job: jobRow };
+      });
+    }
+
+    const meta = { run_id: active.run.id, agent_id: agent.id, workspace_id: ws };
+    switch (input.event) {
+      case "start": {
+        const summary = input.summary?.trim();
+        if (summary) this.store.emit({ type: "agent.thinking", payload: { summary: summary.slice(0, 500) } }, meta);
+        return { job_id: active.job.id, run_id: active.run.id, status: "running" };
+      }
+      case "thinking": {
+        const summary = (input.summary?.trim() || input.title?.trim() || "Thinking…").slice(0, 500);
+        this.store.emit({ type: "agent.thinking", payload: { summary } }, meta);
+        return { job_id: active.job.id, run_id: active.run.id, status: "running" };
+      }
+      case "tool": {
+        const tool = (input.tool?.trim() || "tool").slice(0, 80);
+        const category = externalToolCategory(tool);
+        const callId = newId("cal");
+        this.#lastExternalCall.set(active.run.id, { callId, tool });
+        const summary = input.input_summary?.trim() || input.summary?.trim() || "";
+        this.store.emit(
+          {
+            type: "agent.tool_call",
+            payload: {
+              call_id: callId,
+              tool,
+              category,
+              args: summary ? { summary: summary.slice(0, 300) } : {},
+            },
+          },
+          meta,
+        );
+        return { job_id: active.job.id, run_id: active.run.id, status: "running" };
+      }
+      case "tool_result": {
+        const prev = this.#lastExternalCall.get(active.run.id);
+        this.#lastExternalCall.delete(active.run.id);
+        const tool = (input.tool?.trim() || prev?.tool || "tool").slice(0, 80);
+        const callId = prev?.callId ?? newId("cal");
+        const ok = input.ok ?? true;
+        const summary = (input.summary?.trim() || input.output?.trim() || (ok ? "ok" : "failed")).slice(0, 500);
+        this.store.emit(
+          {
+            type: "agent.tool_result",
+            payload: { call_id: callId, tool, ok, summary },
+          },
+          meta,
+        );
+        return { job_id: active.job.id, run_id: active.run.id, status: "running" };
+      }
+      case "done": {
+        this.#lastExternalCall.delete(active.run.id);
+        const text = (input.output?.trim() || input.summary?.trim() || "").slice(0, 4000);
+        if (text) {
+          this.store.emit(
+            {
+              type: "agent.message",
+              payload: { message_id: newId("msg"), text, final: true },
+            },
+            meta,
+          );
+        }
+        this.finishRun(active.run.id, { status: "done", tokens_in: 0, tokens_out: 0 });
+        return { job_id: active.job.id, run_id: active.run.id, status: "done" };
+      }
+      case "failed": {
+        this.#lastExternalCall.delete(active.run.id);
+        const error = (input.output?.trim() || input.summary?.trim() || "external agent failed").slice(0, 500);
+        this.finishRun(active.run.id, { status: "failed", error, tokens_in: 0, tokens_out: 0 });
+        return { job_id: active.job.id, run_id: active.run.id, status: "failed" };
+      }
     }
   }
 
@@ -1218,6 +1396,18 @@ Error: ${r.error}` : ""}` });
         this.finishRun(r.id, { status: "failed", error: "runner went offline", tokens_in: r.tokens_in, tokens_out: r.tokens_out });
       }
     }
+    const externalRuns = this.db
+      .select()
+      .from(runs)
+      .where(and(eq(runs.runner_id, EXTERNAL_RUNNER_ID), eq(runs.status, "running")))
+      .all();
+    for (const r of externalRuns) {
+      const lastAt = this.store.state.runs[r.id]?.last_event_at ?? r.started_at;
+      if (now - Date.parse(lastAt) > EXTERNAL_IDLE_TIMEOUT_MS) {
+        this.#lastExternalCall.delete(r.id);
+        this.finishRun(r.id, { status: "failed", error: "lost contact", tokens_in: r.tokens_in, tokens_out: r.tokens_out });
+      }
+    }
     this.enforceTimeLimits(now);
   }
 
@@ -1232,7 +1422,7 @@ Error: ${r.error}` : ""}` });
     if (!running.length) return;
     const waiting = this.#waitingOnConsult();
     for (const r of running) {
-      if (!r.accepted || waiting.has(r.id) || this.#cancelTimers.has(r.id)) continue;
+      if (r.runner_id === EXTERNAL_RUNNER_ID || !r.accepted || waiting.has(r.id) || this.#cancelTimers.has(r.id)) continue;
       const asks = this.db.select({ status: approvals.status, decided_at: approvals.decided_at }).from(approvals).where(eq(approvals.run_id, r.id)).all();
       if (asks.some((a) => a.status === "pending")) continue;
       // the clock restarts after the last approval decision and after the last consult answer

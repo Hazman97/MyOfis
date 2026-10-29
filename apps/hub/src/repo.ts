@@ -20,8 +20,14 @@ type ProviderRow = typeof providers.$inferSelect;
 type RunnerRow = typeof runners.$inferSelect;
 
 /** `config` may be `{}` for rows created before migration 0001: fill defaults on read. */
-export const toAgent = (r: AgentRow): Agent => ({ ...r, config: AgentConfig.parse(r.config ?? {}) });
-export const toJob = (r: typeof jobs.$inferSelect): Job => ({ ...r });
+export const toAgent = (r: AgentRow): Agent => {
+  const config = AgentConfig.parse(r.config ?? {});
+  return { ...r, config, kind: config.external ? "external" : "builtin" };
+};
+export const toJob = (r: typeof jobs.$inferSelect): Job => ({
+  ...r,
+  ...(r.input?.created_by === "assistant" ? { created_by: "assistant" as const } : {}),
+});
 export const toRun = (r: typeof runs.$inferSelect): Run => ({
   id: r.id,
   job_id: r.job_id,

@@ -123,6 +123,8 @@ export const AgentConfig = z.object({
   auto_publish_daily_max: z.number().int().min(1).max(15).default(3),
   /** The TikTok account (a Zernio account id from Settings → Social accounts) this agent's TikTok drafts post to. A schedule's input.tiktok_account wins. */
   tiktok_account: z.string().max(100).nullable().default(null),
+  /** Outside AI worker (e.g. Claude Code on canopy-ai) that reports activity via POST /api/external/activity. */
+  external: z.boolean().default(false),
 });
 export type AgentConfig = z.infer<typeof AgentConfig>;
 
@@ -135,8 +137,8 @@ export const AgentInput = z.object({
   name: z.string().min(1).max(80),
   role: z.string().max(80).default(""),
   sprite: z.string().max(200).default("default"),
-  provider: slug,
-  model: z.string().min(1).max(200),
+  provider: slug.default("external"),
+  model: z.string().min(1).max(200).default("external"),
   system_prompt: z.string().max(50_000).default(""),
   tools: z.array(z.string()).default([]),
   config: AgentConfig.default(AgentConfig.parse({})),
@@ -159,10 +161,44 @@ export const Agent = AgentInput.extend({
   workspace_id: z.string().default(OWNER_WORKSPACE),
   /** Set in a member's list for the owner's agents shared with them (read-only, the owner's AI pays). */
   shared: z.boolean().optional(),
+  /** "external" when config.external is true, else "builtin". */
+  kind: z.enum(["builtin", "external"]).optional(),
+  /** Hint of the active external token (if any), e.g. "••••abcd". */
+  external_token_hint: z.string().nullable().optional(),
 });
 export type Agent = z.infer<typeof Agent>;
 
 export const AgentPatch = AgentInput.partial();
+
+// ---------- External agents (outside AI workers reporting live activity) ----------
+
+export const ExternalActivityEvent = z.enum(["start", "thinking", "tool", "tool_result", "done", "failed"]);
+export type ExternalActivityEvent = z.infer<typeof ExternalActivityEvent>;
+
+export const ExternalActivityInput = z.object({
+  session_id: z.string().trim().min(1).max(120),
+  event: ExternalActivityEvent,
+  title: z.string().max(500).optional(),
+  tool: z.string().max(120).optional(),
+  input_summary: z.string().max(2000).optional(),
+  ok: z.boolean().optional(),
+  summary: z.string().max(2000).optional(),
+  output: z.string().max(8000).optional(),
+});
+export type ExternalActivityInput = z.infer<typeof ExternalActivityInput>;
+
+/** Map an outside worker's tool name (Claude Code, Gemini CLI, etc.) to an office ToolCategory. */
+export function externalToolCategory(tool: string): ToolCategory {
+  const t = tool.trim().toLowerCase();
+  if (/^(bash|sh|powershell|cmd|shell|run_command|exec|terminal)$/.test(t)) return "shell";
+  if (/^(git|git_)/.test(t)) return "git";
+  if (/^(read|read_file|view|cat|doc_read|notebookread)$/.test(t)) return "read_docs";
+  if (/^(grep|glob|search|find|rg|ripgrep|ast_grep|code_search|session_search|docs_search)$/.test(t)) return "search";
+  if (/^(webfetch|websearch|web_fetch|web_search|browser|fetch|curl|http)$/.test(t)) return "browser";
+  if (/^(write|write_file|create_file|notebookedit|save_draft)$/.test(t)) return "write";
+  if (/^(think|todo|todowrite|task|plan|enterplanmode|exitplanmode)$/.test(t)) return "think";
+  return "code";
+}
 
 // ---------- Jobs / runs ----------
 
@@ -182,6 +218,7 @@ export const Job = JobInput.extend({
   workspace_id: z.string().default(OWNER_WORKSPACE),
   status: JobStatus,
   created_at: z.string(),
+  created_by: z.enum(["owner", "assistant"]).optional(),
 });
 export type Job = z.infer<typeof Job>;
 

@@ -14,6 +14,8 @@ const EnvSchema = z
     CF_ACCESS_TEAM_DOMAIN: z.string().default(""),
     CF_ACCESS_AUD: z.string().default(""),
     OWNER_EMAIL: z.string().default(""),
+    /** Optional comma-separated Cloudflare Access Service Token client IDs (`common_name`) for assistant test access. */
+    OWNER_SERVICE_TOKENS: z.string().default(""),
     /** Tests point this at a local JWKS; normally https://<team>/cdn-cgi/access/certs. */
     CF_ACCESS_CERTS_URL: z.string().url().or(z.literal("")).default(""),
     DATABASE_PATH: z.string().default("./data/agent-office.db"),
@@ -81,7 +83,7 @@ export interface HubConfig {
   authMode: "local" | "cf-access";
   localAuthToken: string;
   secretsKey: string;
-  cfAccess: { teamDomain: string; aud: string; ownerEmail: string; certsUrl: string };
+  cfAccess: { teamDomain: string; aud: string; ownerEmail: string; certsUrl: string; ownerServiceTokens?: string[] };
   databasePath: string;
   filesDir: string;
   webDistDir: string;
@@ -131,7 +133,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     authMode: e.AUTH_MODE,
     localAuthToken: e.LOCAL_AUTH_TOKEN,
     secretsKey: e.SECRETS_KEY,
-    cfAccess: { teamDomain: e.CF_ACCESS_TEAM_DOMAIN, aud: e.CF_ACCESS_AUD, ownerEmail: e.OWNER_EMAIL, certsUrl: e.CF_ACCESS_CERTS_URL },
+    cfAccess: {
+      teamDomain: e.CF_ACCESS_TEAM_DOMAIN,
+      aud: e.CF_ACCESS_AUD,
+      ownerEmail: e.OWNER_EMAIL,
+      certsUrl: e.CF_ACCESS_CERTS_URL,
+      ownerServiceTokens: e.OWNER_SERVICE_TOKENS.split(",").map((s) => s.trim()).filter(Boolean),
+    },
     databasePath: e.DATABASE_PATH === ":memory:" ? ":memory:" : resolve(e.DATABASE_PATH),
     filesDir: resolve(e.FILES_DIR),
     webDistDir: resolve(e.WEB_DIST_DIR),

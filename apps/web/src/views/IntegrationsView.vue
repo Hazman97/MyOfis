@@ -9,6 +9,7 @@ import { fmtDateTime } from "../format.ts";
 
 const gitea = ref<GiteaSettings | null>(null);
 const telegram = ref<TelegramSettings | null>(null);
+const assistant = ref<{ enabled: boolean; tokens: string[] } | null>(null);
 const tg = reactive({ token: "", chat_id: "", enabled: true });
 const tgMsg = ref("");
 const tgError = ref("");
@@ -24,6 +25,7 @@ onMounted(async () => {
   tg.chat_id = r.telegram.chat_id;
   tg.enabled = r.telegram.enabled;
   fillWebSearch(r.web_search);
+  assistant.value = r.assistant ?? null;
   await loadBackups();
 });
 
@@ -315,6 +317,10 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
             <LoaderCircle v-if="backingUp" :size="13" class="animate-spin text-accent" />
             <span>{{ backingUp ? "Backing up…" : "Back up now" }}</span>
           </button>
+        </div>
+        <div class="border-t border-line/60 pt-3 text-xs text-muted">
+          <span v-if="assistant?.enabled" class="font-mono text-fg">Assistant access: on (token {{ assistant.tokens.join(", ") }})</span>
+          <span v-else>Assistant access: off</span>
         </div>
       </section>
     </div>

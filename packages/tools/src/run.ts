@@ -4,6 +4,20 @@ import { needsApproval } from "./safety.ts";
 import { ToolDenied, type ToolContext, type ToolDef, type ToolOutput } from "./types.ts";
 
 const MAX_ARG_CHARS = 400;
+export const MAX_FAILED_RETRIES = 2;
+
+const failedCalls = new WeakMap<ToolContext, Map<string, { count: number; lastSummary: string }>>();
+
+function stableJson(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(",")}]`;
+  const entries = Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, val]) => `${JSON.stringify(k)}:${stableJson(val)}`).join(",")}}`;
+}
+
+export function toolCallKey(toolName: string, input: unknown): string {
+  return `${toolName}:${stableJson(input)}`;
+}
 
 /** Redacted, length-capped copy of tool args, safe for the event log. */
 export function sanitizeArgs(input: unknown): Record<string, unknown> {
@@ -24,18 +38,36 @@ export function sanitizeArgs(input: unknown): Record<string, unknown> {
  */
 export async function runTool(def: ToolDef, rawInput: unknown, ctx: ToolContext): Promise<ToolOutput> {
   const callId = randomUUID();
+  const sig = toolCallKey(def.name, rawInput);
   const parsed = def.input.safeParse(rawInput);
   ctx.emit({
     type: "agent.tool_call",
     payload: { call_id: callId, tool: def.name, category: def.category, args: sanitizeArgs(rawInput) },
   });
   const finish = (out: ToolOutput) => {
+    let map = failedCalls.get(ctx);
+    if (!map) {
+      map = new Map();
+      failedCalls.set(ctx, map);
+    }
+    if (!out.ok) {
+      const prev = map.get(sig);
+      map.set(sig, { count: (prev?.count ?? 0) + 1, lastSummary: out.summary });
+    } else {
+      map.delete(sig);
+    }
     ctx.emit({
       type: "agent.tool_result",
       payload: { call_id: callId, tool: def.name, ok: out.ok, summary: String(redact(out.summary)).slice(0, 500) },
     });
     return out;
   };
+
+  const prior = failedCalls.get(ctx)?.get(sig);
+  if (prior && prior.count >= MAX_FAILED_RETRIES) {
+    const msg = `${def.name} already failed ${prior.count} times with the exact same input (${prior.lastSummary}). Do not retry with identical arguments; change the input or stop and explain the issue.`;
+    return finish({ ok: false, summary: `refused repeated failed call (${def.name})`, output: { error: msg, refused_repeat: true } });
+  }
 
   if (!parsed.success) {
     const msg = parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ");

@@ -91,12 +91,19 @@ describe.skipIf(!ffmpeg || !Bun.which("ffprobe"))("TikTok agent: clip folder →
       { tool: "save_draft", input: { project: "healing", platform: "tiktok", kind: "video", title: "Untuk kau yang penat", body: "Rehat dulu. #fypmalaysia #healing", self_check: check, video: "last" } },
       { text: "siap" },
     ];
-    const run = async (name: string) => {
-      const job = (await env.api("/api/jobs", { body: { agent_id: agent.id, project_id: project.id, title: name, input: { script: script(name) } } })).body.job;
+    const run = async (name: string, extra: Record<string, unknown> = {}) => {
+      const job = (await env.api("/api/jobs", { body: { agent_id: agent.id, project_id: project.id, title: name, input: { script: script(name), ...extra } } })).body.job;
       await waitFor(() => ["done", "failed"].includes(env.hub.hub.store.state.jobs[job.id]?.status ?? ""), 120_000, "tiktok run");
       expect(env.hub.hub.store.state.jobs[job.id]?.status).toBe("done");
       return job.id as string;
     };
+
+    // a job the assistant started (task 027) never posts by itself: its draft waits for the owner
+    await run("by assistant", { created_by: "assistant" });
+    const held = (await env.api("/api/drafts?status=pending")).body.drafts;
+    expect(held).toHaveLength(1);
+    expect(zernio.posts).toHaveLength(0);
+    await env.api(`/api/drafts/${held[0].id}/decide`, { body: { decision: "reject", feedback: "test" } });
 
     // 1st: posted at once
     const job1 = await run("first");
@@ -113,7 +120,7 @@ describe.skipIf(!ffmpeg || !Bun.which("ffprobe"))("TikTok agent: clip folder →
     const attached = env.hub.hub.db.select().from(jobs).where(eq(jobs.id, job1)).get()!.input.attachments as { name: string }[];
     expect(attached.map((a: { name: string }) => a.name).sort()).toEqual(["jalan.mp4", "pantai.mp4"]);
     const index = JSON.parse(readFileSync(join(dir, ".myofis-clips.json"), "utf8"));
-    expect(Object.values(index.clips).map((c) => (c as { uses: number; upload_id: string }).uses)).toEqual([1, 1]);
+    expect(Object.values(index.clips).map((c) => (c as { uses: number; upload_id: string }).uses)).toEqual([2, 2]); // the assistant's run used them too
     // the TikTok link arrives later
     await env.hub.hub.social.resolveTikTokLinks();
     expect((await env.api("/api/drafts?status=decided")).body.drafts[0].published_url).toBe("https://www.tiktok.com/@healing.my/video/777");

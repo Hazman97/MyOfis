@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { EditPlan, EditSuggestionsInput, RenderInfo, Transcript, VIDEO_PRESETS, type EditSuggestions, type Job, type TikTokHdMode } from "@agent-office/shared";
+import { EditPlan, EditSuggestionsInput, RenderInfo, Transcript, VIDEO_PRESETS, VideoShotIndex, type EditSuggestions, type Job, type TikTokHdMode } from "@agent-office/shared";
 import type { Hub } from "./core.ts";
-import { contentDrafts, editSuggestions, events, jobs, runs, uploads } from "./db/schema.ts";
+import { contentDrafts, editSuggestions, events, jobs, runs, settings, uploads } from "./db/schema.ts";
 import { HttpError, getRun, newId } from "./repo.ts";
 import { visibleAgents } from "./scope.ts";
 import { toDraft } from "./content.ts";
@@ -85,6 +85,21 @@ export class Studio {
 
   setTranscript(uploadId: string, t: Transcript): void {
     this.hub.db.update(uploads).set({ transcript: Transcript.parse(t) }).where(eq(uploads.id, uploadId)).run();
+  }
+
+  shotIndex(uploadId: string, ws = "owner"): VideoShotIndex | null {
+    const row = this.hub.db.select({ ws: uploads.workspace_id }).from(uploads).where(eq(uploads.id, uploadId)).get();
+    if (!row || row.ws !== ws) return null;
+    const raw = this.hub.db.select({ value: settings.value }).from(settings).where(eq(settings.key, `video.index.${uploadId}`)).get()?.value;
+    if (!raw) return null;
+    const parsed = VideoShotIndex.safeParse(raw);
+    return parsed.success ? parsed.data : null;
+  }
+
+  setShotIndex(uploadId: string, idx: VideoShotIndex): void {
+    const value = VideoShotIndex.parse(idx);
+    const key = `video.index.${uploadId}`;
+    this.hub.db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
   }
 
   saveSuggestions(runId: string, ws: string, attachments: EditSuggestions["attachments"], data: unknown): EditSuggestions {

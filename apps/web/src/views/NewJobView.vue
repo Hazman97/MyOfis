@@ -27,7 +27,7 @@ const busy = ref(false);
 onMounted(async () => {
   projects.value = (await api.projects()).projects.filter((p) => p.enabled);
 });
-const enabledAgents = computed(() => office.agents.filter((a) => a.enabled));
+const enabledAgents = computed(() => office.agents.filter((a) => a.enabled && !a.config.external));
 watchEffect(() => {
   if (agentId.value) return;
   const pick = enabledAgents.value.find((a) => a.slug === wanted || a.id === wanted) ?? enabledAgents.value[0];

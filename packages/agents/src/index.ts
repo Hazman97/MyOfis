@@ -4,7 +4,7 @@ import { echoAgent } from "./echo.ts";
 import { englishCoachAgent } from "./englishCoach.ts";
 import { researcherAgent } from "./researcher.ts";
 import { publisherAgent } from "./publisher.ts";
-import { SHORT_VIDEO_EDITING_SKILL, editorAgent, editorUpgrade } from "./editor.ts";
+import { MOTION_TEXT_TIKTOK_SKILL, SHORT_VIDEO_EDITING_SKILL, editorAgent, editorUpgrade } from "./editor.ts";
 import { ketuaAgent, ketuaSchedule } from "./ketua.ts";
 import { openchatcutAgent, openchatcutUpgrade } from "./openchatcutEditor.ts";
 import { TIKTOK_CAPTIONS_SKILL, tiktokAgent, tiktokSchedule, tiktokUpgrade } from "./tiktok.ts";
@@ -24,7 +24,7 @@ export { marketingAgent, MARKETING_PROMPT } from "./marketing.ts";
 export { englishCoachAgent, ENGLISH_COACH_PROMPT } from "./englishCoach.ts";
 export { researcherAgent, RESEARCHER_PROMPT } from "./researcher.ts";
 export { publisherAgent, PUBLISHER_PROMPT } from "./publisher.ts";
-export { editorAgent, EDITOR_PROMPT, SHORT_VIDEO_EDITING_SKILL } from "./editor.ts";
+export { editorAgent, EDITOR_PROMPT, MOTION_TEXT_TIKTOK_SKILL, SHORT_VIDEO_EDITING_SKILL } from "./editor.ts";
 export { ketuaAgent, ketuaSchedule, KETUA_PROMPT } from "./ketua.ts";
 export { projectAssistantAgent, projectAssistantSchedule, PROJECT_ASSISTANT_PROMPT } from "./projectAssistant.ts";
 export { keraniAgent, keraniSchedule, KERANI_PROMPT } from "./kerani.ts";
@@ -48,6 +48,7 @@ export interface BuiltinAgent {
 export const BUILTIN_SKILLS: { name: string; content: string }[] = [
   { name: "short-video-editing", content: SHORT_VIDEO_EDITING_SKILL },
   { name: "tiktok-captions-bm", content: TIKTOK_CAPTIONS_SKILL },
+  { name: "motion-text-tiktok", content: MOTION_TEXT_TIKTOK_SKILL },
 ];
 
 /** Seeded on first boot by slug; never overwrites owner edits. */

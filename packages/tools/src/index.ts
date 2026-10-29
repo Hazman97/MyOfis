@@ -12,6 +12,7 @@ import { clipLibraryTool } from "./clips.ts";
 import { OPENCHATCUT_TOOLS } from "./openchatcut.ts";
 import { DOC_TOOLS } from "./docs.ts";
 import { meetingTranscribeTool } from "./meeting.ts";
+import { motionRenderTool } from "./motion.ts";
 import type { ToolDef } from "./types.ts";
 
 export * from "./types.ts";
@@ -22,10 +23,33 @@ export { GiteaClient } from "./gitea.ts";
 export { checkUrl } from "./web.ts";
 export { htmlToText, isPrivateAddress } from "./research.ts";
 export { gitDefaultBranch, giteaRepoOf } from "./git.ts";
-export { buildEditArgs, captionsAss, clipLengths, isTiktokHdPrepared, parseProbe, parseSilences, parseWhisperJson, remuxArgs, whisperBinary, whisperModel, whisperVadModel } from "./video.ts";
+export {
+  buildEditArgs,
+  captionsAss,
+  chooseClipFit,
+  clipLengths,
+  emojiFontName,
+  evaluateReview,
+  isTiktokHdPrepared,
+  parseBlackdetect,
+  parseCropdetect,
+  parseLoudness,
+  parseProbe,
+  parseSignalstats,
+  parseSilences,
+  parseVisionShotLine,
+  parseWhisperJson,
+  remuxArgs,
+  shotsFromScenes,
+  whisperBinary,
+  whisperModel,
+  whisperVadModel,
+  wrapAssEmoji,
+} from "./video.ts";
 export { EditPlan } from "@agent-office/shared";
 export { openchatcutToken, parseMcpBody } from "./openchatcut.ts";
 export { meetingWhisperArgs } from "./meeting.ts";
+export { buildHyperframesArgs, hyperframesBinary, motionEnv, motionRenderTool } from "./motion.ts";
 export { chooseClips, clipKey, musicTracks, readIndex, scanFolder, type ClipEntry } from "./clips.ts";
 
 /** Every tool an agent can be granted, by name. Agents list the names they may use in `agents.tools`. */
@@ -51,6 +75,7 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     ...OPENCHATCUT_TOOLS,
     ...DOC_TOOLS,
     meetingTranscribeTool,
+    motionRenderTool,
   ].map((t) => [t.name, t as unknown as ToolDef]),
 );
 

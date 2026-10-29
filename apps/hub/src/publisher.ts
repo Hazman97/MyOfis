@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { DOC_TYPES, MAX_DOC_BYTES, PublishInfo, MEDIA_TYPES, WebPost, fixEscapedNewlines, freshFetch, type RenderInfo, type WebPostEdit } from "@agent-office/shared";
 import { keyHint, type Secrets } from "./crypto.ts";
@@ -86,7 +86,36 @@ export class Publisher {
     renameSync(tmpPath, join(this.filesDir, path));
     const size = statSync(join(this.filesDir, path)).size;
     const clean = name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `video.${ext}`;
-    return this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size, path, run_id: runId, workspace_id: workspaceId }).returning().get();
+    const superseded = runId
+      ? this.db
+          .select()
+          .from(uploads)
+          .where(and(eq(uploads.run_id, runId), eq(uploads.name, clean)))
+          .all()
+      : [];
+    const created = this.db.insert(uploads).values({ id, name: clean, content_type: contentType, size, path, run_id: runId, workspace_id: workspaceId }).returning().get();
+    for (const old of superseded) {
+      const draftsUsingOld = this.db
+        .select()
+        .from(contentDrafts)
+        .where(sql`json_extract(${contentDrafts.meta}, '$.video_upload_id') = ${old.id}`)
+        .all();
+      for (const d of draftsUsingOld) {
+        const meta = WebPost.parse({ ...(d.meta ?? { post_type: "social" }), video_upload_id: created.id });
+        this.db
+          .update(contentDrafts)
+          .set({ meta })
+          .where(eq(contentDrafts.id, d.id))
+          .run();
+      }
+      try {
+        rmSync(join(this.filesDir, old.path), { force: true });
+      } catch {
+        // best-effort file cleanup
+      }
+      this.db.delete(uploads).where(eq(uploads.id, old.id)).run();
+    }
+    return created;
   }
 
   /** Remember how a render was made (Video Studio). */

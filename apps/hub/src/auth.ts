@@ -17,6 +17,10 @@ export interface Identity {
   workspace_id: string;
   /** Where they land by default: HQ for the owner, the personal room for a member. */
   home_workspace_id: string;
+  /** Set when authenticated via an allowed Cloudflare Access service token (Task 027). */
+  via?: "service_token";
+  actor?: "assistant";
+  service_token_id?: string;
 }
 
 /** The web app remembers the chosen room in this cookie (also sent by <img>/<video> and the WebSocket). */
@@ -97,13 +101,20 @@ function cfAccessAuthenticator(config: HubConfig, db: Db): Authenticator {
     [customFetch]: (url: string, init: RequestInit) => freshFetch(url, { ...init, timeoutMs: 10_000 }),
   });
   const owner = ownerEmail.trim().toLowerCase();
+  const serviceTokens = (config.cfAccess.ownerServiceTokens ?? []).map((s) => s.trim()).filter(Boolean);
   const identify = async (req: Request): Promise<Identity | null> => {
     const token = req.headers.get("cf-access-jwt-assertion") ?? readCookie(req.headers.get("cookie"), "CF_Authorization");
     if (!token) return null;
     let email: string;
     try {
       const { payload } = await jwtVerify(token, jwks, { issuer, audience: aud, algorithms: ["RS256"] });
-      if (typeof payload.email !== "string") return null;
+      if (typeof payload.email !== "string" || !payload.email.trim()) {
+        const cn = typeof payload.common_name === "string" ? payload.common_name.trim() : "";
+        if (cn && serviceTokens.some((allowed) => safeEqual(cn, allowed))) {
+          return enterRoom(db, { ...ownerIdentity(owner), via: "service_token", actor: "assistant", service_token_id: cn }, req);
+        }
+        return null;
+      }
       email = payload.email.trim().toLowerCase();
     } catch {
       return null;
@@ -147,6 +158,73 @@ export const ownerOnly: MiddlewareHandler<{ Variables: { me: Identity } }> = asy
   await next();
 };
 
+/**
+ * Single-place deny list for the owner's assistant service token (`actor: "assistant"`, Task 027).
+ * Every matching route returns 403 even though `role === "owner"`.
+ */
+export const ASSISTANT_DENY_RULES: readonly { label: string; methods?: readonly string[]; pattern: RegExp }[] = [
+  { label: "members", pattern: /^\/members(\/|$)/ },
+  { label: "rooms create/update/members", methods: ["POST", "PATCH", "PUT", "DELETE"], pattern: /^\/rooms(\/|$)/ },
+  { label: "move agents or projects between rooms", methods: ["POST"], pattern: /^\/(agents|projects)\/[^/]+\/move$/ },
+  { label: "pause / unpause hub", methods: ["POST"], pattern: /^\/settings\/pause$/ },
+  { label: "integrations settings & secrets", pattern: /^\/settings\/integrations(\/|$)/ },
+  { label: "social account connections (Zernio/TikTok)", pattern: /^\/social-accounts(\/|$)/ },
+  { label: "project publish & social secrets", pattern: /^\/projects\/[^/]+\/(publish|facebook|tiktok|instagram|threads)(\/|$)/ },
+  { label: "memory write-approval settings", methods: ["PUT"], pattern: /^\/memory\/settings$/ },
+  { label: "providers create/update/delete/scan/models/test/check", methods: ["POST", "PATCH", "PUT", "DELETE"], pattern: /^\/providers(\/|$)/ },
+  { label: "runners pairing-code and revoke", methods: ["POST", "PATCH", "PUT", "DELETE"], pattern: /^\/runners(\/|$)/ },
+  { label: "backups list and trigger", pattern: /^\/backups(\/|$)/ },
+  { label: "open local storage folder", methods: ["POST"], pattern: /^\/storage\/open$/ },
+  { label: "skill catalog browse/install", pattern: /^\/skills\/catalog(\/|$)/ },
+  { label: "skill import, delete, and assignment", methods: ["POST", "PUT", "PATCH", "DELETE"], pattern: /^\/skills(\/|$)/ },
+  { label: "agent skill assignment", methods: ["PUT"], pattern: /^\/agents\/[^/]+\/skills$/ },
+  { label: "skill proposal approval", methods: ["POST"], pattern: /^\/proposals\/[^/]+\/decide$/ },
+  { label: "draft approval, publishing, scheduling, and takedown", methods: ["POST", "PATCH", "PUT", "DELETE"], pattern: /^\/drafts\/[^/]+\/(decide|publish|schedule|account|update-published|take-down)$/ },
+  { label: "tool approval decision (review/dangerous)", methods: ["POST"], pattern: /^\/approvals\/[^/]+\/decide$/ },
+  { label: "agent create/delete and external tokens", methods: ["POST", "DELETE"], pattern: /^\/agents(\/[^/]+(\/external-token)?)?$/ },
+  { label: "schedules create/update/delete (recurring jobs can post)", methods: ["POST", "PATCH", "PUT", "DELETE"], pattern: /^\/schedules(\/|$)/ },
+];
+
+export function isAssistantDenied(method: string, apiSubPath: string): string | null {
+  const m = method.toUpperCase();
+  const p = apiSubPath.replace(/^\/api(?=\/|$)/, "") || "/";
+  for (const rule of ASSISTANT_DENY_RULES) {
+    if (rule.methods && !rule.methods.includes(m)) continue;
+    if (rule.pattern.test(p)) return rule.label;
+  }
+  return null;
+}
+
+/** Restricted fields on PATCH /api/agents/:id that the assistant may not change. */
+const ASSISTANT_FORBIDDEN_AGENT_FIELDS = ["provider", "runner_id", "tools", "permission_level"] as const;
+const ASSISTANT_FORBIDDEN_AGENT_CONFIG = [
+  "auto_publish", "auto_publish_daily_max", "tiktok_account", "clip_folder", "runtime", "external",
+  "shell_allowlist", "read_paths", "http_allowlist",
+] as const;
+
+export function assertAssistantAgentPatch(raw: Record<string, unknown>, currentConfig: Record<string, unknown>): string | null {
+  for (const f of ASSISTANT_FORBIDDEN_AGENT_FIELDS) {
+    if (f in raw) return `assistant may not change agent ${f}`;
+  }
+  const cfg = typeof raw.config === "object" && raw.config !== null ? (raw.config as Record<string, unknown>) : null;
+  if (cfg) {
+    for (const k of ASSISTANT_FORBIDDEN_AGENT_CONFIG) {
+      if (k in cfg && JSON.stringify(cfg[k]) !== JSON.stringify(currentConfig[k])) return `assistant may not change agent config.${k}`;
+    }
+  }
+  return null;
+}
+
+/** Logs every assistant request (method + path, no bodies) and enforces ASSISTANT_DENY_RULES. */
+export const assistantGuard: MiddlewareHandler<{ Variables: { me: Identity } }> = async (c, next) => {
+  const me = c.get("me");
+  if (me?.actor === "assistant") {
+    console.info(`[hub] assistant ${c.req.method} ${c.req.path}`);
+    const reason = isAssistantDenied(c.req.method, c.req.path);
+    if (reason) return c.json({ error: `assistant access denied: ${reason}` }, 403);
+  }
+  await next();
+};
 /** Behind Cloudflare Tunnel the hub sees plain http; trust X-Forwarded-Proto for the Secure flag. */
 export const isHttps = (c: Context) =>
   (c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "")) === "https";

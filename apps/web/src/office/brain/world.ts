@@ -443,7 +443,7 @@ export class OfficeWorld {
     for (const agent of this.#agents) {
       seen.add(agent.id);
       const view = state.agents[agent.id];
-      const runnerOnline = agent.runner_id ? !!state.runners[agent.runner_id]?.online : anyOnline;
+      const runnerOnline = !!agent.external || (agent.runner_id ? !!state.runners[agent.runner_id]?.online : anyOnline);
       const intent = steadyIntent(agent, view, {
         desk: this.#desks.get(agent.id) ?? null,
         runnerOnline,

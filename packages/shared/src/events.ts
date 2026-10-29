@@ -28,6 +28,7 @@ export const EVENT_BODIES = [
     title: z.string(),
     trigger: JobTrigger,
     parent_job_id: z.string().nullable(),
+    created_by: z.enum(["owner", "assistant"]).optional(),
   }),
   body("job.queued", { job_id: z.string() }),
   body("job.cancelled", { job_id: z.string(), reason: z.string().optional() }),

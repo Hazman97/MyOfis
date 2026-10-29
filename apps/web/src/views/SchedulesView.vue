@@ -167,7 +167,7 @@ const projectName = (id: string | null) => (id ? projects.value.find((p) => p.id
         <div>
           <label class="label" for="sc-agent">Agent</label>
           <select id="sc-agent" v-model="form.agent_id" class="input" :disabled="editing !== 'new'" required>
-            <option v-for="a in office.agents" :key="a.id" :value="a.id">{{ a.name }}</option>
+            <option v-for="a in office.agents.filter((x) => !x.config.external)" :key="a.id" :value="a.id">{{ a.name }}</option>
           </select>
         </div>
         <div><label class="label" for="sc-title">Job title</label><input id="sc-title" v-model="form.title" class="input" required /></div>

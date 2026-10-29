@@ -220,6 +220,7 @@ export interface ChatMessage {
   text: string;
   created_at: string;
   status: Job["status"];
+  created_by?: "owner" | "assistant";
   run_id: string | null;
   reply: string | null;
   /** Photos sent with the message (Publisher). */
@@ -298,6 +299,7 @@ export interface StoragePlace {
 export interface TikTokHdItem {
   job_id: string;
   status: Job["status"];
+  created_by?: "owner" | "assistant";
   created_at: string;
   mode: "auto" | "remux" | "reencode";
   source: { id: string | null; name: string };
@@ -411,6 +413,8 @@ export const api = {
   proposals: (pendingOnly = false) => request<{ proposals: Proposal[] }>(`/proposals${pendingOnly ? "?status=pending" : ""}`),
   decideProposal: (id: string, decision: "approve" | "reject") => request<{ proposal: Proposal }>(`/proposals/${id}/decide`, { body: { decision } }),
   updateAgent: (id: string, body: Partial<Agent>) => request<{ agent: Agent }>(`/agents/${id}`, { method: "PATCH", body }),
+  deleteAgent: (id: string) => request<{ ok: true }>(`/agents/${id}`, { method: "DELETE" }),
+  createExternalToken: (id: string) => request<{ token: string; token_hint: string }>(`/agents/${id}/external-token`, { method: "POST" }),
 
   jobs: () => request<{ jobs: Job[] }>("/jobs"),
   createJob: (body: { agent_id: string; project_id?: string | null; title: string; type?: string; input: Record<string, unknown> }) =>
@@ -453,7 +457,7 @@ export const api = {
   tiktokHd: (id: string, mode: "auto" | "remux" | "reencode" = "auto") => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/tiktok-hd`, { body: { mode } }),
   setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),
 
-  integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings }>("/settings/integrations"),
+  integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings; assistant?: { enabled: boolean; tokens: string[] } }>("/settings/integrations"),
   saveWebSearch: (body: { provider: WebSearchProvider; searxng_url?: string; key_provider?: "tavily" | "brave"; api_key?: string }) =>
     request<{ web_search: WebSearchSettings }>("/settings/integrations/web-search", { method: "PUT", body }),
   testWebSearch: () =>

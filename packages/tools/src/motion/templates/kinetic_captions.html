@@ -1,0 +1,9 @@
+<!-- HyperFrames template: kinetic_captions (word-by-word highlighted spoken words) -->
+<div class="kc-layer" data-template="kinetic_captions">
+  {{#groups}}
+  <div class="kc-group pos-{{position}}" id="kc-g{{groupIndex}}" data-gs="{{start}}" data-ge="{{end}}">
+    {{#words}}<span class="kc-word" id="kc-g{{groupIndex}}-w{{wordIndex}}" data-ws="{{s}}" data-we="{{e}}">{{w}}</span> {{/words}}
+  </div>
+  {{/groups}}
+</div>
+

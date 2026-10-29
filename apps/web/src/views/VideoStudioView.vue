@@ -36,6 +36,7 @@ import {
   transitionSeconds,
   type EditSuggestion,
   type Transcript,
+  type TransitionSpec,
 } from "@agent-office/shared";
 import PageHeader from "../components/PageHeader.vue";
 import EditSuggestionCards from "../components/EditSuggestionCards.vue";
@@ -68,7 +69,7 @@ const askEditorOpen = ref(false);
 const playerCurrentTime = ref(0);
 
 /** The plan being edited (a copy of the video's plan). */
-const plan = reactive<EditPlan>(EditPlan.parse({ clips: [{ video: 1 }] }));
+const plan = reactive<EditPlan & { transition: TransitionSpec }>(EditPlan.parse({ clips: [{ video: 1 }] }) as EditPlan & { transition: TransitionSpec });
 /** Source clip lengths in seconds, read from the browser's video metadata. */
 const durations = reactive<Record<string, number>>({});
 
@@ -137,7 +138,8 @@ async function load() {
 function resetPlan() {
   if (!info.value) return;
   const p = EditPlan.parse(info.value.render.plan);
-  Object.assign(plan, p);
+  const tr = Array.isArray(p.transition) ? (p.transition[0] ?? { type: "none" as const, seconds: 0.5 }) : p.transition;
+  Object.assign(plan, { ...p, transition: tr });
   selectedClipIndex.value = null;
   selectedCaptionIndex.value = null;
 }

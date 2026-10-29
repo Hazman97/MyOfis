@@ -23,7 +23,7 @@ const office = useOffice();
 const route = useRoute();
 const router = useRouter();
 
-const agents = computed(() => office.agents.filter((a) => a.enabled));
+const agents = computed(() => office.agents.filter((a) => a.enabled && !a.config.external));
 const agent = computed<Agent | undefined>(() => agents.value.find((a) => a.slug === route.query.agent) ?? agents.value.find((a) => a.slug === "english-coach") ?? agents.value[0]);
 const threads = ref<ChatThread[]>([]);
 const threadId = ref<string | null>(null);
@@ -590,7 +590,7 @@ const threadTitle = (t: ChatThread) => t.title.slice(0, 48);
                 {{ m.text }}
               </div>
               <div class="mt-1 px-1 text-[10px] font-mono text-faint opacity-0 group-hover:opacity-100 max-sm:opacity-80 transition-opacity">
-                {{ fmtTime(m.created_at) }}
+                <span v-if="m.created_by === 'assistant'" class="mr-1.5 rounded bg-accent-soft px-1.5 py-0.5 text-accent">🤖 Claude</span>{{ fmtTime(m.created_at) }}
               </div>
             </div>
 

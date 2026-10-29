@@ -62,12 +62,13 @@ const infos = (): AgentInfo[] =>
   office.agents.map((a) => ({
     id: a.id,
     slug: a.slug,
-    name: a.name,
-    sprite: a.sprite,
+    name: a.config.external ? `${a.name} · AWS` : a.name,
+    sprite: a.config.external && (!a.sprite || a.sprite === "default") ? "person-4" : a.sprite,
     enabled: a.enabled,
     runner_id: a.runner_id,
     desk_x: a.desk_x,
     desk_y: a.desk_y,
+    external: a.config.external,
   }));
 
 function sync() {

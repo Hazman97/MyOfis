@@ -51,11 +51,15 @@ const inspected = ref<string | null>(null);
 const canvas = ref<{ poke(id: string): void } | null>(null);
 const menu = ref<{ id: string; x: number; y: number } | null>(null);
 const nearAgent = ref<string | null>(null);
-const nearName = computed(() => (nearAgent.value ? office.agentById[nearAgent.value]?.name : null));
+const nearName = computed(() => {
+  const a = nearAgent.value ? office.agentById[nearAgent.value] : null;
+  return a && !a.config.external ? a.name : null;
+});
 function onDrop(action: { open: "drafts" } | { open: "chat"; agent: string }) {
   if (action.open === "drafts") void router.push("/drafts");
   else {
-    const slug = office.agentById[action.agent]?.slug;
+    const a = office.agentById[action.agent];
+    const slug = a && !a.config.external ? a.slug : null;
     if (slug) void router.push({ path: "/chat", query: { agent: slug } });
   }
 }
@@ -322,6 +326,7 @@ const roomSign = computed(() => (isHq.value ? "HQ Workspace" : `${currentRoom.va
                 <span class="truncate font-medium text-fg/90">{{ agentName(j.agent_id) }}</span>
                 <span class="text-faint">·</span>
                 <span class="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-mono text-muted">{{ j.trigger }}</span>
+                <span v-if="j.created_by === 'assistant'" class="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent">🤖 Claude</span>
                 <span class="text-faint">·</span>
                 <span class="shrink-0 text-faint">{{ fmtDateTime(j.created_at) }}</span>
               </div>

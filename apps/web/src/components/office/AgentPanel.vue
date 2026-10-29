@@ -107,7 +107,8 @@ const togglePause = () =>
         <AgentAvatar :name="agent.name" :slug="agent.slug" :size="48" />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
-            <span class="truncate font-medium">{{ agent.role || agent.model }}</span>
+            <span class="truncate font-medium">{{ agent.role || (agent.config.external ? "External worker" : agent.model) }}</span>
+            <span v-if="agent.config.external" class="chip text-[11px]">AWS · external</span>
             <StatusBadge :status="activity" />
           </div>
           <p v-if="view?.thinking" class="truncate text-sm text-muted italic">“{{ view.thinking }}”</p>
@@ -147,9 +148,9 @@ const togglePause = () =>
         </div>
       </section>
 
-      <AgentPrefs v-if="agent" :agent="agent" />
+      <AgentPrefs v-if="agent && !agent.config.external" :agent="agent" />
 
-      <MemoryStores :agent-id="agentId" :reload-key="view?.current_run_id" />
+      <MemoryStores v-if="!agent.config.external" :agent-id="agentId" :reload-key="view?.current_run_id" />
 
       <section v-if="toolCalls.length" aria-labelledby="ap-tools">
         <h3 id="ap-tools" class="sign mb-1.5">Last tool calls</h3>
@@ -173,8 +174,8 @@ const togglePause = () =>
     </div>
 
     <template #footer>
-      <RouterLink v-if="agent" :to="{ path: '/chat', query: { agent: agent.slug } }" class="btn btn-primary"><MessagesSquare :size="15" /> Chat</RouterLink>
-      <RouterLink v-if="agent" :to="{ path: '/jobs/new', query: { agent: agent.slug } }" class="btn"><MessageSquarePlus :size="15" /> Job</RouterLink>
+      <RouterLink v-if="agent && !agent.config.external" :to="{ path: '/chat', query: { agent: agent.slug } }" class="btn btn-primary"><MessagesSquare :size="15" /> Chat</RouterLink>
+      <RouterLink v-if="agent && !agent.config.external" :to="{ path: '/jobs/new', query: { agent: agent.slug } }" class="btn"><MessageSquarePlus :size="15" /> Job</RouterLink>
       <ConfirmButton v-if="running" confirm-label="Cancel run?" @confirm="cancelRun"><Square :size="13" /> Cancel run</ConfirmButton>
       <button v-if="agent" class="btn ml-auto" @click="togglePause">
         <component :is="agent.enabled ? Pause : Play" :size="14" /> {{ agent.enabled ? "Pause agent" : "Enable" }}

@@ -20,12 +20,12 @@ export async function describeImages(ctx: RunContext, paths: string[], prompt: s
     const r = await generateText({
       model: languageModel(provider, activeModels.get(ctx) ?? modelCandidates(agent.model, provider.models)[0] ?? agent.model, job.input),
       messages: [{ role: "user", content: [{ type: "text", text: prompt }, ...images] }],
-      maxOutputTokens: 300,
+      maxOutputTokens: 600,
       abortSignal: ctx.signal,
     });
     const u = visionUsage.get(ctx) ?? { in: 0, out: 0 };
     visionUsage.set(ctx, { in: u.in + (r.totalUsage.inputTokens ?? 0), out: u.out + (r.totalUsage.outputTokens ?? 0) });
-    return r.text.trim().slice(0, 400);
+    return r.text.trim().slice(0, 1200);
   } catch {
     return "";
   }

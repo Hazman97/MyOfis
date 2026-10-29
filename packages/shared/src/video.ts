@@ -155,9 +155,28 @@ export const Clip = z.object({
   end: z.number().positive().optional().describe("Seconds into that video (default: its end)"),
   speed: z.number().min(0.5).max(2).default(1).describe("0.5 = slow motion, 2 = twice as fast"),
   zoom: z.enum(["none", "in", "out"]).default("none").describe("Slow zoom over the clip (Ken Burns): brings still shots and scenery to life"),
+  fit: z.enum(["crop", "blur", "pad"]).optional().describe("Per-clip override for fit (e.g. 'blur' when the shot has burned-in text or faces near the edges)"),
+  crop: z.string().regex(/^\d+:\d+:\d+:\d+$/).optional().describe("Optional w:h:x:y crop applied before reframing (e.g. to strip letterbox bars)"),
 });
 
 export type Clip = z.infer<typeof Clip>;
+
+export const Overlay = z.object({
+  video: z.number().int().min(1).max(10).describe("Which video file to overlay (1 = first, or the video number returned by motion_render)"),
+  start: z.number().min(0).default(0).describe("Seconds in the FINISHED video when the overlay appears"),
+  end: z.number().positive().optional().describe("Seconds in the FINISHED video when the overlay ends (default: start + overlay length)"),
+  x: z.string().trim().max(40).default("(W-w)/2").describe("Horizontal position expression in ffmpeg overlay (default: centered)"),
+  y: z.string().trim().max(40).default("(H-h)/2").describe("Vertical position expression in ffmpeg overlay (default: centered)"),
+  chromakey: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Optional hex colour to key out as transparent (e.g. #00FF00)"),
+  opacity: z.number().min(0.1).max(1).default(1).describe("Overlay opacity (0.1 to 1.0)"),
+});
+export type Overlay = z.infer<typeof Overlay>;
+
+export const TransitionSpec = z.object({
+  type: z.enum(["none", "fade", "dissolve", "slide", "zoom"]).default("none"),
+  seconds: z.number().min(0.2).max(1.5).default(0.5),
+});
+export type TransitionSpec = z.infer<typeof TransitionSpec>;
 
 export const Caption = z.object({
   text: z.string().trim().min(1).max(200),
@@ -166,6 +185,7 @@ export const Caption = z.object({
   position: z.enum(["bottom", "middle", "top"]).default("bottom"),
   animation: z.enum(["none", "fade", "pop"]).default("none").describe("fade = fades in and out; pop = grows in quickly, then fades out"),
 });
+export type Caption = z.infer<typeof Caption>;
 
 export const Subtitles = z.object({
   style: z.enum(["pop", "line"]).default("pop").describe("pop = 2 words at a time (TikTok style); line = up to 6 words"),
@@ -181,13 +201,11 @@ export const EditPlan = z.object({
   fps: z.union([z.literal(24), z.literal(25), z.literal(30), z.literal(50), z.literal(60)]).default(30),
   captions: z.array(Caption).max(40).default([]).describe("Text burned into the picture"),
   subtitles: Subtitles.nullable().default(null).describe("Burn in subtitles from the speech (needs video_transcribe first); null = none"),
+  overlays: z.array(Overlay).max(20).default([]).describe("Motion graphics or picture-in-picture videos overlaid on top of the main edit"),
   transition: z
-    .object({
-      type: z.enum(["none", "fade", "dissolve", "slide", "zoom"]).default("none"),
-      seconds: z.number().min(0.2).max(1.5).default(0.5),
-    })
+    .union([TransitionSpec, z.array(TransitionSpec).min(1).max(80)])
     .prefault({})
-    .describe("Between clips: each transition overlaps the clips, so the video gets shorter by `seconds` per cut"),
+    .describe("Between clips: each transition overlaps the clips, so the video gets shorter by `seconds` per cut (single object or list per boundary)"),
   mute: z.boolean().default(false).describe("Drop the original sound"),
   music: z
     .object({
@@ -202,16 +220,44 @@ export const EditPlan = z.object({
 });
 export type EditPlan = z.infer<typeof EditPlan>;
 
+/** Normalize `plan.transition` into one TransitionSpec per cut boundary (`lengths.length - 1` entries). */
+export function transitionsForCuts(
+  plan: Pick<EditPlan, "transition">,
+  lengths: number[],
+): { type: TransitionSpec["type"]; seconds: number }[] {
+  if (lengths.length < 2 || !plan.transition) {
+    return Array.from({ length: Math.max(0, lengths.length - 1) }, () => ({ type: "none" as const, seconds: 0 }));
+  }
+  if (!Array.isArray(plan.transition)) {
+    const t = plan.transition;
+    if (t.type === "none") {
+      return Array.from({ length: lengths.length - 1 }, () => ({ type: "none" as const, seconds: 0 }));
+    }
+    const sec = Math.max(0, Math.min(t.seconds, ...lengths.map((l) => l / 2)));
+    return Array.from({ length: lengths.length - 1 }, () => ({ type: t.type, seconds: sec }));
+  }
+  const list = plan.transition;
+  return Array.from({ length: lengths.length - 1 }, (_, i) => {
+    const spec = list[i] ?? list[list.length - 1] ?? { type: "none" as const, seconds: 0.5 };
+    if (spec.type === "none") return { type: "none" as const, seconds: 0 };
+    const sec = Math.max(0, Math.min(spec.seconds, (lengths[i] ?? 0) / 2, (lengths[i + 1] ?? 0) / 2));
+    return { type: spec.type, seconds: sec };
+  });
+}
+
 /** How long transitions really last: never more than half of the shorter neighbouring clip. */
 export function transitionSeconds(plan: Pick<EditPlan, "transition">, lengths: number[]): number {
-  if (!plan.transition || plan.transition.type === "none" || lengths.length < 2) return 0;
-  return Math.max(0, Math.min(plan.transition.seconds, ...lengths.map((l) => l / 2)));
+  const cuts = transitionsForCuts(plan, lengths);
+  if (!cuts.length) return 0;
+  if (!Array.isArray(plan.transition)) return cuts[0]!.seconds;
+  return Math.round((cuts.reduce((a, c) => a + c.seconds, 0) / cuts.length) * 100) / 100;
 }
 
 /** The finished video's length (seconds) from each clip's length, with transitions overlapping. */
 export function finishedSeconds(plan: Pick<EditPlan, "transition">, lengths: number[]): number {
-  const t = transitionSeconds(plan, lengths);
-  return Math.round((lengths.reduce((a, b) => a + b, 0) - t * Math.max(0, lengths.length - 1)) * 100) / 100;
+  const cuts = transitionsForCuts(plan, lengths);
+  const totalOverlap = cuts.reduce((a, c) => a + c.seconds, 0);
+  return Math.round((lengths.reduce((a, b) => a + b, 0) - totalOverlap) * 100) / 100;
 }
 
 /** What a render remembers about how it was made (uploads.render), so the studio can show and change it. */
@@ -221,3 +267,28 @@ export const RenderInfo = z.object({
   attachments: z.array(z.object({ id: z.string(), name: z.string(), content_type: z.string() })).max(10),
 });
 export type RenderInfo = z.infer<typeof RenderInfo>;
+
+/** Per-shot visual analysis and quality flags produced by video_index / video_probe(index: true) (Task 026). */
+export const ShotInfo = z.object({
+  index: z.number().int().min(1),
+  start: z.number().min(0),
+  end: z.number().min(0),
+  description: z.string().max(400).default(""),
+  dark: z.boolean().default(false),
+  blurry: z.boolean().default(false),
+  text_on_screen: z.boolean().default(false),
+  faces: z.boolean().default(false),
+  letterboxed: z.boolean().default(false),
+  luma_mean: z.number().optional(),
+});
+export type ShotInfo = z.infer<typeof ShotInfo>;
+
+export const VideoShotIndex = z.object({
+  duration: z.number().min(0),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  crop: z.string().nullable().default(null),
+  letterboxed: z.boolean().default(false),
+  shots: z.array(ShotInfo).max(120),
+});
+export type VideoShotIndex = z.infer<typeof VideoShotIndex>;

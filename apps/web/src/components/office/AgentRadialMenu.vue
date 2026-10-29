@@ -16,13 +16,20 @@ const office = useOffice();
 const agent = computed(() => office.agentById[props.agentId]);
 const busy = ref(false);
 
-const items = computed(() => [
-  { key: "chat", label: "Chat", icon: MessagesSquare },
-  { key: "job", label: "New job", icon: Plus },
-  { key: "pause", label: agent.value?.enabled ? "Pause" : "Enable", icon: agent.value?.enabled ? Pause : Play },
-  { key: "memory", label: "Memory", icon: Brain },
-  { key: "poke", label: "Poke", icon: Hand },
-]);
+const items = computed(() =>
+  agent.value?.config.external
+    ? [
+        { key: "pause", label: agent.value?.enabled ? "Pause" : "Enable", icon: agent.value?.enabled ? Pause : Play },
+        { key: "poke", label: "Poke", icon: Hand },
+      ]
+    : [
+        { key: "chat", label: "Chat", icon: MessagesSquare },
+        { key: "job", label: "New job", icon: Plus },
+        { key: "pause", label: agent.value?.enabled ? "Pause" : "Enable", icon: agent.value?.enabled ? Pause : Play },
+        { key: "memory", label: "Memory", icon: Brain },
+        { key: "poke", label: "Poke", icon: Hand },
+      ],
+);
 
 const RADIUS = 64;
 const pos = (i: number) => {

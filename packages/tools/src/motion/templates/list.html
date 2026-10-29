@@ -1,0 +1,15 @@
+<!-- HyperFrames template: list (3–7 numbered or bulleted points appearing one by one) -->
+<div class="stage-center" data-template="list">
+  <div class="list-container">
+    {{#title}}<div class="list-header" id="list-header">{{title}}</div>{{/title}}
+    <div class="list-stack">
+      {{#items}}
+      <div class="list-item" id="list-item-{{index}}">
+        <span class="list-badge">{{badge}}</span>
+        <span class="list-text">{{text}}</span>
+      </div>
+      {{/items}}
+    </div>
+  </div>
+</div>
+

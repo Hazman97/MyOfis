@@ -254,6 +254,69 @@ describe.skipIf(!ffmpeg || !Bun.which("ffprobe"))("Editor renders on the runner"
       delete process.env.WHISPER_MODEL;
     }
   }, 300_000);
+
+  test("Task 026: video_index caches shot index, video_review checks render, and same-name re-render in same run supersedes the first", async () => {
+    env = await createTestEnv();
+    await env.pairRunner();
+    const project = (await env.api("/api/projects", { body: { slug: "sp26", name: "SmashPoint 26" } })).body.project;
+    const v = await sendVideo(clip, "trailer.mp4");
+    const agent = (
+      await env.api("/api/agents", {
+        body: {
+          slug: "ed26",
+          name: "Editor 26",
+          provider: "mock",
+          model: "mock-script",
+          tools: ["video_index", "video_edit", "video_review", "save_draft"],
+          config: { self_review: false },
+        },
+      })
+    ).body.agent;
+
+    const script = [
+      { tool: "video_index", input: { video: 1 } },
+      // First render (e.g. 2s full clip)
+      { tool: "video_edit", input: { clips: [{ video: 1, start: 0, end: 2 }], name: "trailers", captions: [{ text: "Hook 🔥", start: 0, end: 1.5 }] } },
+      { tool: "video_review", input: { target_min_seconds: 1, target_max_seconds: 1.5, expect_hook: true } },
+      // Second render with the SAME name in the SAME run (trimmed to 1.2s to fit target_max_seconds)
+      { tool: "video_edit", input: { clips: [{ video: 1, start: 0, end: 1.2 }], name: "trailers", captions: [{ text: "Hook 🔥", start: 0, end: 1.1 }] } },
+      { tool: "video_review", input: { target_min_seconds: 1, target_max_seconds: 1.5, expect_hook: true } },
+      { tool: "save_draft", input: { project: "sp26", platform: "tiktok", kind: "video", title: "Trailer Hook", body: "Jom tengok! 🔥 #trailer", self_check: check, video: "last" } },
+      { text: "Delivered clean render." },
+    ];
+    const job = (
+      await env.api("/api/jobs", {
+        body: {
+          agent_id: agent.id,
+          project_id: project.id,
+          title: "index-render-review",
+          input: { script, attachments: [{ id: v.id, name: "trailer.mp4", content_type: "video/mp4" }] },
+        },
+      })
+    ).body.job;
+    await waitFor(() => ["done", "failed"].includes(env.hub.hub.store.state.jobs[job.id]?.status ?? ""), 120_000, "task 026 run");
+    expect(env.hub.hub.store.state.jobs[job.id]?.status).toBe("done");
+
+    // Shot index was cached on the hub
+    const cachedIdx = env.hub.hub.studio.shotIndex(v.id);
+    expect(cachedIdx).toBeTruthy();
+    expect(cachedIdx!.shots.length).toBeGreaterThanOrEqual(1);
+
+    // Only ONE deliverable upload exists for this run (the second render superseded the first!)
+    const runId = env.hub.hub.store.state.jobs[job.id]!.run_ids[0]!;
+    const runUploads = env.hub.hub.db.select().from(uploads).all().filter((u) => u.run_id === runId);
+    expect(runUploads).toHaveLength(1);
+    expect(runUploads[0]!.name).toBe("trailers-tiktok_fhd.mp4");
+
+    // Studio list shows only the latest render + the source video
+    const studioVideos = (await env.api("/api/videos")).body.videos as { id: string; name: string }[];
+    expect(studioVideos.filter((x) => x.name === "trailers-tiktok_fhd.mp4")).toHaveLength(1);
+
+    // But the run log still records both video_edit tool calls
+    const runEvents = (await env.api(`/api/runs/${runId}`)).body.events as { type: string; payload: { tool?: string } }[];
+    const editCalls = runEvents.filter((e) => e.type === "agent.tool_call" && e.payload.tool === "video_edit");
+    expect(editCalls).toHaveLength(2);
+  }, 180_000);
 });
 
 describe("OpenCut watcher", () => {
