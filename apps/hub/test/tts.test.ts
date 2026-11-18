@@ -72,7 +72,8 @@ describe("Hub TTS Integration (Task 029)", () => {
       body: {
         base_url: `http://127.0.0.1:${fakeTts.port}`,
         api_key: "sk-canopy-secret-9999",
-        voice: "af_sarah",
+        model: "custom-tts-v2",
+        voice: "ms_speaker",
         speed: 1.0,
       },
     });
@@ -85,8 +86,13 @@ describe("Hub TTS Integration (Task 029)", () => {
     expect(testRes.status).toBe(200);
     expect(testRes.body.ok).toBe(true);
     expect(testRes.body.bytes).toBe(1024);
+    expect(testRes.body.content_type).toBe("audio/mpeg");
+    expect(typeof testRes.body.audio_base64).toBe("string");
+    expect(Buffer.from(testRes.body.audio_base64, "base64").byteLength).toBe(1024);
     expect(lastAuthHeader).toBe("Bearer sk-canopy-secret-9999");
     expect((lastBody as any)?.input).toBe("Ujian suara penjelas teknologi MyOfis.");
+    expect((lastBody as any)?.model).toBe("custom-tts-v2");
+    expect((lastBody as any)?.voice).toBe("ms_speaker");
   });
 
   test("runner route /api/runner/tts requires authentication and gates by agent tool", async () => {

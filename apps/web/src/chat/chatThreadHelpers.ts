@@ -82,3 +82,84 @@ export function clipSpeechBubble(text: string, maxChars = 60): string {
   return `${cleaned.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
+/** Read a boolean flag ("true" / "false") from storage safely. */
+export function readStoredBool(
+  storage: Pick<Storage, "getItem"> | null | undefined,
+  key: string,
+): boolean | null {
+  try {
+    const v = storage?.getItem(key);
+    if (v === "true") return true;
+    if (v === "false") return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve initial open state: explicit prop wins when defined, else stored value, else false. */
+export function resolveInitialDockOpen(propOpen: boolean | undefined, storedOpen: boolean | null): boolean {
+  return propOpen ?? storedOpen ?? false;
+}
+
+/**
+ * Fetch messages for a thread, apply them to state, and invoke `onReady` strictly AFTER
+ * messages are applied (so scroll-to-bottom sees the loaded messages).
+ */
+export async function fetchAndOpenThread(
+  id: string | null,
+  fetchThread: (id: string) => Promise<ChatMessage[]>,
+  apply: (messages: ChatMessage[]) => void,
+  onReady?: (id: string | null) => void,
+): Promise<string | null> {
+  if (!id) {
+    apply([]);
+    onReady?.(id);
+    return null;
+  }
+  try {
+    const msgs = await fetchThread(id);
+    apply(msgs);
+    return null;
+  } catch (e) {
+    apply([]);
+    return (e as Error).message;
+  } finally {
+    onReady?.(id);
+  }
+}
+
+export interface ReplySnapshot {
+  threadKey: string;
+  replies: Record<string, string>;
+}
+
+/**
+ * Detect whether a real reply arrived for an existing user message in the same thread,
+ * without triggering false unread indicators on initial load or agent/thread switches.
+ */
+export function detectNewReply(
+  prev: ReplySnapshot | null,
+  threadKey: string,
+  items: { job_id: string; reply: string }[],
+  loading: boolean,
+): { next: ReplySnapshot | null; hasNewReply: boolean } {
+  if (loading) return { next: prev, hasNewReply: false };
+  const replies: Record<string, string> = {};
+  for (const item of items) {
+    replies[item.job_id] = item.reply.trim();
+  }
+  const next: ReplySnapshot = { threadKey, replies };
+  if (!prev || prev.threadKey !== threadKey) {
+    return { next, hasNewReply: false };
+  }
+  for (const item of items) {
+    const curr = replies[item.job_id]!;
+    const old = prev.replies[item.job_id];
+    if (curr && old === "") {
+      return { next, hasNewReply: true };
+    }
+  }
+  return { next, hasNewReply: false };
+}
+

@@ -464,6 +464,12 @@ export class OfficeWorld {
         }
       }
     }
+    if (this.#seenChatRuns.size > 200) {
+      for (const id of this.#seenChatRuns) {
+        if (this.#seenChatRuns.size <= 200) break;
+        this.#seenChatRuns.delete(id);
+      }
+    }
 
     // a handoff chain with both ends busy for a while -> meeting room
     const families = busyFamilies(state);

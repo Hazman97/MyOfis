@@ -165,6 +165,7 @@ export const ExplainerScript = z.object({
   outro: z.string().min(5).max(200),
   sources: z.array(z.string().min(2).max(150)).min(1).max(6),
   fact_sheet: z.array(FactSheetItem).optional().default([]),
+  pasted: z.boolean().optional().default(false).describe("Set true only when the owner pasted an unverified script directly"),
 });
 export type ExplainerScript = z.infer<typeof ExplainerScript>;
 export type ExplainerScriptInput = z.input<typeof ExplainerScript>;
@@ -212,21 +213,34 @@ export function validateExplainerScript(script: ExplainerScript): { valid: boole
   return { valid: errors.length === 0, errors };
 }
 
+/** Extract numbers (with optional technical unit) from prose or labels. Pure. */
+export function extractTextNumbers(text?: string | null): string[] {
+  if (!text || typeof text !== "string") return [];
+  const found = text.match(/\b\d+(?:\.\d+)?(?:\s*(?:%|ghz|mhz|khz|gbps|mbps|kbps|ms|s|x|nm|mm|gb|mb|tb|kb)\b)?/gi);
+  return found ? found.map((t) => t.trim()) : [];
+}
+
+/** Normalise a numeric/unit token (e.g. "6 GHz" / "6GHz" / "6.0" -> "6ghz" / "6"). Pure. */
+export function normalizeFactToken(tok: string): string {
+  return tok
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/\.0+(?=[a-z%]*$)/, "");
+}
+
+function factTokenVariants(tok: string): string[] {
+  const norm = normalizeFactToken(tok);
+  const numMatch = norm.match(/^\d+(?:\.\d+)?/);
+  return numMatch && numMatch[0] !== norm ? [norm, numMatch[0]] : [norm];
+}
+
 /** Extract distinct numbers and technical spec tokens from a visual configuration. Pure. */
 export function extractVisualNumbers(visual: ExplainerVisual): string[] {
   const nums = new Set<string>();
 
   const scan = (str?: string | null) => {
-    if (!str || typeof str !== "string") return;
-    // Matches numbers with optional decimals, GHz/MHz/Gbps/Mbps, years like 2024, or standard codes like 802.11
-    const found = str.match(/\b\d+(?:\.\d+)?(?:[a-zA-Z]+)?\b/g);
-    if (found) {
-      for (const tok of found) {
-        // filter out pure small noise like single digit list indices unless relevant
-        const digitsOnly = tok.replace(/\D/g, "");
-        if (digitsOnly.length > 0) nums.add(tok);
-      }
-    }
+    for (const tok of extractTextNumbers(str)) nums.add(tok);
   };
 
   if ("title" in visual && typeof visual.title === "string") {
@@ -287,27 +301,53 @@ export function extractVisualNumbers(visual: ExplainerVisual): string[] {
 }
 
 /**
- * Verify that every numeric and technical claim in the visuals is backed by the fact sheet.
- * Returns ok: true only if all numbers can be traced to a claim or source. Pure.
+ * Verify that every numeric claim in visual, on_screen, and narration matches a `value`
+ * in `fact_sheet` that has a `source_url`. Pasted owner scripts are allowed with `unverified: true`. Pure.
  */
-export function validateNumbersInFactSheet(script: ExplainerScript): { ok: boolean; unverifiedNumbers: string[] } {
+export function validateNumbersInFactSheet(script: ExplainerScript): {
+  ok: boolean;
+  unverifiedNumbers: string[];
+  unverified: boolean;
+} {
+  if (script.pasted) {
+    return { ok: true, unverifiedNumbers: [], unverified: true };
+  }
+
   const sheet = script.fact_sheet ?? [];
-  const factCorpus = sheet
-    .map((item) => `${item.claim} ${item.value}`)
-    .concat(script.sources)
-    .join(" ")
-    .toLowerCase();
+  const validItems = sheet.filter((item) => !!item.source_url && item.source_url.trim().length > 0);
+  if (validItems.length === 0) {
+    return {
+      ok: false,
+      unverifiedNumbers: ["fact_sheet is empty (cite official sources with source_url, or set pasted: true)"],
+      unverified: false,
+    };
+  }
+
+  const allowedExact = new Set<string>();
+  const allowedNumeric = new Set<string>();
+  for (const item of validItems) {
+    for (const tok of extractTextNumbers(item.value)) {
+      const variants = factTokenVariants(tok);
+      allowedExact.add(variants[0]!);
+      if (variants[1]) allowedNumeric.add(variants[1]);
+      else allowedNumeric.add(variants[0]!);
+    }
+  }
 
   const unverified: string[] = [];
 
   for (const scene of script.scenes) {
-    const tokens = extractVisualNumbers(scene.visual);
-    for (const tok of tokens) {
-      const lower = tok.toLowerCase();
-      // Look for the token or its numeric root in the fact sheet corpus
-      const numMatch = lower.match(/\d+(?:\.\d+)?/);
-      const numRoot = numMatch ? numMatch[0] : lower;
-      if (!factCorpus.includes(lower) && !factCorpus.includes(numRoot)) {
+    const sceneTokens = new Set<string>([
+      ...extractVisualNumbers(scene.visual),
+      ...extractTextNumbers(scene.on_screen),
+      ...extractTextNumbers(scene.narration),
+    ]);
+    for (const tok of sceneTokens) {
+      const [norm, numOnly] = factTokenVariants(tok);
+      const matched = numOnly
+        ? allowedExact.has(norm!) || allowedNumeric.has(norm!)
+        : allowedExact.has(norm!) || allowedNumeric.has(norm!);
+      if (!matched) {
         unverified.push(`${tok} in Scene "${scene.id}"`);
       }
     }
@@ -316,209 +356,10 @@ export function validateNumbersInFactSheet(script: ExplainerScript): { ok: boole
   return {
     ok: unverified.length === 0,
     unverifiedNumbers: unverified,
+    unverified: false,
   };
 }
 
 // ---------------------------------------------------------------- Pure 1080×1920 Layout & Safe Areas
 
-export interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
-/**
- * 1080×1920 9:16 safe area margins for TikTok / Reels:
- * - Top safe margin: >= 140px (status bar, search, sounds)
- * - Bottom safe margin: >= 280px (captions, sounds bar, interaction icons)
- * - Horizontal safe margin: >= 64px left & right
- */
-export const TIKTOK_SAFE_AREA = {
-  left: 64,
-  right: 1016,
-  top: 140,
-  bottom: 1640,
-  width: 952,
-  height: 1500,
-};
-
-/** Verify whether a rectangle falls entirely inside TikTok safe area. Pure. */
-export function isInsideSafeArea(r: Rect): boolean {
-  return (
-    r.x >= TIKTOK_SAFE_AREA.left - 1 &&
-    r.x + r.width <= TIKTOK_SAFE_AREA.right + 1 &&
-    r.y >= TIKTOK_SAFE_AREA.top - 1 &&
-    r.y + r.height <= TIKTOK_SAFE_AREA.bottom + 1
-  );
-}
-
-/** Pure layout for Compare Table: computes grid cells and verifies safe area placement. */
-export function layoutCompareTable(cols: number, rows: number): { headerCells: Rect[]; rowCells: Rect[][]; totalBounds: Rect } {
-  const startX = 72;
-  const startY = 320;
-  const tableWidth = 936;
-  const rowHeight = Math.min(160, Math.floor(950 / (rows + 1)));
-  const colWidth = Math.floor(tableWidth / cols);
-
-  const headerCells: Rect[] = [];
-  for (let c = 0; c < cols; c++) {
-    headerCells.push({
-      x: startX + c * colWidth,
-      y: startY,
-      width: colWidth,
-      height: rowHeight,
-    });
-  }
-
-  const rowCells: Rect[][] = [];
-  for (let r = 0; r < rows; r++) {
-    const row: Rect[] = [];
-    for (let c = 0; c < cols; c++) {
-      row.push({
-        x: startX + c * colWidth,
-        y: startY + (r + 1) * rowHeight,
-        width: colWidth,
-        height: rowHeight,
-      });
-    }
-    rowCells.push(row);
-  }
-
-  const totalBounds: Rect = {
-    x: startX,
-    y: startY,
-    width: tableWidth,
-    height: (rows + 1) * rowHeight,
-  };
-
-  return { headerCells, rowCells, totalBounds };
-}
-
-/** Pure layout for Spectrum bands: assigns channels across frequency axis. */
-export function layoutSpectrum(bandsCount: number): { bandRects: Rect[]; axisRect: Rect } {
-  const startX = 80;
-  const startY = 400;
-  const axisWidth = 920;
-  const bandHeight = Math.min(180, Math.floor(800 / bandsCount));
-
-  const bandRects: Rect[] = [];
-  for (let i = 0; i < bandsCount; i++) {
-    bandRects.push({
-      x: startX,
-      y: startY + i * (bandHeight + 32),
-      width: axisWidth,
-      height: bandHeight,
-    });
-  }
-
-  const axisRect: Rect = {
-    x: startX,
-    y: startY,
-    width: axisWidth,
-    height: bandsCount * (bandHeight + 32),
-  };
-
-  return { bandRects, axisRect };
-}
-
-/** Pure layout for Bar Chart: computes vertical growing bar bounding boxes. */
-export function layoutBarChart(barsCount: number): { barRects: Rect[]; axisRect: Rect } {
-  const startX = 96;
-  const startY = 360;
-  const chartWidth = 888;
-  const chartHeight = 750;
-  const colWidth = Math.floor(chartWidth / barsCount);
-  const barWidth = Math.max(48, Math.floor(colWidth * 0.65));
-
-  const barRects: Rect[] = [];
-  for (let i = 0; i < barsCount; i++) {
-    barRects.push({
-      x: startX + i * colWidth + Math.floor((colWidth - barWidth) / 2),
-      y: startY + 50,
-      width: barWidth,
-      height: chartHeight - 50,
-    });
-  }
-
-  const axisRect: Rect = {
-    x: startX,
-    y: startY,
-    width: chartWidth,
-    height: chartHeight,
-  };
-
-  return { barRects, axisRect };
-}
-
-/** Pure layout for Timeline: computes alternating milestone points along a center line. */
-export function layoutTimeline(pointsCount: number): { pointNodes: Rect[]; spineLine: Rect } {
-  const centerX = 540;
-  const startY = 340;
-  const timelineHeight = Math.min(1000, pointsCount * 180);
-  const stepY = Math.floor(timelineHeight / (pointsCount - 1 || 1));
-
-  const pointNodes: Rect[] = [];
-  for (let i = 0; i < pointsCount; i++) {
-    const isLeft = i % 2 === 0;
-    const cardWidth = 360;
-    pointNodes.push({
-      x: isLeft ? centerX - cardWidth - 36 : centerX + 36,
-      y: startY + i * stepY - 40,
-      width: cardWidth,
-      height: 100,
-    });
-  }
-
-  const spineLine: Rect = {
-    x: centerX - 2,
-    y: startY,
-    width: 4,
-    height: timelineHeight,
-  };
-
-  return { pointNodes, spineLine };
-}
-
-/** Pure layout for Diagram: arranges 2 to 6 nodes in a balanced flow. */
-export function layoutDiagram(nodesCount: number): { nodeRects: Rect[]; flowBounds: Rect } {
-  const startY = 400;
-  const nodeWidth = 240;
-  const nodeHeight = 160;
-  const nodeRects: Rect[] = [];
-
-  if (nodesCount <= 3) {
-    // Single vertical stack
-    const stepY = 280;
-    const x = 540 - nodeWidth / 2;
-    for (let i = 0; i < nodesCount; i++) {
-      nodeRects.push({ x, y: startY + i * stepY, width: nodeWidth, height: nodeHeight });
-    }
-  } else {
-    // 2 columns
-    const cols = 2;
-    const rows = Math.ceil(nodesCount / cols);
-    const colSpacing = 420;
-    const stepY = 260;
-    for (let i = 0; i < nodesCount; i++) {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const x = 540 - colSpacing / 2 + col * (colSpacing - nodeWidth);
-      nodeRects.push({ x, y: startY + row * stepY, width: nodeWidth, height: nodeHeight });
-    }
-  }
-
-  const minX = Math.min(...nodeRects.map((n) => n.x));
-  const maxX = Math.max(...nodeRects.map((n) => n.x + n.width));
-  const minY = Math.min(...nodeRects.map((n) => n.y));
-  const maxY = Math.max(...nodeRects.map((n) => n.y + n.height));
-
-  const flowBounds: Rect = {
-    x: minX,
-    y: minY,
-    width: maxX - minX,
-    height: maxY - minY,
-  };
-
-  return { nodeRects, flowBounds };
-}

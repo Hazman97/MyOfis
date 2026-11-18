@@ -13,7 +13,7 @@ import { OPENCHATCUT_TOOLS } from "./openchatcut.ts";
 import { DOC_TOOLS } from "./docs.ts";
 import { meetingTranscribeTool } from "./meeting.ts";
 import { motionRenderTool } from "./motion.ts";
-import { clipFindTool, clipRenderTool } from "./clipFactory.ts";
+import { clipFindTool, clipRenderTool, clipScoreTool } from "./clipFactory.ts";
 import { explainerRenderTool } from "./explainer.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -32,6 +32,7 @@ export {
   clipLengths,
   emojiFontName,
   evaluateReview,
+  isHdPrepared,
   isTiktokHdPrepared,
   parseBlackdetect,
   parseCropdetect,
@@ -51,7 +52,7 @@ export {
 export { EditPlan } from "@agent-office/shared";
 export { openchatcutToken, parseMcpBody } from "./openchatcut.ts";
 export { meetingWhisperArgs } from "./meeting.ts";
-export { clipFindTool, clipRenderTool } from "./clipFactory.ts";
+export { clipFindTool, clipRenderTool, clipScoreTool } from "./clipFactory.ts";
 export { explainerRenderTool } from "./explainer.ts";
 export { buildHyperframesArgs, hyperframesBinary, motionEnv, motionRenderTool } from "./motion.ts";
 export { chooseClips, clipKey, musicTracks, readIndex, scanFolder, type ClipEntry } from "./clips.ts";
@@ -81,6 +82,7 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     meetingTranscribeTool,
     motionRenderTool,
     clipFindTool,
+    clipScoreTool,
     clipRenderTool,
     explainerRenderTool,
   ].map((t) => [t.name, t as unknown as ToolDef]),

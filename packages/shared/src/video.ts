@@ -5,13 +5,15 @@ import { z } from "zod";
  * faststart, which TikTok, Instagram, YouTube and Facebook all accept without complaint; the
  * bitrate cap is high enough that the platform's own re-encode starts from a clean picture.
  */
-export const VideoPresetId = z.enum(["tiktok_fhd", "reels", "youtube_shorts", "youtube_1080p", "square"]);
+export const VideoPresetId = z.enum(["tiktok_fhd", "reels", "youtube_shorts", "youtube_1080p", "square", "whatsapp_hd", "whatsapp_v"]);
 export type VideoPresetId = z.infer<typeof VideoPresetId>;
 
 export interface VideoPreset {
   label: string;
   width: number;
   height: number;
+  /** Keep source orientation and aspect ratio (no crop, blur, or padding). */
+  keep_aspect?: boolean;
   /** Longest video the platform takes (seconds). */
   max_seconds: number;
   /** Peak video bitrate (Mbit/s). */
@@ -25,6 +27,8 @@ export const VIDEO_PRESETS: Record<VideoPresetId, VideoPreset> = {
   youtube_shorts: { label: "YouTube Shorts 1080×1920 (9:16)", width: 1080, height: 1920, max_seconds: 180, max_mbps: 16, audio_kbps: 192 },
   youtube_1080p: { label: "YouTube 1920×1080 (16:9)", width: 1920, height: 1080, max_seconds: 4 * 3600, max_mbps: 16, audio_kbps: 192 },
   square: { label: "Square 1080×1080 (1:1)", width: 1080, height: 1080, max_seconds: 600, max_mbps: 12, audio_kbps: 192 },
+  whatsapp_hd: { label: "WhatsApp HD (keep aspect ≤1280)", width: 1280, height: 1280, keep_aspect: true, max_seconds: 3600, max_mbps: 2.5, audio_kbps: 128 },
+  whatsapp_v: { label: "WhatsApp Status 720×1280 (9:16)", width: 720, height: 1280, max_seconds: 600, max_mbps: 2.5, audio_kbps: 128 },
 };
 
 /** Video files the owner may send (chat, Telegram) and Editor may produce. */
@@ -78,7 +82,7 @@ export function mediaTypeFromName(name: string): string | null {
  * Jobs the runner does without the AI (no provider, key or tokens): the one tool each may use.
  * video_render = the Video Studio's "Render again"; video_transcribe = its "Transcribe".
  */
-export const DIRECT_JOBS: Record<string, string> = { video_render: "video_edit", video_transcribe: "video_transcribe", tiktok_hd: "video_tiktok_hd" };
+export const DIRECT_JOBS: Record<string, string> = { video_render: "video_edit", video_transcribe: "video_transcribe", tiktok_hd: "video_tiktok_hd", video_hd: "video_hd" };
 
 // ---------------------------------------------------------------- TikTok HD (owner request 2026-10-20, like zilemmethod.com)
 
@@ -116,33 +120,135 @@ export interface TikTokHdPlan {
   fit: "crop" | "blur";
 }
 
+export const HdTarget = z.enum(["tiktok", "whatsapp", "whatsapp_status"]);
+export type HdTarget = z.infer<typeof HdTarget>;
+
+export interface HdTargetSpec {
+  label: string;
+  width: number;
+  height: number;
+  keep_aspect: boolean;
+  fps: "30|60" | 30;
+  max_mbps: number;
+  audio_kbps: number;
+  max_seconds?: number;
+  soft_max_mb: number;
+}
+
 /** TikTok's longest upload, and a size above which its app compresses harder. */
 export const TIKTOK_MAX_SECONDS = 600;
 export const TIKTOK_HD_MAX_MB = 280;
 /** Above this, TikTok's re-encode throws most of it away anyway; re-encoding first keeps control. */
 export const TIKTOK_HD_MAX_MBPS = 30;
 
+/** WhatsApp HD re-encodes to at most 720p (long edge 1280); unverified third-party source (2026-11-18). */
+export const WA_MAX_EDGE = 1280;
+/** Target ~1.5–2.5 Mbit/s so WhatsApp barely re-encodes; unverified third-party source (2026-11-18). */
+export const WA_MAX_MBPS = 2.5;
+/** Status clips longer than 60 s are split by WhatsApp into parts; unverified third-party source (2026-11-18). */
+export const WA_STATUS_MAX_SECONDS = 60;
+/** Soft size warning threshold (reports differ: 16 / 64 / 100 MB), never a hard refusal; unverified third-party source (2026-11-18). */
+export const WA_MAX_MB = 64;
+
+export const HD_TARGETS: Record<HdTarget, HdTargetSpec> = {
+  tiktok: {
+    label: "TikTok HD",
+    width: 1080,
+    height: 1920,
+    keep_aspect: false,
+    fps: "30|60",
+    max_mbps: TIKTOK_HD_MAX_MBPS,
+    audio_kbps: 192,
+    max_seconds: TIKTOK_MAX_SECONDS,
+    soft_max_mb: TIKTOK_HD_MAX_MB,
+  },
+  whatsapp: {
+    label: "WhatsApp HD",
+    width: WA_MAX_EDGE,
+    height: WA_MAX_EDGE,
+    keep_aspect: true,
+    fps: 30,
+    max_mbps: WA_MAX_MBPS,
+    audio_kbps: 128,
+    soft_max_mb: WA_MAX_MB,
+  },
+  whatsapp_status: {
+    label: "WhatsApp Status",
+    width: 720,
+    height: WA_MAX_EDGE,
+    keep_aspect: false,
+    fps: 30,
+    max_mbps: WA_MAX_MBPS,
+    audio_kbps: 128,
+    max_seconds: WA_STATUS_MAX_SECONDS,
+    soft_max_mb: WA_MAX_MB,
+  },
+};
+
+export interface HdPlan extends TikTokHdPlan {
+  /** Non-fatal warnings (e.g. Status > 60 s split notice, WhatsApp > 64 MB soft size notice). */
+  warnings: string[];
+}
+
 const near = (a: number, b: number) => Math.abs(a - b) <= 0.5;
 
-export function tiktokHdPlan(p: TikTokHdFacts, mode: TikTokHdMode = "auto"): TikTokHdPlan {
-  if (p.duration > TIKTOK_MAX_SECONDS) throw new Error(`the video is ${Math.round(p.duration)} s; TikTok takes at most ${TIKTOK_MAX_SECONDS} s`);
-  const fps: 30 | 60 = p.fps >= 45 ? 60 : 30;
+export function hdPlan(p: TikTokHdFacts, target: HdTarget = "tiktok", mode: TikTokHdMode = "auto"): HdPlan {
+  const warnings: string[] = [];
+  if (target === "tiktok") {
+    if (p.duration > TIKTOK_MAX_SECONDS) throw new Error(`the video is ${Math.round(p.duration)} s; TikTok takes at most ${TIKTOK_MAX_SECONDS} s`);
+    const fps: 30 | 60 = p.fps >= 45 ? 60 : 30;
+    const ratio = p.width / p.height;
+    // close to 9:16 → fill the frame (a sliver is cut); wide or square → whole picture on a blurred copy
+    const fit = Math.abs(ratio - 9 / 16) < 0.04 ? "crop" : "blur";
+    const reasons: string[] = [];
+    if (!(p.width === 1080 && p.height === 1920)) reasons.push(`size ${p.width}×${p.height}, TikTok plays 1080×1920`);
+    if (!near(p.fps, 30) && !near(p.fps, 60) && !near(p.fps, 29.97) && !near(p.fps, 59.94)) reasons.push(`${p.fps} fps, TikTok wants 30 or 60`);
+    if (p.vfr) reasons.push("variable frame rate (phone recording)");
+    if (!["h264", "hevc"].includes(p.video_codec)) reasons.push(`codec ${p.video_codec}, TikTok wants H.264 or HEVC`);
+    if (p.pix_fmt && p.pix_fmt !== "unknown" && p.pix_fmt !== "yuv420p" && p.pix_fmt !== "yuvj420p") reasons.push(`colour format ${p.pix_fmt} (10-bit/HDR), TikTok wants 8-bit`);
+    if (p.audio_codec && p.audio_codec !== "aac") reasons.push(`sound ${p.audio_codec}, TikTok wants AAC`);
+    if (p.rotation) reasons.push(`rotated ${p.rotation}° by metadata`);
+    if ((p.mbps ?? 0) > TIKTOK_HD_MAX_MBPS) reasons.push(`${p.mbps} Mbit/s is more than TikTok keeps`);
+    if (p.size_bytes > TIKTOK_HD_MAX_MB * 1024 ** 2) reasons.push(`${Math.round(p.size_bytes / 1024 ** 2)} MB, TikTok compresses big files harder`);
+    if (mode === "remux") return { mode: "remux", reasons: [], fps, fit, warnings };
+    if (mode === "reencode") return { mode: "reencode", reasons: reasons.length ? reasons : ["re-encode asked for"], fps, fit, warnings };
+    return { mode: reasons.length ? "reencode" : "remux", reasons, fps, fit, warnings };
+  }
+
+  const fps: 30 | 60 = 30;
   const ratio = p.width / p.height;
-  // close to 9:16 → fill the frame (a sliver is cut); wide or square → whole picture on a blurred copy
-  const fit = Math.abs(ratio - 9 / 16) < 0.04 ? "crop" : "blur";
+  const fit: "crop" | "blur" = target === "whatsapp_status" ? (Math.abs(ratio - 9 / 16) < 0.04 ? "crop" : "blur") : "crop";
   const reasons: string[] = [];
-  if (!(p.width === 1080 && p.height === 1920)) reasons.push(`size ${p.width}×${p.height}, TikTok plays 1080×1920`);
-  if (!near(p.fps, 30) && !near(p.fps, 60) && !near(p.fps, 29.97) && !near(p.fps, 59.94)) reasons.push(`${p.fps} fps, TikTok wants 30 or 60`);
+
+  if (target === "whatsapp") {
+    if (Math.max(p.width, p.height) > WA_MAX_EDGE) reasons.push(`size ${p.width}×${p.height}, WhatsApp HD keeps at most 720p (1280)`);
+  } else {
+    if (!(p.width === 720 && p.height === 1280)) reasons.push(`size ${p.width}×${p.height}, WhatsApp Status plays 720×1280`);
+  }
+  if (!near(p.fps, 30) && !near(p.fps, 29.97)) reasons.push(`${p.fps} fps, WhatsApp wants 30`);
   if (p.vfr) reasons.push("variable frame rate (phone recording)");
-  if (!["h264", "hevc"].includes(p.video_codec)) reasons.push(`codec ${p.video_codec}, TikTok wants H.264 or HEVC`);
-  if (p.pix_fmt && p.pix_fmt !== "unknown" && p.pix_fmt !== "yuv420p" && p.pix_fmt !== "yuvj420p") reasons.push(`colour format ${p.pix_fmt} (10-bit/HDR), TikTok wants 8-bit`);
-  if (p.audio_codec && p.audio_codec !== "aac") reasons.push(`sound ${p.audio_codec}, TikTok wants AAC`);
+  if (p.video_codec !== "h264") reasons.push(`codec ${p.video_codec}, WhatsApp wants H.264`);
+  if (p.pix_fmt && p.pix_fmt !== "unknown" && p.pix_fmt !== "yuv420p" && p.pix_fmt !== "yuvj420p") reasons.push(`colour format ${p.pix_fmt} (10-bit/HDR), WhatsApp wants 8-bit`);
+  if (p.audio_codec && p.audio_codec !== "aac") reasons.push(`sound ${p.audio_codec}, WhatsApp wants AAC`);
   if (p.rotation) reasons.push(`rotated ${p.rotation}° by metadata`);
-  if ((p.mbps ?? 0) > TIKTOK_HD_MAX_MBPS) reasons.push(`${p.mbps} Mbit/s is more than TikTok keeps`);
-  if (p.size_bytes > TIKTOK_HD_MAX_MB * 1024 ** 2) reasons.push(`${Math.round(p.size_bytes / 1024 ** 2)} MB, TikTok compresses big files harder`);
-  if (mode === "remux") return { mode: "remux", reasons: [], fps, fit };
-  if (mode === "reencode") return { mode: "reencode", reasons: reasons.length ? reasons : ["re-encode asked for"], fps, fit };
-  return { mode: reasons.length ? "reencode" : "remux", reasons, fps, fit };
+  if ((p.mbps ?? 0) > WA_MAX_MBPS) reasons.push(`${p.mbps} Mbit/s is above WhatsApp target (${WA_MAX_MBPS} Mbit/s)`);
+
+  if (target === "whatsapp_status" && p.duration > WA_STATUS_MAX_SECONDS) {
+    const parts = Math.ceil(p.duration / WA_STATUS_MAX_SECONDS);
+    warnings.push(`${Math.round(p.duration)} s is over ${WA_STATUS_MAX_SECONDS} s; WhatsApp will split it into ${parts} parts`);
+  }
+  if (p.size_bytes > WA_MAX_MB * 1024 ** 2) {
+    warnings.push(`${Math.round(p.size_bytes / 1024 ** 2)} MB is over ${WA_MAX_MB} MB; WhatsApp may reject or compress it`);
+  }
+
+  if (mode === "remux") return { mode: "remux", reasons: [], fps, fit, warnings };
+  if (mode === "reencode") return { mode: "reencode", reasons: reasons.length ? reasons : ["re-encode asked for"], fps, fit, warnings };
+  return { mode: reasons.length ? "reencode" : "remux", reasons, fps, fit, warnings };
+}
+
+export function tiktokHdPlan(p: TikTokHdFacts, mode: TikTokHdMode = "auto"): TikTokHdPlan {
+  const { warnings: _w, ...plan } = hdPlan(p, "tiktok", mode);
+  return plan;
 }
 /** Renders and transcripts of long videos take time: they get at least this many minutes. */
 export const DIRECT_JOB_MIN_MINUTES = 120;

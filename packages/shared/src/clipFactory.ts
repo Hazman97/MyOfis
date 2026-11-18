@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { ShotInfo, VideoPreset } from "./video.ts";
-import { emojiFontName, wrapAssEmoji } from "./video.ts";
 import type { Transcript, TranscriptWord } from "./transcript.ts";
 
 /**
@@ -42,19 +41,31 @@ export const ClipCandidateSchema = z.object({
   start: z.number(),
   end: z.number(),
   duration: z.number(),
-  score: z.number().int().min(0).max(99),
-  subscores: ViralitySubscoresSchema,
-  reasons: ViralityReasonsSchema,
+  score: z.number().int().min(0).max(99).nullable(),
+  unscored: z.boolean().optional(),
+  subscores: ViralitySubscoresSchema.nullable(),
+  reasons: ViralityReasonsSchema.nullable(),
   summary_reason: z.string(),
   transcript: z.string(),
   headline: z.string(),
-  hooks: z.array(z.string()).min(1).max(5),
+  hooks: z.array(z.string()).max(5),
   chosen_hook: z.string(),
-  caption_post: z.string(),
+  caption_post: z.string().optional(),
   source: z.enum(["speech", "visual_shots", "audio_peaks"]),
   audio_peak_at: z.number().optional(),
 });
 export type ClipCandidate = z.infer<typeof ClipCandidateSchema>;
+
+export const ClipScoreItemSchema = z.object({
+  id: z.string().min(1),
+  subscores: ViralitySubscoresSchema,
+  reasons: ViralityReasonsSchema,
+  hooks: z.array(z.string().min(1).max(100)).min(1).max(5),
+  headline: z.string().min(1).max(120),
+  summary_reason: z.string().min(1).max(400),
+  caption_post: z.string().max(2000).optional(),
+});
+export type ClipScoreItem = z.infer<typeof ClipScoreItemSchema>;
 
 export interface Sentence {
   text: string;
@@ -202,7 +213,94 @@ export function parseAudioEnergyPeaks(eburLog: string, thresholdLufs = -20): num
 
 // ---------------------------------------------------------------- 3. Candidate Window Generation & De-duplication
 
-/** Generate candidate windows from transcript sentences, audio peaks, or visual shots. Pure. */
+/** Snap an edge timestamp to the nearest shot cut within ±toleranceSec if one exists. Pure. */
+function snapEdgeToShotCut(t: number, shots: ShotInfo[] | null | undefined, toleranceSec = 1.0): { t: number; snapped: boolean } {
+  if (!shots?.length) return { t, snapped: false };
+  let best = t;
+  let bestDist = toleranceSec + 0.001;
+  for (const s of shots) {
+    for (const edge of [s.start, s.end]) {
+      const dist = Math.abs(edge - t);
+      if (dist <= toleranceSec && dist < bestDist) {
+        bestDist = dist;
+        best = edge;
+      }
+    }
+  }
+  return { t: Number(best.toFixed(2)), snapped: best !== t };
+}
+
+function rankWindow(text: string, start: number, end: number, promptKeywords: string[], audioPeaks: number[], shotSnapped: boolean): number {
+  const lower = text.toLowerCase();
+  let score = 0;
+  for (const kw of promptKeywords) {
+    if (lower.includes(kw)) score += 20;
+  }
+  for (const peak of audioPeaks) {
+    if (peak >= start && peak <= end) {
+      score += 15;
+      break;
+    }
+  }
+  if (shotSnapped) score += 5;
+  return score;
+}
+
+/**
+ * Spread windows across the entire video by splitting [0, duration] into N equal buckets
+ * and picking the highest-ranked windows from each bucket in round-robin order. Pure.
+ */
+export function spreadWindowsAcrossVideo(
+  windows: CandidateWindow[],
+  duration: number,
+  maxWindows: number,
+  promptKeywords: string[] = [],
+  audioPeaks: number[] = [],
+): CandidateWindow[] {
+  if (windows.length <= maxWindows) return windows;
+  const bucketCount = Math.min(maxWindows, Math.max(3, Math.ceil(duration / 60)));
+  const bucketSize = Math.max(1, duration / bucketCount);
+  const buckets: CandidateWindow[][] = Array.from({ length: bucketCount }, () => []);
+
+  for (const w of windows) {
+    const mid = (w.start + w.end) / 2;
+    const bIdx = Math.min(bucketCount - 1, Math.max(0, Math.floor(mid / bucketSize)));
+    buckets[bIdx]!.push(w);
+  }
+
+  for (const b of buckets) {
+    b.sort(
+      (a, c) =>
+        rankWindow(c.transcript, c.start, c.end, promptKeywords, audioPeaks, false) -
+          rankWindow(a.transcript, a.start, a.end, promptKeywords, audioPeaks, false) ||
+        a.start - c.start,
+    );
+  }
+
+  const picked: CandidateWindow[] = [];
+  const used = new Set<string>();
+  let round = 0;
+  while (picked.length < maxWindows) {
+    let addedInRound = false;
+    for (const b of buckets) {
+      const item = b[round];
+      if (item && !used.has(item.id)) {
+        used.add(item.id);
+        picked.push(item);
+        addedInRound = true;
+        if (picked.length >= maxWindows) break;
+      }
+    }
+    if (!addedInRound) break;
+    round++;
+  }
+  return picked.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Generate candidate windows across the full length of the video.
+ * Combines speech sentence boundaries, shot cuts (±1 s snap), topic keyword ranking, and audio energy peaks. Pure.
+ */
 export function findCandidateWindows(opts: {
   transcript?: Transcript | null;
   shots?: ShotInfo[] | null;
@@ -211,27 +309,28 @@ export function findCandidateWindows(opts: {
   maxDuration?: number;
   audioPeaks?: number[];
   prompt?: string;
+  maxCandidates?: number;
 }): CandidateWindow[] {
   const minDur = opts.minDuration ?? 15;
   const maxDur = opts.maxDuration ?? 90;
+  const targetDur = Math.min(maxDur, Math.max(minDur, Math.round((minDur + maxDur) / 2)));
+  const maxCandidates = opts.maxCandidates ?? 16;
+  const audioPeaks = opts.audioPeaks ?? [];
+  const promptKeywords = (opts.prompt ?? "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((k) => k.length >= 3);
   const windows: CandidateWindow[] = [];
 
   const sentences = opts.transcript ? extractSentences(opts.transcript) : [];
 
   if (sentences.length > 0) {
-    // 1. Windows based on sentences & prompt/topic matches
-    const promptKeywords = (opts.prompt ?? "")
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((k) => k.length >= 3);
-
-    // Anchor windows: starting at sentence i, gather sentences until reaching target duration (30-60s)
+    // 1. Walk the entire transcript (no early stop at 12 windows)
     let idx = 0;
-    let windowCount = 0;
-    while (idx < sentences.length && windowCount < 12) {
+    while (idx < sentences.length) {
       let curWords: Transcript["words"] = [];
       const startSentence = sentences[idx]!;
-      const winStart = startSentence.start;
+      let winStart = startSentence.start;
       let winEnd = startSentence.end;
       let endIdx = idx;
 
@@ -240,11 +339,19 @@ export function findCandidateWindows(opts: {
         if (s.end - winStart > maxDur && curWords.length > 0) break;
         curWords.push(...s.words);
         winEnd = s.end;
-        if (winEnd - winStart >= Math.min(35, minDur)) {
+        if (winEnd - winStart >= Math.min(targetDur, minDur + 10)) {
           endIdx++;
           break;
         }
         endIdx++;
+      }
+
+      // Snap edges to shot cuts within ±1 s when duration remains valid
+      const sCut = snapEdgeToShotCut(winStart, opts.shots, 1.0);
+      const eCut = snapEdgeToShotCut(winEnd, opts.shots, 1.0);
+      if (eCut.t - sCut.t >= minDur && eCut.t - sCut.t <= maxDur) {
+        winStart = sCut.t;
+        winEnd = eCut.t;
       }
 
       const dur = winEnd - winStart;
@@ -259,23 +366,30 @@ export function findCandidateWindows(opts: {
           words: curWords,
           source: "speech",
         });
-        windowCount++;
       }
 
-      // Step forward by 2-3 sentences to allow overlapping candidate views
+      // Step forward by 2-3 sentences to allow overlapping candidate views across the full video
       idx = Math.max(idx + 1, Math.min(endIdx, idx + 3));
     }
 
-    // 2. Extra windows anchored at audio energy peaks
-    for (const peak of opts.audioPeaks || []) {
+    // 2. Extra windows anchored at audio energy peaks across the video
+    for (const peak of audioPeaks) {
       const snapped = snapToSentenceBoundaries(sentences, Math.max(0, peak - 8), Math.min(opts.duration, peak + 22), minDur, maxDur);
       if (snapped.sentences.length > 0) {
-        const dur = snapped.end - snapped.start;
+        let wStart = snapped.start;
+        let wEnd = snapped.end;
+        const sCut = snapEdgeToShotCut(wStart, opts.shots, 1.0);
+        const eCut = snapEdgeToShotCut(wEnd, opts.shots, 1.0);
+        if (eCut.t - sCut.t >= minDur && eCut.t - sCut.t <= maxDur) {
+          wStart = sCut.t;
+          wEnd = eCut.t;
+        }
+        const dur = Number((wEnd - wStart).toFixed(2));
         const allWords = snapped.sentences.flatMap((s) => s.words);
         windows.push({
           id: `win_peak_${windows.length + 1}`,
-          start: snapped.start,
-          end: snapped.end,
+          start: wStart,
+          end: wEnd,
           duration: dur,
           transcript: snapped.sentences.map((s) => s.text).join(" "),
           words: allWords,
@@ -285,7 +399,7 @@ export function findCandidateWindows(opts: {
       }
     }
   } else if (opts.shots && opts.shots.length > 0) {
-    // Visual-only video without transcript: group shots into coherent scenes
+    // Visual-only video without transcript: group shots into coherent scenes across the full video
     const shots = opts.shots;
     let curStart = shots[0]!.start;
     let curEnd = shots[0]!.end;
@@ -308,28 +422,16 @@ export function findCandidateWindows(opts: {
           words: [],
           source: "visual_shots",
         });
-        // advance
         shotIdx = i + 1;
         if (shotIdx < shots.length) {
           curStart = shots[shotIdx]!.start;
         }
       }
     }
-  } else {
-    // Total fallback for un-indexed empty audio: 1 single window of minDuration
-    const dur = Math.min(opts.duration, Math.max(minDur, 30));
-    windows.push({
-      id: "win_fallback_1",
-      start: 0,
-      end: dur,
-      duration: dur,
-      transcript: "",
-      words: [],
-      source: "speech",
-    });
   }
 
-  return mergeOverlappingWindows(windows);
+  const merged = mergeOverlappingWindows(windows);
+  return spreadWindowsAcrossVideo(merged, opts.duration, maxCandidates, promptKeywords, audioPeaks);
 }
 
 /** Merge heavily overlapping candidate windows (> 35% overlap) to avoid duplicate cuts. Pure. */
@@ -364,6 +466,31 @@ export function mergeOverlappingWindows(windows: CandidateWindow[], maxOverlapPc
 // ---------------------------------------------------------------- 4. Virality Scoring & Model Prompt
 
 export const SCORING_PROMPT_VERSION = "v1.0";
+
+export const CLIP_SCORE_PROMPT_V1 = `CLIP_SCORE_PROMPT_V1:
+For each candidate window returned by clip_find, evaluate the transcript text, duration, audio peak signal, and shot cuts.
+Return a JSON array (or call clip_score directly) with objects matching this exact schema:
+{
+  "id": "<window id from clip_find>",
+  "subscores": {
+    "hook": <0-100>,
+    "value": <0-100>,
+    "emotion": <0-100>,
+    "flow": <0-100>,
+    "trend": <0-100>
+  },
+  "reasons": {
+    "hook": "<1 sentence why the first 3s grab or lose attention>",
+    "value": "<1 sentence on practical insight/takeaway>",
+    "emotion": "<1 sentence on energy, humor, shock, or warmth>",
+    "flow": "<1 sentence on pacing and sentence completeness>",
+    "trend": "<1 sentence on topic/short-form relevance>"
+  },
+  "hooks": ["<hook 1>", "<hook 2>", "<hook 3>"],
+  "headline": "<catchy title under 10 words>",
+  "summary_reason": "<1 sentence overall justification>"
+}
+Rules: Judge each clip independently on its actual transcript. Never reuse constant scores across clips.`;
 
 /**
  * Calculate overall virality score 0..99 using the OpusClip formula. Pure.
@@ -413,31 +540,36 @@ export function buildScoringPrompt(opts: {
     .join("\n");
 }
 
-/** Parse structured model response from the scoring prompt. Pure. */
+/**
+ * Parse structured model response from the scoring prompt. Pure.
+ * Returns null if any required subscore dimension is missing (never invents numeric fallbacks).
+ */
 export function parseModelScoring(
   rawText: string,
-  fallbackContext: { transcript: string; duration: number; userPrompt?: string },
+  _context?: { transcript: string; duration: number; userPrompt?: string },
 ): {
   subscores: ViralitySubscores;
   reasons: ViralityReasons;
   summary_reason: string;
   hooks: string[];
   headline: string;
-} {
-  const parseLine = (name: string, defaultScore: number): { score: number; reason: string } => {
+} | null {
+  const parseLine = (name: string): { score: number; reason: string } | null => {
     const re = new RegExp(`-\\s*${name}\\s*:\\s*(\\d+)(?:\\s*\\/\\s*100)?\\s*(?:\\|\\s*(?:reason\\s*:\\s*)?(.*))?`, "i");
     const m = rawText.match(re);
-    if (!m) return { score: defaultScore, reason: `AI estimate based on ${name.toLowerCase()} analysis` };
+    if (!m) return null;
     const score = Math.max(0, Math.min(100, Number(m[1])));
-    const reason = (m[2] || "").trim() || `Solid ${name.toLowerCase()}`;
+    const reason = (m[2] || "").trim();
+    if (!reason) return null;
     return { score, reason };
   };
 
-  const hook = parseLine("Hook", 65);
-  const value = parseLine("Value", 70);
-  const emotion = parseLine("Emotion", 60);
-  const flow = parseLine("Flow", 75);
-  const trend = parseLine("Trend", 65);
+  const hook = parseLine("Hook");
+  const value = parseLine("Value");
+  const emotion = parseLine("Emotion");
+  const flow = parseLine("Flow");
+  const trend = parseLine("Trend");
+  if (!hook || !value || !emotion || !flow || !trend) return null;
 
   const subscores: ViralitySubscores = {
     hook: hook.score,
@@ -455,7 +587,6 @@ export function parseModelScoring(
     trend: trend.reason,
   };
 
-  // Extract hooks
   const hooks: string[] = [];
   const hookMatches = [...rawText.matchAll(/^\s*\d+\.\s*(.+)$/gm)];
   for (const hm of hookMatches) {
@@ -463,24 +594,11 @@ export function parseModelScoring(
     if (h && hooks.length < 3) hooks.push(h);
   }
 
-  // Extract title
   const titleMatch = rawText.match(/Title\s*:\s*(.+)$/im);
-  let headline = titleMatch ? titleMatch[1]!.replace(/^["']|["']$/g, "").trim() : "";
-  if (!headline) {
-    headline = fallbackContext.transcript.slice(0, 45).trim() || "Sorotan Terbaik";
-  }
-
-  if (hooks.length === 0) {
-    hooks.push(`🔥 ${headline}`);
-    hooks.push(`Tengok Sampai Habis!`);
-    hooks.push(`Rahsia Yang Ramai Terlepas`);
-  }
-
-  // Summary reason
+  const headline = titleMatch ? titleMatch[1]!.replace(/^["']|["']$/g, "").trim() : "";
   const summaryMatch = rawText.match(/Summary\s*:\s*(.+)$/im);
-  const summary_reason = summaryMatch
-    ? summaryMatch[1]!.trim()
-    : `${reasons.hook}. ${reasons.value}`;
+  const summary_reason = summaryMatch ? summaryMatch[1]!.trim() : `${reasons.hook}. ${reasons.value}`;
+  if (!headline || hooks.length === 0) return null;
 
   return {
     subscores,
@@ -580,7 +698,6 @@ export function generateAnimatedCaptions(
   clipStart: number,
   clipEnd: number,
   preset: CaptionPreset = "pop",
-  emojiFont = emojiFontName(),
 ): { start: number; end: number; text: string; animation: "pop" | "fade" | "none" }[] {
   const inRange = words.filter((w: TranscriptWord) => w.s >= clipStart - 0.2 && w.e <= clipEnd + 0.2);
   if (!inRange.length) return [];
@@ -616,12 +733,11 @@ export function generateAnimatedCaptions(
     }
 
     const rawSentence = c.map((w: TranscriptWord) => w.w).join(" ") + emoji;
-    const wrappedText = wrapAssEmoji(rawSentence, emojiFont);
 
     results.push({
       start: cStart,
       end: cEnd,
-      text: wrappedText,
+      text: rawSentence,
       animation: preset === "pop" || preset === "neon" ? "pop" : "fade",
     });
   }

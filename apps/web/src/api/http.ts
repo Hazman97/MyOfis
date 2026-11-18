@@ -6,6 +6,7 @@ import type {
   DraftDecision,
   EditPlan,
   EditSuggestions,
+  HdTarget,
   LogEntry,
   ProjectDoc,
   FeatureNote,
@@ -119,6 +120,7 @@ export interface TtsSettings {
   base_url: string;
   has_key: boolean;
   key_hint: string | null;
+  model: string;
   voice: string;
   speed: number;
 }
@@ -304,12 +306,13 @@ export interface StoragePlace {
   partial: boolean;
 }
 
-/** GET /api/tiktok-hd: recent "TikTok HD" jobs (remux or re-encode for TikTok). */
-export interface TikTokHdItem {
+/** GET /api/video-hd: recent "Video HD" jobs (TikTok HD, WhatsApp HD, WhatsApp Status). */
+export interface VideoHdItem {
   job_id: string;
   status: Job["status"];
   created_by?: "owner" | "assistant";
   created_at: string;
+  target: HdTarget;
   mode: "auto" | "remux" | "reencode";
   source: { id: string | null; name: string };
   result: { id: string; name: string; size: number } | null;
@@ -317,6 +320,7 @@ export interface TikTokHdItem {
   note: string;
   error: string | null;
 }
+export type TikTokHdItem = VideoHdItem;
 
 /** GET /api/videos: the room's videos for the Video Studio home, newest first. */
 export interface VideoListItem {
@@ -454,6 +458,7 @@ export const api = {
   /** Transcribe the video's source files with whisper on the runner PC (no AI tokens). */
   transcribeVideo: (id: string) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/transcribe`, { method: "POST" }),
   renderVideo: (id: string, plan: EditPlan, draftId: string | null) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/render`, { body: { plan, draft_id: draftId } }),
+  videoHdList: () => request<{ items: VideoHdItem[] }>("/video-hd"),
   tiktokHdList: () => request<{ items: TikTokHdItem[] }>("/tiktok-hd"),
   socialAccounts: () => request<{ connections: ZernioConnection[]; tiktok: SocialTarget[] }>("/social-accounts"),
   addZernio: (label: string, api_key: string) => request<{ connection: ZernioConnection }>("/social-accounts/zernio", { body: { label, api_key } }),
@@ -464,14 +469,16 @@ export const api = {
   setDraftAccount: (id: string, account: string | null) => request<{ draft: ContentDraft }>(`/drafts/${id}/account`, { method: "PATCH", body: { account } }),
   storage: (wait = false) => request<{ items: StoragePlace[]; measured_at: string | null; measuring?: boolean }>(`/storage${wait ? "?wait=1" : ""}`),
   openStorage: (key: string) => request<{ opened: string }>("/storage/open", { body: { key } }),
+  videoHd: (id: string, targets: HdTarget[], mode: "auto" | "remux" | "reencode" = "auto") =>
+    request<{ jobs: Job[] }>(`/videos/${encodeURIComponent(id)}/hd`, { body: { targets, mode } }),
   tiktokHd: (id: string, mode: "auto" | "remux" | "reencode" = "auto") => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/tiktok-hd`, { body: { mode } }),
   setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),
 
   integrations: () => request<{ gitea: GiteaSettings; telegram: TelegramSettings; web_search: WebSearchSettings; tts?: TtsSettings; assistant?: { enabled: boolean; tokens: string[] } }>("/settings/integrations"),
-  saveTts: (body: { base_url?: string; api_key?: string; voice?: string; speed?: number }) =>
+  saveTts: (body: { base_url?: string; api_key?: string; model?: string; voice?: string; speed?: number }) =>
     request<{ tts: TtsSettings }>("/settings/integrations/tts", { method: "PUT", body }),
   testTts: (body: { text?: string; voice?: string } = {}) =>
-    request<{ ok: boolean; bytes?: number; duration_estimate_s?: number; error?: string }>("/settings/integrations/tts/test", { method: "POST", body }),
+    request<{ ok: boolean; bytes?: number; duration_estimate_s?: number; content_type?: string; audio_base64?: string; error?: string }>("/settings/integrations/tts/test", { method: "POST", body }),
   saveWebSearch: (body: { provider: WebSearchProvider; searxng_url?: string; key_provider?: "tavily" | "brave"; api_key?: string }) =>
     request<{ web_search: WebSearchSettings }>("/settings/integrations/web-search", { method: "PUT", body }),
   testWebSearch: () =>

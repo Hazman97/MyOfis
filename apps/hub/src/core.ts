@@ -79,7 +79,7 @@ export const EXTERNAL_RUNNER_ID = "rnr_external";
 /** Fail running external sessions after 30 minutes of silence. */
 export const EXTERNAL_IDLE_TIMEOUT_MS = 30 * 60_000;
 /** Agents with these tools get at least VIDEO_RUN_MIN_MINUTES per run (renders, transcripts, OpenChatCut). */
-const VIDEO_RUN_TOOLS = new Set(["video_edit", "video_transcribe", "video_tiktok_hd", "openchatcut", "meeting_transcribe"]);
+const VIDEO_RUN_TOOLS = new Set(["video_edit", "video_transcribe", "video_tiktok_hd", "video_hd", "openchatcut", "meeting_transcribe"]);
 const VIDEO_RUN_MIN_MINUTES = 60;
 /** owner_feedback on drafts an agent posted without approval (counts toward its daily limit). */
 export const AUTO_PUBLISHED = "auto-published";
@@ -736,7 +736,8 @@ Error: ${r.error}` : ""}` });
 
   #runMessage(conn: RunnerConn, msg: Extract<RunnerToHub, { seq: number }>): void {
     const run = getRun(this.db, msg.run_id);
-    const ack = () => conn.send({ type: "ack", run_id: msg.run_id, seq: msg.seq });
+    const ack = (extra?: { error?: string }) =>
+      conn.send({ type: "ack", run_id: msg.run_id, seq: msg.seq, ...(extra?.error ? { error: extra.error } : {}) });
     if (!run || run.runner_id !== conn.runnerId) {
       conn.send({ type: "error", message: `unknown run ${msg.run_id}` });
       return;
@@ -747,6 +748,7 @@ Error: ${r.error}` : ""}` });
       return ack();
     }
 
+    let ackError: string | undefined;
     if (msg.type === "run.accepted") {
       this.#assignedAt.delete(run.id);
       this.db.update(runs).set({ accepted: true, last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
@@ -778,7 +780,7 @@ Error: ${r.error}` : ""}` });
     } else if (msg.type === "run.handoff") {
       this.#handoff(run, msg);
     } else if (msg.type === "run.draft") {
-      this.#draft(run, msg);
+      ackError = this.#draft(run, msg) ?? undefined;
     } else if (msg.type === "run.feature_note") {
       this.#featureNote(run, msg);
     } else if (msg.type === "run.memory" || msg.type === "run.skill") {
@@ -813,12 +815,12 @@ Error: ${r.error}` : ""}` });
       this.db.update(runs).set({ last_seq: msg.seq }).where(eq(runs.id, run.id)).run();
       this.finishRun(run.id, { status: msg.status, error: msg.error, tokens_in: msg.tokens_in, tokens_out: msg.tokens_out });
     }
-    ack();
+    ack(ackError ? { error: ackError } : undefined);
   }
 
   // ---------------------------------------------------------------- drafts and feature notes from runs
 
-  #draft(run: typeof runs.$inferSelect, msg: Extract<RunnerToHub, { type: "run.draft" }>): void {
+  #draft(run: typeof runs.$inferSelect, msg: Extract<RunnerToHub, { type: "run.draft" }>): string | null {
     const meta = { run_id: run.id, agent_id: run.agent_id };
     const job = getJob(this.db, run.job_id);
     const count = this.db.select({ n: sql<number>`count(*)` }).from(contentDrafts).where(eq(contentDrafts.run_id, run.id)).get()?.n ?? 0;
@@ -860,6 +862,7 @@ Error: ${r.error}` : ""}` });
     const agent = getAgent(this.db, run.agent_id);
     const byAssistant = job?.input?.created_by === "assistant";
     if (saved && agent && !byAssistant && toAgent(agent).config.auto_publish && job?.workspace_id === agent.workspace_id) void this.#autoPublish(saved.id, toAgent(agent), meta);
+    return refusal ?? (saved ? null : "draft not saved");
   }
 
   /** Set by the server: tells the owner (Telegram) how an auto-published draft went. */

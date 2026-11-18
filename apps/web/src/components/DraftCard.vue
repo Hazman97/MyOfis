@@ -319,15 +319,17 @@ async function decide(decision: "approve" | "reject") {
     <div v-else-if="!isWebPost && draft.meta?.cover_upload_id" class="px-4 pt-2.5">
       <img :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Photo for this caption" class="max-h-52 w-auto max-w-full rounded-lg border border-line object-cover shadow-sm" />
     </div>
-    <div v-if="!editable && isWebPost && draft.meta" class="px-4 pt-2.5 space-y-2">
     <!-- Fact Sheet (Task 029: Lembaran Fakta) -->
-    <div v-if="factSheet.length" class="mx-4 mt-3 rounded-lg border border-line bg-surface-2/40 p-3 text-xs">
+    <div v-if="factSheet.length || draft.meta?.unverified" class="mx-4 mt-3 rounded-lg border border-line bg-surface-2/40 p-3 text-xs">
       <div class="flex items-center gap-1.5 font-semibold text-fg mb-2">
         <ShieldCheck :size="14" class="text-accent" />
         <span>Lembaran Fakta / Fact Sheet</span>
-        <span class="ml-auto text-[11px] font-mono text-muted">{{ factSheet.filter((f) => f.verified).length }}/{{ factSheet.length }} disahkan</span>
+        <span v-if="draft.meta?.unverified" class="ml-auto chip text-[10px] px-1.5 py-0 border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold">
+          Skrip tampalan (belum disahkan)
+        </span>
+        <span v-else class="ml-auto text-[11px] font-mono text-muted">{{ factSheet.filter((f) => f.verified).length }}/{{ factSheet.length }} disahkan</span>
       </div>
-      <div class="divide-y divide-line/60">
+      <div v-if="factSheet.length" class="divide-y divide-line/60">
         <div v-for="(fact, idx) in factSheet" :key="idx" class="py-2 first:pt-0 last:pb-0 flex items-start justify-between gap-3">
           <div class="space-y-0.5 min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
@@ -354,6 +356,7 @@ async function decide(decision: "approve" | "reject") {
         </div>
       </div>
     </div>
+    <div v-if="!editable && isWebPost && draft.meta" class="px-4 pt-2.5 space-y-2">
       <img v-if="draft.meta.cover_upload_id" :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Cover photo" class="max-h-56 w-full rounded-lg border border-line object-cover" />
       <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
         <span class="chip">{{ draft.meta.post_type }}</span>

@@ -20,9 +20,9 @@ import {
 } from "lucide-vue-next";
 import {
   CAPTION_PRESETS,
-  REFRAME_MODES,
   type CaptionPreset,
   type ClipCandidate,
+  type Project,
   type ReframeMode,
 } from "@agent-office/shared";
 import PageHeader from "../components/PageHeader.vue";
@@ -35,6 +35,8 @@ const office = useOffice();
 // State
 const videos = ref<VideoListItem[]>([]);
 const selectedVideoId = ref<string>("");
+const projects = ref<Project[]>([]);
+const selectedProjectId = ref<string>(localStorage.getItem("myofis.clipFactory.projectId") ?? "");
 const clips = ref<ClipCandidate[]>([]);
 const loadingVideos = ref(false);
 const loadingClips = ref(false);
@@ -170,6 +172,7 @@ async function triggerFindClips() {
     const { job } = await api.chat({
       agent_id: clipFactoryAgent.value.id,
       text: promptText,
+      project_id: selectedProjectId.value || null,
       attachments: [selectedVideoId.value],
     });
     analysisJobId.value = job.id;
@@ -214,6 +217,10 @@ function closePreview() {
 
 async function renderToDraft(clip: ClipCandidate) {
   if (!clipFactoryAgent.value) return;
+  if (!selectedProjectId.value) {
+    error.value = "Sila pilih projek terlebih dahulu sebelum menyimpan draf.";
+    return;
+  }
   renderingDraft.value = true;
   error.value = "";
 
@@ -231,6 +238,7 @@ async function renderToDraft(clip: ClipCandidate) {
     await api.chat({
       agent_id: clipFactoryAgent.value.id,
       text: renderPrompt,
+      project_id: selectedProjectId.value,
       attachments: [selectedVideoId.value],
     });
 
@@ -243,14 +251,32 @@ async function renderToDraft(clip: ClipCandidate) {
   }
 }
 
-function scoreColor(score: number): string {
+function scoreColor(score: number | null): string {
+  if (score === null) return "text-muted bg-surface-2 border-line";
   if (score >= 80) return "text-accent bg-accent-soft border-accent/30";
   if (score >= 60) return "text-review bg-review-soft border-review/30";
   return "text-muted bg-surface-2 border-line";
 }
 
+async function loadProjects() {
+  try {
+    const res = await api.projects();
+    projects.value = res.projects || [];
+    if (!projects.value.some((p) => p.id === selectedProjectId.value)) {
+      selectedProjectId.value = projects.value[0]?.id ?? "";
+    }
+  } catch {
+    // non-fatal; error banner handled when user tries to save draft without a project
+  }
+}
+
+watch(selectedProjectId, (id) => {
+  if (id) localStorage.setItem("myofis.clipFactory.projectId", id);
+});
+
 onMounted(() => {
   loadVideos();
+  loadProjects();
 });
 </script>
 
@@ -319,6 +345,22 @@ onMounted(() => {
           </div>
         </div>
 
+        <div class="w-full md:w-56">
+          <label class="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+            Projek Draf
+          </label>
+          <select
+            v-model="selectedProjectId"
+            class="input text-sm min-h-10 w-full"
+            :disabled="analyzing || renderingDraft"
+          >
+            <option v-if="projects.length === 0" value="">Tiada projek</option>
+            <option v-for="p in projects" :key="p.id" :value="p.id">
+              {{ p.name }}
+            </option>
+          </select>
+        </div>
+
         <div v-if="uploading" class="w-full md:w-48 text-xs text-muted space-y-1">
           <div class="flex justify-between">
             <span>Memuat naik...</span>
@@ -374,7 +416,6 @@ onMounted(() => {
           >
             <option value="blur_fit">Blur Background (Text-Safe)</option>
             <option value="crop_center">Center Crop</option>
-            <option value="crop_speaker">Speaker Tracking</option>
           </select>
         </div>
       </div>
@@ -464,8 +505,9 @@ onMounted(() => {
                 :class="scoreColor(clip.score)"
               >
                 <Flame class="w-3.5 h-3.5" />
-                <span>{{ clip.score }}/99</span>
-                <span class="text-[10px] font-normal opacity-70">Virality</span>
+                <span v-if="clip.score !== null && !clip.unscored">{{ clip.score }}/99</span>
+                <span v-else>Belum dinilai</span>
+                <span v-if="clip.score !== null && !clip.unscored" class="text-[10px] font-normal opacity-70">Virality</span>
               </div>
 
               <div class="flex items-center gap-1 text-xs text-muted font-mono">
@@ -492,7 +534,7 @@ onMounted(() => {
             </p>
 
             <!-- Subscores Micro Bar -->
-            <div class="grid grid-cols-5 gap-1 pt-1 text-[10px] text-muted text-center font-mono">
+            <div v-if="clip.subscores" class="grid grid-cols-5 gap-1 pt-1 text-[10px] text-muted text-center font-mono">
               <div class="bg-surface-2 rounded py-0.5" title="Hook (30%)">
                 <span class="text-muted block text-[9px]">HK</span>
                 {{ clip.subscores.hook }}
@@ -553,7 +595,7 @@ onMounted(() => {
               class="px-2.5 py-1 rounded-lg text-xs font-bold border"
               :class="scoreColor(activeClip.score)"
             >
-              {{ activeClip.score }}/99 Virality
+              {{ activeClip.score !== null && !activeClip.unscored ? `${activeClip.score}/99 Virality` : "Belum dinilai" }}
             </div>
             <h3 class="text-sm font-semibold text-fg">
               {{ activeClip.headline }}

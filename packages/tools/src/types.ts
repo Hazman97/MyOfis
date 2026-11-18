@@ -66,7 +66,7 @@ export interface ToolContext {
   /** Briefs, feature log and past drafts (Marketing only; null otherwise). */
   projectContext: ProjectContext | null;
   /** Hand a content draft to the hub for the owner's review (sequenced, applied once). */
-  saveDraft(req: DraftRequest): void;
+  saveDraft(req: DraftRequest): Promise<{ ok: boolean; error?: string } | void> | { ok: boolean; error?: string } | void;
   /** Record a released feature (hub writes the feature log and emits feature.released). */
   addFeatureNote(req: { project_id: string; note: FeatureNoteData }): void;
   /** Live copy of this agent's memory stores (memory tool updates it as it goes). */
@@ -93,7 +93,13 @@ export interface ToolContext {
   /** Send a finished video to the hub; it becomes an upload tied to this run. `render` = how it was made (for the studio). */
   uploadVideo(path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }>;
   /** Videos this run made (video_edit), in order; save_draft may attach them. */
-  renders: { id: string; name: string; content_type: string }[];
+  renders: {
+    id: string;
+    name: string;
+    content_type: string;
+    fact_sheet?: { claim: string; value: string; source_url?: string; verified: boolean }[];
+    unverified?: boolean;
+  }[];
   /** Project documents and log, through the hub (scoped to this job's room). */
   projectData(action: "search" | "read" | "summary" | "log_add" | "log_list" | "log_update" | "save_text" | "find_doc", params: Record<string, unknown>): Promise<unknown>;
   /**

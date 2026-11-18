@@ -119,6 +119,37 @@ describe("Clip Factory Pure Logic (Task 028 Step 1-3)", () => {
     }
   });
 
+  test("4b. findCandidateWindows spreads across full 300s video, snaps to shot cuts (±1s), and ranks topic keywords", () => {
+    const words = [];
+    for (let i = 0; i < 60; i++) {
+      const t = i * 5;
+      const isTopic = i === 30 || i === 31; // t=150..160
+      words.push({ w: isTopic ? "Baja" : "Ayat", s: t, e: t + 1.0 });
+      words.push({ w: isTopic ? "organik" : "contoh", s: t + 1.1, e: t + 2.2 });
+      words.push({ w: `nombor${i}.`, s: t + 2.3, e: t + 4.5 });
+    }
+    const longTranscript = { language: "ms", duration: 300, model: "whisper", words };
+    const shots = [
+      { index: 0, start: 0, end: 29.2, dark: false, blurry: false, text_on_screen: false, faces: false, letterboxed: false, description: "Shot 0" },
+      { index: 1, start: 29.2, end: 300, dark: false, blurry: false, text_on_screen: false, faces: false, letterboxed: false, description: "Shot 1" },
+    ];
+    const wins = findCandidateWindows({
+      transcript: longTranscript,
+      shots,
+      duration: 300,
+      minDuration: 15,
+      maxDuration: 40,
+      prompt: "baja organik",
+      maxCandidates: 6,
+    });
+    expect(wins.length).toBe(6);
+    expect(wins.some((w) => w.start < 100)).toBe(true);
+    expect(wins.some((w) => w.start >= 100 && w.start < 200)).toBe(true);
+    expect(wins.some((w) => w.start >= 200)).toBe(true);
+    expect(wins.some((w) => w.transcript.toLowerCase().includes("baja organik"))).toBe(true);
+    expect(wins[0]!.end).toBe(29.2);
+  });
+
   test("5. mergeOverlappingWindows combines heavily overlapping windows", () => {
     const raw = [
       { id: "1", start: 0, end: 30, duration: 30, transcript: "A", words: [], source: "speech" as const },
@@ -164,21 +195,25 @@ Title: Rahsia Kandang Lembu Jimat Kos
 Summary: Panduan praktikal bina kandang lembu jimat kos dengan ventilasi padu.
 `;
     const parsed = parseModelScoring(modelOutput, { transcript: "Hari ini bincang kandang", duration: 30 });
-    expect(parsed.subscores.hook).toBe(88);
-    expect(parsed.subscores.value).toBe(85);
-    expect(parsed.subscores.emotion).toBe(72);
-    expect(parsed.subscores.flow).toBe(90);
-    expect(parsed.subscores.trend).toBe(80);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.subscores.hook).toBe(88);
+    expect(parsed!.subscores.value).toBe(85);
+    expect(parsed!.subscores.emotion).toBe(72);
+    expect(parsed!.subscores.flow).toBe(90);
+    expect(parsed!.subscores.trend).toBe(80);
 
-    expect(parsed.reasons.hook).toContain("Strong opening question");
-    expect(parsed.hooks).toHaveLength(3);
-    expect(parsed.hooks[0]).toBe("Rahsia Jimat Modal Kandang!");
-    expect(parsed.headline).toBe("Rahsia Kandang Lembu Jimat Kos");
-    expect(parsed.summary_reason).toContain("Panduan praktikal");
+    expect(parsed!.reasons.hook).toContain("Strong opening question");
+    expect(parsed!.hooks).toHaveLength(3);
+    expect(parsed!.hooks[0]).toBe("Rahsia Jimat Modal Kandang!");
+    expect(parsed!.headline).toBe("Rahsia Kandang Lembu Jimat Kos");
+    expect(parsed!.summary_reason).toContain("Panduan praktikal");
 
-    const overallScore = calculateViralityScore(parsed.subscores);
+    const overallScore = calculateViralityScore(parsed!.subscores);
     // 88*0.3(26.4) + 85*0.25(21.25) + 72*0.2(14.4) + 90*0.15(13.5) + 80*0.1(8) = 83.55 -> 84
     expect(overallScore).toBe(84);
+
+    // Incomplete / unparseable model output returns null (no numeric fallback)
+    expect(parseModelScoring("garbage text", { transcript: "x", duration: 30 })).toBeNull();
   });
 
   test("8. lookupWordEmoji matches keywords to curated vector emoji", () => {
@@ -190,13 +225,13 @@ Summary: Panduan praktikal bina kandang lembu jimat kos dengan ventilasi padu.
     expect(lookupWordEmoji("biasa")).toBeNull();
   });
 
-  test("9. generateAnimatedCaptions creates ASS chunks with vector outline emoji font wrapping", () => {
-    const captions = generateAnimatedCaptions(sampleTranscript.words, 5.0, 12.0, "pop", "Segoe UI Symbol");
+  test("9. generateAnimatedCaptions creates plain caption chunks with emoji without pre-wrapping ASS tags", () => {
+    const captions = generateAnimatedCaptions(sampleTranscript.words, 5.0, 12.0, "pop");
     expect(captions.length).toBeGreaterThan(0);
-    // "Kandang lembu ni modal" chunk has lembu 🐄 and modal 💸
-    const chunkWithEmoji = captions.find((c) => c.text.includes("Segoe UI Symbol"));
+    const chunkWithEmoji = captions.find((c) => /[\u{1F300}-\u{1FAFF}]/u.test(c.text));
     expect(chunkWithEmoji).toBeDefined();
-    expect(chunkWithEmoji?.text).toContain("{\\fnSegoe UI Symbol\\b0}");
+    expect(chunkWithEmoji?.text).not.toContain("{\\fn");
+    expect(chunkWithEmoji?.text).not.toContain("/fn");
   });
 
   test("10. smoothCropPath removes sudden jump jitter", () => {

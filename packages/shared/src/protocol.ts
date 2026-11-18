@@ -176,7 +176,7 @@ export const HubToRunner = z.discriminatedUnion("type", [
   z.object({ type: z.literal("welcome"), runner_id: z.string(), heartbeat_interval_ms: z.number().int() }),
   z.object({ type: z.literal("run.assign"), assignment: RunAssignment }),
   z.object({ type: z.literal("run.cancel"), run_id: z.string() }),
-  z.object({ type: z.literal("ack"), run_id: z.string(), seq: z.number().int() }),
+  z.object({ type: z.literal("ack"), run_id: z.string(), seq: z.number().int(), error: z.string().optional() }),
   z.object({
     type: z.literal("approval.decision"),
     run_id: z.string(),

@@ -30,8 +30,10 @@ import {
   ClipCandidateSchema,
   UPLOAD_PART_BYTES,
   WebPostEdit,
+  HdTarget,
   TikTokHdMode,
   ExternalActivityInput,
+  freshFetch,
 } from "@agent-office/shared";
 import { TOOL_REGISTRY } from "@agent-office/tools";
 import { DiskUsage } from "./diskUsage.ts";
@@ -331,16 +333,19 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     }
 
     try {
-      const res = await fetch(`${plan.base_url}/v1/audio/speech`, {
+      const voice = body.voice?.trim() || plan.voice.trim();
+      const model = plan.model.trim();
+      const res = await freshFetch(`${plan.base_url}/v1/audio/speech`, {
+        timeoutMs: 30_000,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(plan.key ? { Authorization: `Bearer ${plan.key}` } : {}),
         },
         body: JSON.stringify({
-          model: "canopy-tts",
+          ...(model ? { model } : {}),
           input: body.text,
-          voice: body.voice ?? plan.voice,
+          ...(voice ? { voice } : {}),
           speed: plan.speed,
           response_format: "mp3",
           language: "ms",
@@ -408,8 +413,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       suggestions: ["suggest_edits"],
       index_get: ["video_probe", "video_index", "video_edit", "suggest_edits"],
       index_put: ["video_probe", "video_index"],
-      clips_get: ["clip_find", "video_edit"],
-      clips_put: ["clip_find"],
+      clips_get: ["clip_find", "clip_score", "video_edit"],
+      clips_put: ["clip_find", "clip_score"],
     }[body.action];
     if (!need.some((t) => tools.includes(t))) throw new HttpError(403, `this agent may not use ${need.join(" / ")}`);
     const job = getJob(db, run.job_id);
@@ -452,7 +457,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const run = getRun(db, q.run_id ?? "");
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tools = getAgent(db, run.agent_id)?.tools ?? [];
-    if (!(q.attach ? tools.includes("clip_library") || tools.includes("motion_render") : tools.includes("video_edit") || tools.includes("video_tiktok_hd") || tools.includes("motion_render"))) throw new HttpError(403, "this agent may not upload videos");
+    if (!(q.attach ? tools.includes("clip_library") || tools.includes("motion_render") : tools.includes("video_edit") || tools.includes("video_tiktok_hd") || tools.includes("video_hd") || tools.includes("motion_render"))) throw new HttpError(403, "this agent may not upload videos");
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
     const ws = getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
     // a library clip is the owner's own video (no run_id); a render belongs to the run that made it
@@ -690,17 +695,21 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.post("/settings/integrations/tts/test", async (c) => {
     const plan = integrations.tts.plan();
     if (!plan) return c.json({ ok: false, error: "Set the TTS URL first" }, 400);
+    const body = (await c.req.json().catch(() => ({}))) as { text?: string; voice?: string };
+    const voice = body.voice?.trim() || plan.voice.trim();
+    const model = plan.model.trim();
     try {
-      const res = await fetch(`${plan.base_url}/v1/audio/speech`, {
+      const res = await freshFetch(`${plan.base_url}/v1/audio/speech`, {
+        timeoutMs: 30_000,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(plan.key ? { Authorization: `Bearer ${plan.key}` } : {}),
         },
         body: JSON.stringify({
-          model: "canopy-tts",
+          ...(model ? { model } : {}),
           input: "Ujian suara penjelas teknologi MyOfis.",
-          voice: plan.voice,
+          ...(voice ? { voice } : {}),
           speed: plan.speed,
           response_format: "mp3",
           language: "ms",
@@ -710,7 +719,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         return c.json({ ok: false, error: `TTS server answered ${res.status}` }, 400);
       }
       const buf = await res.arrayBuffer();
-      return c.json({ ok: true, audio_bytes: buf.byteLength, bytes: buf.byteLength, duration_estimate_s: Math.round((buf.byteLength / 16000) * 10) / 10 });
+      const contentType = res.headers.get("content-type") || "audio/mpeg";
+      return c.json({
+        ok: true,
+        audio_bytes: buf.byteLength,
+        bytes: buf.byteLength,
+        duration_estimate_s: Math.round((buf.byteLength / 16000) * 10) / 10,
+        content_type: contentType,
+        audio_base64: Buffer.from(buf).toString("base64"),
+      });
     } catch (err) {
       return c.json({ ok: false, error: (err as Error).message }, 400);
     }
@@ -1178,7 +1195,13 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.get("/videos/:id", (c) => c.json(hub.studio.info(c.req.param("id"), W(c))));
   api.get("/videos/:id/clips", (c) => c.json({ clips: hub.studio.clipResults(c.req.param("id"), W(c)) }));
   api.post("/videos/:id/transcribe", (c) => c.json({ job: hub.studio.transcribe(c.req.param("id"), W(c)) }, 201));
-  // TikTok HD (owner, 2026-10-20): remux or re-encode a finished video for TikTok, no AI
+  // Video HD (TikTok HD + WhatsApp HD + WhatsApp Status): remux or re-encode a finished video, no AI
+  api.get("/video-hd", (c) => c.json({ items: hub.studio.videoHdList(W(c)) }));
+  api.post("/videos/:id/hd", async (c) => {
+    const body = z.object({ targets: z.array(HdTarget).min(1).max(3).default(["tiktok"]), mode: TikTokHdMode.default("auto") }).parse(await c.req.json().catch(() => ({})));
+    return c.json({ jobs: hub.studio.videoHd(c.req.param("id"), body.targets, body.mode, W(c)) }, 201);
+  });
+  // Legacy TikTok HD aliases
   api.get("/tiktok-hd", (c) => c.json({ items: hub.studio.tiktokHdList(W(c)) }));
   api.post("/videos/:id/tiktok-hd", async (c) => {
     const body = z.object({ mode: TikTokHdMode.default("auto") }).parse(await c.req.json().catch(() => ({})));

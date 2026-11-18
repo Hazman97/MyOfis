@@ -80,6 +80,13 @@ export type DraftKind = z.infer<typeof DraftKind>;
  * site's `POST /agent-office/publish` endpoint when the owner approves it. Title and body (Markdown)
  * live on the draft itself; these are the other fields.
  */
+export const WebPostFactItem = z.object({
+  claim: z.string().min(1).max(300),
+  value: z.string().min(1).max(100),
+  source_url: z.string().url().max(500).optional(),
+  verified: z.boolean().default(true),
+});
+
 export const WebPost = z.object({
   /** One of the site's post types (from its publish endpoint), e.g. "news", "tournament", "vlog". */
   post_type: z.string().trim().min(1).max(40),
@@ -95,6 +102,10 @@ export const WebPost = z.object({
   video_upload_id: z.string().max(64).nullable().default(null),
   /** Which social account it posts to (TikTok: a Zernio account id); null = the default one. */
   social_account: z.string().max(100).nullable().default(null),
+  /** Optional verified fact sheet attached by explainer_render via save_draft. */
+  fact_sheet: z.array(WebPostFactItem).max(20).optional(),
+  /** True when the video script was pasted without fact-sheet verification. */
+  unverified: z.boolean().optional(),
 });
 export type WebPost = z.infer<typeof WebPost>;
 

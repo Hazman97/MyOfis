@@ -125,6 +125,7 @@ export const editorAgent: AgentInput = {
     "clip_find",
     "clip_render",
     "video_tiktok_hd",
+    "video_hd",
     "motion_render",
     "save_draft",
     "read_brief",
@@ -150,7 +151,7 @@ export const editorAgent: AgentInput = {
  * only when the owner never changed it (it still equals an older built-in prompt).
  */
 export const editorUpgrade = {
-  tools: ["video_transcribe", "suggest_edits", "video_tiktok_hd", "video_index", "video_review", "motion_render", "clip_find", "clip_render"],
+  tools: ["video_transcribe", "suggest_edits", "video_tiktok_hd", "video_hd", "video_index", "video_review", "motion_render", "clip_find", "clip_score", "clip_render"],
   previousPrompts: [EDITOR_PROMPT_V1, EDITOR_PROMPT_V2, EDITOR_PROMPT_V3],
 };
 

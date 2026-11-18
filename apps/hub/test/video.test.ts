@@ -184,6 +184,53 @@ describe.skipIf(!ffmpeg || !Bun.which("ffprobe"))("Editor renders on the runner"
     expect((await env.api("/api/videos/upl_nope/tiktok-hd", { body: {} })).status).toBe(404);
   }, 180_000);
 
+  test("Video HD: POST /videos/:id/hd with two targets creates two jobs, lists old tiktok_hd rows, and 404s other rooms", async () => {
+    env = await createTestEnv();
+    const v = await sendVideo(clip, "multi-target.mp4");
+
+    // Legacy tiktok_hd job
+    const oldRes = await env.api(`/api/videos/${v.id}/tiktok-hd`, { body: { mode: "auto" } });
+    expect(oldRes.status).toBe(201);
+    expect(oldRes.body.job.type).toBe("tiktok_hd");
+
+    // New multi-target video_hd endpoint
+    const hdRes = await env.api(`/api/videos/${v.id}/hd`, { body: { targets: ["whatsapp", "whatsapp_status"], mode: "auto" } });
+    expect(hdRes.status).toBe(201);
+    expect(hdRes.body.jobs).toHaveLength(2);
+    expect(hdRes.body.jobs[0].type).toBe("video_hd");
+    expect(hdRes.body.jobs[0].input.target).toBe("whatsapp");
+    expect(hdRes.body.jobs[1].input.target).toBe("whatsapp_status");
+
+    // GET /api/video-hd lists both new video_hd rows and legacy tiktok_hd row
+    const listRes = await env.api("/api/video-hd");
+    expect(listRes.status).toBe(200);
+    const items = listRes.body.items as { job_id: string; target: string }[];
+    expect(items.some((i) => i.job_id === oldRes.body.job.id && i.target === "tiktok")).toBe(true);
+    expect(items.some((i) => i.job_id === hdRes.body.jobs[0].id && i.target === "whatsapp")).toBe(true);
+    expect(items.some((i) => i.job_id === hdRes.body.jobs[1].id && i.target === "whatsapp_status")).toBe(true);
+
+    // Another room's upload -> 404
+    const roomRes = await env.api("/api/rooms", { body: { name: "Other Room" } });
+    const otherRoomId = roomRes.body.room.id;
+    const crossRoomRes = await fetch(`${env.hub.url}/api/videos/${v.id}/hd`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", cookie: `ao_room=${otherRoomId}` },
+      body: JSON.stringify({ targets: ["whatsapp"], mode: "auto" }),
+    });
+    expect(crossRoomRes.status).toBe(404);
+
+    // Pair runner and run the WhatsApp HD job end-to-end through directRuntime
+    await env.pairRunner();
+    const waJob = hdRes.body.jobs[0];
+    await waitFor(() => ["done", "failed"].includes(env.hub.hub.store.state.jobs[waJob.id]?.status ?? ""), 120_000, "whatsapp hd");
+    expect(env.hub.hub.store.state.jobs[waJob.id]?.status).toBe("done");
+    const afterList = (await env.api("/api/video-hd")).body.items as { job_id: string; target: string; note: string; result: { name: string } | null }[];
+    const waItem = afterList.find((i) => i.job_id === waJob.id)!;
+    expect(waItem.target).toBe("whatsapp");
+    expect(waItem.note).toContain("Ready for WhatsApp HD");
+    expect(waItem.result?.name).toMatch(/-wa-hd/);
+  }, 180_000);
+
   test("transcripts: Studio Transcribe (no AI) → Editor suggests options → render with pop subtitles", async () => {
     // a fake whisper-cli (the real one needs a 500 MB model)
     const fake = join(dir, process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli");

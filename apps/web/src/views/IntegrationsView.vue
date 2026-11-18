@@ -15,10 +15,11 @@ const tg = reactive({ token: "", chat_id: "", enabled: true });
 const tgMsg = ref("");
 const tgError = ref("");
 const form = reactive({ url: "", token: "" });
-const ttsForm = reactive({ base_url: "", api_key: "", voice: "af_sarah", speed: 1.0 });
+const ttsForm = reactive({ base_url: "", api_key: "", model: "", voice: "", speed: 1.0 });
 const ttsMsg = ref("");
 const ttsError = ref("");
 const ttsTesting = ref(false);
+const ttsAudioUrl = ref<string | null>(null);
 const msg = ref("");
 const error = ref("");
 
@@ -32,6 +33,7 @@ onMounted(async () => {
   if (r.tts) {
     tts.value = r.tts;
     ttsForm.base_url = r.tts.base_url;
+    ttsForm.model = r.tts.model;
     ttsForm.voice = r.tts.voice;
     ttsForm.speed = r.tts.speed;
   }
@@ -45,6 +47,7 @@ async function saveTts() {
   try {
     const res = await api.saveTts({
       base_url: ttsForm.base_url.trim(),
+      model: ttsForm.model.trim(),
       voice: ttsForm.voice.trim(),
       speed: Number(ttsForm.speed) || 1.0,
       ...(ttsForm.api_key ? { api_key: ttsForm.api_key } : {}),
@@ -70,11 +73,16 @@ async function clearTtsKey() {
 
 async function testTts() {
   ttsError.value = ttsMsg.value = "";
+  ttsAudioUrl.value = null;
   ttsTesting.value = true;
   try {
     const res = await api.testTts({ voice: ttsForm.voice.trim() });
     if (res.ok) {
       ttsMsg.value = `Suara berjaya diuji! (${res.bytes ?? 0} bait, ~${res.duration_estimate_s ?? 0}s).`;
+      if (res.audio_base64) {
+        const mime = res.content_type || "audio/mpeg";
+        ttsAudioUrl.value = `data:${mime};base64,${res.audio_base64}`;
+      }
     } else {
       ttsError.value = `Ujian gagal: ${res.error}`;
     }
@@ -364,16 +372,21 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
             :placeholder="tts?.has_key ? `Key stored ${tts.key_hint}: leave empty to keep` : 'Bearer key (optional)'"
           />
         </div>
-        <div class="grid gap-3 sm:grid-cols-2">
+        <div class="grid gap-3 sm:grid-cols-3">
           <div>
-            <label class="label" for="tts-voice">Voice model / ID</label>
-            <input id="tts-voice" v-model="ttsForm.voice" class="input font-mono" placeholder="af_sarah" />
+            <label class="label" for="tts-model">Model (optional)</label>
+            <input id="tts-model" v-model="ttsForm.model" class="input font-mono" placeholder="optional model" />
+          </div>
+          <div>
+            <label class="label" for="tts-voice">Voice ID (optional)</label>
+            <input id="tts-voice" v-model="ttsForm.voice" class="input font-mono" placeholder="optional voice" />
           </div>
           <div>
             <label class="label" for="tts-speed">Speed ({{ ttsForm.speed }}x)</label>
             <input id="tts-speed" v-model.number="ttsForm.speed" type="range" min="0.5" max="2.0" step="0.1" class="w-full accent-accent mt-2" />
           </div>
         </div>
+        <audio v-if="ttsAudioUrl" :src="ttsAudioUrl" controls autoplay class="w-full" />
         <p v-if="ttsMsg" class="rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">{{ ttsMsg }}</p>
         <p v-if="ttsError" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ ttsError }}</p>
         <div class="flex flex-wrap gap-2 border-t border-line pt-4">

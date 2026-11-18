@@ -1,5 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import {
   ExplainerScript,
@@ -7,23 +8,28 @@ import {
   validateNumbersInFactSheet,
   buildComposition,
   EditPlan,
+  VIDEO_PRESETS,
+  finishedSeconds,
+  subtitleCues,
   type Transcript,
   type TranscriptWord,
   type RenderInfo,
 } from "@agent-office/shared";
 import { defineTool, ToolDenied, type ToolContext } from "./types.ts";
 import {
-  attachmentFile,
+  buildEditArgs,
   captionsAss,
   ffmpegBin,
   mediaDir,
-  parseProbe,
   parseWhisperJson,
   probe,
   round2,
   spawn,
+  videoReviewTool,
   whisperBinary,
   whisperModel,
+  type ClipInput,
+  type Encoder,
 } from "./video.ts";
 import { buildHyperframesArgs, hyperframesBinary, spawnMotion } from "./motion.ts";
 
@@ -57,13 +63,12 @@ export const explainerRenderTool = defineTool({
       throw new ToolDenied(`Script validation failed: ${vRes.errors.join("; ")}`);
     }
 
-    // 2. Fact sheet verification
+    // 2. Fact sheet verification (blocks render on unverified numbers unless pasted: true)
     const factCheck = validateNumbersInFactSheet(script);
     if (!factCheck.ok) {
-      ctx.emit({
-        type: "agent.thinking",
-        payload: { summary: `Perhatian: Fakta tidak disahkan dikesan: ${factCheck.unverifiedNumbers.join(", ")}` },
-      });
+      throw new ToolDenied(
+        `Unverified numbers not found in fact_sheet (with source_url): ${factCheck.unverifiedNumbers.join(", ")}. Verify with web_fetch and add them to fact_sheet.`,
+      );
     }
 
     const dir = mediaDir(ctx);
@@ -75,9 +80,7 @@ export const explainerRenderTool = defineTool({
       payload: { summary: `Mula bina video penerangan: "${script.topic}" (${script.scenes.length} babak)` },
     });
 
-    const sceneClips: { videoPath: string; audioPath: string | null; duration: number }[] = [];
-    const allWords: TranscriptWord[] = [];
-    let currentTimeOffset = 0;
+    const sceneClips: { videoPath: string; audioPath: string | null; duration: number; transcript: Transcript }[] = [];
     let voiceSynthesized = false;
 
     // 3. Render each scene
@@ -143,36 +146,59 @@ export const explainerRenderTool = defineTool({
           throw new ToolDenied(`HyperFrames gagal pada babak ${sIdx + 1}: ${r.stderr || r.stdout}`);
         }
       } else {
-        // High quality offline fallback using ffmpeg directly when HyperFrames CLI is not installed
-        // Generates an elegant 1080x1920 dark tech card with badge, title and on-screen summary
-        const escapedTitle = (scene.visual as any).title ?? script.topic;
-        const escapedOnScreen = scene.on_screen;
-        const fallbackFilter = [
-          `color=c=0x0B0D13:s=1080x1920:r=30:d=${sceneDur}[bg]`,
-          `drawbox=x=72:y=160:w=936:h=1480:color=0x141824@0.9:t=fill[box]`,
-          `drawbox=x=72:y=160:w=936:h=1480:color=0xFFE600@0.8:t=4[card]`,
-          `drawtext=text='${scene.visual.template.toUpperCase()}':fontsize=32:fontcolor=0x00F0FF:x=120:y=240[t0]`,
-          `drawtext=text='${escapedTitle.replace(/'/g, "\\'")}':fontsize=54:fontcolor=0xFFE600:x=120:y=310:box=1:boxcolor=black@0.4[t1]`,
-          `drawtext=text='${escapedOnScreen.replace(/'/g, "\\'")}':fontsize=42:fontcolor=white:x=120:y=420[t2]`,
-        ].join(";");
-
-        await spawn(
-          [ffmpeg, "-hide_banner", "-nostdin", "-y", "-f", "lavfi", "-i", `color=c=0x0B0D13:s=1080x1920:r=30:d=${sceneDur}`, "-vf", "scale=1080:1920", "-c:v", "libx264", "-pix_fmt", "yuv420p", sceneRawMp4],
+        // Render the HTML/SVG infographic to a 1080×1920 PNG via the Node Playwright browser worker,
+        // then animate it with a subtle Ken Burns zoom in ffmpeg.
+        const workerPath = fileURLToPath(new URL("../browser/worker.mjs", import.meta.url));
+        const pngPath = join(sceneSubDir, `scene-${sIdx + 1}.png`);
+        const reqJson = JSON.stringify({
+          url: `${pathToFileURL(htmlPath).href}?t=${sceneDur}`,
+          screenshot_path: pngPath,
+          viewport: { width: 1080, height: 1920 },
+          timeout_ms: 30_000,
+        });
+        const nodeBin = process.platform === "win32" ? "node.exe" : "node";
+        const wRes = await spawn([nodeBin, workerPath, reqJson], sceneSubDir, ctx.signal, undefined, 45_000);
+        if (wRes.code !== 0 || !existsSync(pngPath)) {
+          throw new ToolDenied(`Gagal merender grafik babak ${sIdx + 1} melalui browser worker: ${wRes.stderr || wRes.stdout}`);
+        }
+        const frames = Math.max(30, Math.ceil(sceneDur * 30));
+        const animRes = await spawn(
+          [
+            ffmpeg,
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-loop",
+            "1",
+            "-i",
+            pngPath,
+            "-vf",
+            `zoompan=z='min(zoom+0.0006,1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=30,format=yuv420p`,
+            "-t",
+            String(sceneDur),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            sceneRawMp4,
+          ],
           sceneSubDir,
           ctx.signal,
           undefined,
           60_000,
         );
+        if (animRes.code !== 0 || !existsSync(sceneRawMp4)) {
+          throw new ToolDenied(`Gagal menganimasikan grafik babak ${sIdx + 1}: ${animRes.stderr.slice(-400)}`);
+        }
       }
 
-      // 3c. Extract word timings for subtitles
-      const words = await extractWords(ctx, audioFile, scene.narration, currentTimeOffset, sceneDur);
-      allWords.push(...words);
+      // 3c. Extract 0-based word timings for this scene (subtitleCues handles transition offsets)
+      const words = await extractWords(ctx, audioFile, scene.narration, 0, audioDur > 0 ? audioDur : sceneDur);
 
-      // 3d. Finalize scene clip (mux audio if present)
+      // 3d. Finalize scene clip with exact duration = audio + 0.3s tail (no -shortest!)
       const sceneMuxedMp4 = join(sessionDir, `scene-${sIdx + 1}-muxed.mp4`);
       if (audioFile && existsSync(audioFile)) {
-        await spawn(
+        const muxRes = await spawn(
           [
             ffmpeg,
             "-hide_banner",
@@ -182,11 +208,18 @@ export const explainerRenderTool = defineTool({
             sceneRawMp4,
             "-i",
             audioFile,
+            "-filter_complex",
+            `[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur=${sceneDur}[a]`,
+            "-map",
+            "0:v",
+            "-map",
+            "[a]",
             "-c:v",
             "copy",
             "-c:a",
             "aac",
-            "-shortest",
+            "-t",
+            String(sceneDur),
             sceneMuxedMp4,
           ],
           sessionDir,
@@ -194,9 +227,12 @@ export const explainerRenderTool = defineTool({
           undefined,
           60_000,
         );
+        if (muxRes.code !== 0 || !existsSync(sceneMuxedMp4)) {
+          throw new ToolDenied(`Gagal menggabungkan audio babak ${sIdx + 1}: ${muxRes.stderr.slice(-400)}`);
+        }
       } else {
         // Add silent audio track for consistent container joining
-        await spawn(
+        const muxRes = await spawn(
           [
             ffmpeg,
             "-hide_banner",
@@ -212,7 +248,8 @@ export const explainerRenderTool = defineTool({
             "copy",
             "-c:a",
             "aac",
-            "-shortest",
+            "-t",
+            String(sceneDur),
             sceneMuxedMp4,
           ],
           sessionDir,
@@ -220,198 +257,142 @@ export const explainerRenderTool = defineTool({
           undefined,
           60_000,
         );
+        if (muxRes.code !== 0 || !existsSync(sceneMuxedMp4)) {
+          throw new ToolDenied(`Gagal menambah trek audio senyap babak ${sIdx + 1}: ${muxRes.stderr.slice(-400)}`);
+        }
       }
 
+      const sceneProbe = await probe(ctx, sceneMuxedMp4);
       sceneClips.push({
         videoPath: sceneMuxedMp4,
         audioPath: audioFile,
-        duration: sceneDur,
+        duration: sceneProbe.duration || sceneDur,
+        transcript: { language: script.language ?? "ms", duration: sceneProbe.duration || sceneDur, model: "whisper", words },
       });
-
-      currentTimeOffset += sceneDur;
     }
 
-    // 4. Assemble scenes into one video with xfade crossfades
-    const safeTopic = script.topic.replace(/[^\p{L}\p{N}]+/gu, "_").slice(0, 40);
-    const joinedNoSubsMp4 = join(sessionDir, `explainer-${safeTopic}-raw.mp4`);
-
-    if (sceneClips.length === 1) {
-      copyFileSync(sceneClips[0]!.videoPath, joinedNoSubsMp4);
-    } else {
-      // Build filter_complex with xfade between clips
-      const inputs: string[] = [];
-      for (const sc of sceneClips) {
-        inputs.push("-i", sc.videoPath);
-      }
-
-      const xfadeDur = 0.3;
-      let filterComplex = "";
-      let lastV = "0:v";
-      let lastA = "0:a";
-      let offset = sceneClips[0]!.duration - xfadeDur;
-
-      for (let i = 1; i < sceneClips.length; i++) {
-        const nextV = `${i}:v`;
-        const nextA = `${i}:a`;
-        const outV = `v${i}`;
-        const outA = `a${i}`;
-
-        filterComplex += `[${lastV}][${nextV}]xfade=transition=fade:duration=${xfadeDur}:offset=${round2(offset)}[${outV}];`;
-        filterComplex += `[${lastA}][${nextA}]acrossfade=d=${xfadeDur}[${outA}];`;
-
-        lastV = outV;
-        lastA = outA;
-        offset += sceneClips[i]!.duration - xfadeDur;
-      }
-
-      filterComplex = filterComplex.replace(/;$/, "");
-
-      const joinArgs = [
-        ffmpeg,
-        "-hide_banner",
-        "-nostdin",
-        "-y",
-        ...inputs,
-        "-filter_complex",
-        filterComplex,
-        "-map",
-        `[${lastV}]`,
-        "-map",
-        `[${lastA}]`,
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-movflags",
-        "+faststart",
-        joinedNoSubsMp4,
-      ];
-
-      const joinRes = await spawn(joinArgs, sessionDir, ctx.signal, undefined, 5 * 60_000);
-      if (joinRes.code !== 0 || !existsSync(joinedNoSubsMp4)) {
-        throw new ToolDenied(`Gagal mencantumkan babak video: ${joinRes.stderr}`);
-      }
-    }
-
-    // 5. Generate and burn ASS Subtitles with vector outline emoji protection
-    const prJoined = await probe(ctx, joinedNoSubsMp4);
-    const totalDuration = prJoined.duration;
-
-    const captions = allWords.map((w) => ({
-      text: w.w,
-      start: w.s,
-      end: w.e,
-      position: "bottom" as const,
-      animation: "none" as const,
-    }));
-
-    const assContent = captionsAss(
-      captions,
-      { label: "TikTok FHD", width: 1080, height: 1920, max_seconds: 900, max_mbps: 16, audio_kbps: 192 },
-      captions.length,
-    );
-
-    const assFile = join(sessionDir, "subtitles.ass");
-    writeFileSync(assFile, assContent, "utf8");
-
-    // Burn subtitles into final MP4
+    // 4. Assemble through video_edit primitives: clips + 0.3s fade transition + pop captions via subtitleCues + optional music from clip_folder/music
+    const safeTopic = script.topic.replace(/[^\p{L}\p{N}]+/gu, "_").slice(0, 40) || "explainer";
     const finalMp4Name = `explainer-${safeTopic}.mp4`;
     const finalMp4Path = join(dir, finalMp4Name);
 
-    // Escape Windows path backslashes for ffmpeg subtitles filter
-    const escapedAssPath = assFile.replace(/\\/g, "/").replace(/:/g, "\\:");
-
-    const burnRes = await spawn(
-      [
-        ffmpeg,
-        "-hide_banner",
-        "-nostdin",
-        "-y",
-        "-i",
-        joinedNoSubsMp4,
-        "-vf",
-        `subtitles='${escapedAssPath}'`,
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "copy",
-        "-movflags",
-        "+faststart",
-        finalMp4Path,
-      ],
-      sessionDir,
-      ctx.signal,
-      undefined,
-      5 * 60_000,
+    const clipInputs: ClipInput[] = await Promise.all(
+      sceneClips.map(async (sc) => ({
+        file: sc.videoPath,
+        probe: await probe(ctx, sc.videoPath),
+      })),
     );
 
-    if (burnRes.code !== 0 || !existsSync(finalMp4Path)) {
-      throw new ToolDenied(`Gagal membakar sari kata video: ${burnRes.stderr}`);
+    const folder = ctx.config.clip_folder?.trim();
+    const musicDir = folder ? join(folder, "music") : null;
+    const musicTrack =
+      musicDir && existsSync(musicDir)
+        ? readdirSync(musicDir).find((f) => /\.(mp3|m4a|wav|aac|ogg)$/i.test(f)) ?? null
+        : null;
+    const musicFile = musicDir && musicTrack ? join(musicDir, musicTrack) : null;
+
+    const buildAndRunAssembly = async (normalizeAudio: boolean, useMusic: boolean) => {
+      const plan = EditPlan.parse({
+        preset: "tiktok_fhd",
+        name: safeTopic,
+        fit: "crop",
+        fps: 30,
+        transition: sceneClips.length > 1 ? { type: "fade", seconds: 0.3 } : { type: "none", seconds: 0 },
+        subtitles: { style: "pop", position: "bottom", max_words: 3 },
+        normalize_audio: normalizeAudio,
+        music: useMusic && musicTrack ? { track: musicTrack, volume_db: -20 } : null,
+        clips: clipInputs.map((_, idx) => ({ video: idx + 1, start: 0, speed: 1, zoom: "none" as const })),
+      });
+
+      const transcripts: Record<number, Transcript> = {};
+      const durations: Record<number, number> = {};
+      sceneClips.forEach((sc, idx) => {
+        transcripts[idx + 1] = sc.transcript;
+        durations[idx + 1] = clipInputs[idx]!.probe.duration;
+      });
+
+      const cues = subtitleCues(plan, transcripts, durations).map((c) => ({
+        text: c.text,
+        start: c.start,
+        end: c.end,
+        position: "bottom" as const,
+        animation: "pop" as const,
+      }));
+      const assName = `${safeTopic}-subtitles.ass`;
+      if (cues.length > 0) {
+        writeFileSync(join(dir, assName), captionsAss(cues, VIDEO_PRESETS.tiktok_fhd, cues.length), "utf8");
+      }
+
+      let enc: Encoder = (await spawn([ffmpeg, "-hide_banner", "-encoders"], dir, ctx.signal, undefined, 30_000)).stdout.includes("h264_nvenc")
+        ? "nvenc"
+        : "x264";
+      let args = buildEditArgs(plan, clipInputs, enc, finalMp4Name, cues.length > 0 ? assName : null, useMusic ? musicFile : null);
+      let res = await spawn([ffmpeg, ...args], dir, ctx.signal, undefined, 5 * 60_000);
+      if (res.code !== 0 && enc === "nvenc" && !ctx.signal.aborted) {
+        enc = "x264";
+        args = buildEditArgs(plan, clipInputs, enc, finalMp4Name, cues.length > 0 ? assName : null, useMusic ? musicFile : null);
+        res = await spawn([ffmpeg, ...args], dir, ctx.signal, undefined, 5 * 60_000);
+      }
+      if (res.code !== 0 || !existsSync(finalMp4Path)) {
+        throw new ToolDenied(`Gagal menyusun video penerangan: ${res.stderr.slice(-500)}`);
+      }
+      return { plan, cues };
+    };
+
+    let { plan, cues } = await buildAndRunAssembly(false, !!musicFile);
+
+    // 5. Run video_review; if score < 0.7, fix once and re-review
+    let reviewOut: { score: number; passed: boolean; problems: string[] } | null = null;
+    try {
+      const rv1 = await videoReviewTool.execute({ file: finalMp4Name, expect_hook: true, request_summary: script.topic }, ctx);
+      reviewOut = rv1.output as { score: number; passed: boolean; problems: string[] };
+      if (reviewOut && reviewOut.score < 0.7) {
+        ctx.emit({
+          type: "agent.thinking",
+          payload: { summary: `video_review skor ${reviewOut.score} (< 0.7): membaiki sekali (${reviewOut.problems.join("; ")})` },
+        });
+        ({ plan, cues } = await buildAndRunAssembly(true, false));
+        const rv2 = await videoReviewTool.execute({ file: finalMp4Name, expect_hook: true, request_summary: script.topic }, ctx);
+        reviewOut = rv2.output as { score: number; passed: boolean; problems: string[] };
+      }
+    } catch {
+      // video_review failure should not mask a valid render if vision model is unavailable
     }
+
+    const prFinal = await probe(ctx, finalMp4Path);
+    const totalDuration = prFinal.duration || finishedSeconds(plan, clipInputs.map((c) => c.probe.duration));
 
     // 6. Upload final video to Hub
     const renderInfo: RenderInfo = {
-      plan: EditPlan.parse({
-        preset: "tiktok_fhd",
-        name: script.topic.replace(/[^\w\- ]+/g, "_").slice(0, 80),
-        clips: sceneClips.map((c, i) => ({ video: i + 1, start: 0, end: c.duration, speed: 1.0, zoom: "none" as const, fit: "crop" as const })),
-        captions,
-      }),
+      plan: { ...plan, captions: cues },
       attachments: [],
     };
 
     const upload = await ctx.uploadVideo(finalMp4Path, finalMp4Name, renderInfo);
-
-    // 7. Save draft with attached fact sheet
-    const captionBody = [
-      script.hook,
-      "",
-      script.topic,
-      script.outro,
-      "",
-      `Sumber: ${script.sources.join(", ")}`,
-      "",
-      "#tech #techexplainer #cikgutech #wifi #myofis #viralmalaysia",
-    ].join("\n");
-
-    ctx.saveDraft({
-      project_id: ctx.projectId ?? "prj_explainer",
-      platform: "tiktok",
-      kind: "video",
-      title: script.topic,
-      body: captionBody,
-      self_check: {
-        facts_match_brief: true,
-        only_released_features: true,
-        no_overclaims: true,
-        tone_and_language_match: true,
-        notes: factCheck.ok ? "Fakta disahkan dengan sumber rasmi." : `Perhatian: angka ${factCheck.unverifiedNumbers.join(", ")} belum disahkan.`,
-      },
-      meta: {
-        video_upload_id: upload.id,
-        fact_sheet: script.fact_sheet,
-        script,
-        voice_over: voiceSynthesized ? "canopy-tts" : "none",
-      } as any,
+    ctx.renders.push({
+      id: upload.id,
+      name: finalMp4Name,
+      content_type: "video/mp4",
+      fact_sheet: script.fact_sheet,
+      unverified: factCheck.unverified,
     });
 
-    const summary = `Berjaya bina video penerangan "${script.topic}" (${round2(totalDuration)}s, ${sceneClips.length} babak) [Upload: ${upload.id}]`;
+    const summary = `Berjaya bina video penerangan "${script.topic}" (${round2(totalDuration)}s, ${sceneClips.length} babak). Guna save_draft(video: "${upload.id}") untuk simpan draf.`;
 
     return {
       ok: true,
       summary,
       output: {
+        video_id: upload.id,
         upload_id: upload.id,
         video_path: finalMp4Path,
         duration: round2(totalDuration),
         voice_synthesized: voiceSynthesized,
         scene_count: sceneClips.length,
         fact_sheet: script.fact_sheet,
+        unverified: factCheck.unverified,
         unverified_numbers: factCheck.unverifiedNumbers,
+        review: reviewOut,
       },
     };
   },

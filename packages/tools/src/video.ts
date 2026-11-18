@@ -19,8 +19,11 @@ import {
   subtitleCues,
   tightCuts,
   TikTokHdMode,
-  tiktokHdPlan,
+  HdTarget,
+  HD_TARGETS,
+  hdPlan,
   type VideoPreset,
+  type VideoPresetId,
   emojiFontName,
   wrapAssEmoji,
 } from "@agent-office/shared";
@@ -147,6 +150,9 @@ export function buildEditArgs(plan: EditPlan, inputs: ClipInput[], encoder: Enco
   const parts: string[] = [];
   const frame = (src: string, dst: string, fitMode: "crop" | "blur" | "pad", preCrop?: string | null) => {
     const s = preCrop ? `${src}crop=${preCrop},` : src;
+    if (preset.keep_aspect) {
+      return `${s}scale='if(gt(iw,ih),${W},if(eq(iw,ih),720,-2))':'if(lt(iw,ih),${H},if(eq(iw,ih),720,-2))'${dst}`;
+    }
     if (fitMode === "crop") return `${s}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${dst}`;
     if (fitMode === "pad") return `${s}scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black${dst}`;
     const n = dst.slice(1, -1);
@@ -895,11 +901,96 @@ export function remuxArgs(input: string, out: string): string[] {
   return ["-hide_banner", "-nostdin", "-y", "-i", input, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-map_metadata", "-1", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", out];
 }
 
+const HD_SUFFIX: Record<HdTarget, string> = {
+  tiktok: "-tiktok-hd",
+  whatsapp: "-wa-hd",
+  whatsapp_status: "-wa-status",
+};
+
+const HD_PRESET: Record<HdTarget, VideoPresetId> = {
+  tiktok: "tiktok_fhd",
+  whatsapp: "whatsapp_hd",
+  whatsapp_status: "whatsapp_v",
+};
+
+/** A video file that our Video HD tool or page already produced for the target. Pure. */
+export function isHdPrepared(name: string, target: HdTarget = "tiktok"): boolean {
+  const base = name.replace(/\.[^.]+$/, "");
+  if (target === "tiktok") return /-tiktok-hd(-tiktok_fhd)?$/.test(base);
+  if (target === "whatsapp") return /-wa-hd(-whatsapp_hd)?$/.test(base);
+  return /-wa-status(-whatsapp_v)?$/.test(base);
+}
+
 /** A video file that our TikTok HD tool or page already produced (-tiktok-hd or -tiktok-hd-tiktok_fhd). Pure. */
 export function isTiktokHdPrepared(name: string): boolean {
-  const base = name.replace(/\.[^.]+$/, "");
-  return /-tiktok-hd(-tiktok_fhd)?$/.test(base);
+  return isHdPrepared(name, "tiktok");
 }
+
+async function runVideoHd(video: number, target: HdTarget, mode: TikTokHdMode, ctx: ToolContext) {
+  const bin = ffmpegBin();
+  if (!bin) throw new ToolDenied("ffmpeg is not installed on the runner PC (ffmpeg.org). Tell the owner.");
+  const { file, name } = await attachmentFile(ctx, video);
+  const before = await probe(ctx, file);
+  const facts = (p: VideoProbe) => ({ size: `${p.width}×${p.height}`, fps: p.fps, codec: p.video_codec, mb: round2(p.size_bytes / 1024 ** 2), seconds: p.duration });
+  const label = HD_TARGETS[target].label;
+  // already prepared for this target: use that very file, no second copy or re-encode
+  const attached = ctx.attachments[video - 1];
+  if (mode === "auto" && isHdPrepared(name, target) && attached) {
+    const plan = hdPlan(before, target, "remux");
+    return {
+      summary: `${label}: ${name} is already prepared`,
+      output: { video_id: attached.id, target, mode: "remux" as const, reasons: [] as string[], warnings: plan.warnings, before: facts(before), after: facts(before) },
+    };
+  }
+  let plan: ReturnType<typeof hdPlan>;
+  try {
+    plan = hdPlan(before, target, mode);
+  } catch (err) {
+    throw new ToolDenied((err as Error).message);
+  }
+  const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").slice(0, 60) || `video-${video}`;
+  const outBase = `${base}${HD_SUFFIX[target]}`;
+  if (plan.mode === "reencode") {
+    const edit = EditPlan.parse({ clips: [{ video }], preset: HD_PRESET[target], fit: plan.fit, fps: plan.fps, name: outBase });
+    const r = await videoEditTool.execute(edit, ctx);
+    const out = r.output as { video_id: string; file: string; size_mb: number };
+    const after = await probe(ctx, out.file);
+    return {
+      summary: `${label} (re-encoded): ${out.file}`,
+      output: { video_id: out.video_id, target, mode: "reencode" as const, reasons: plan.reasons, warnings: plan.warnings, before: facts(before), after: facts(after) },
+    };
+  }
+  const dir = mediaDir(ctx);
+  const out = `${outBase}.mp4`;
+  const r = await spawn([bin, ...remuxArgs(file, out)], dir, ctx.signal);
+  if (r.code !== 0) throw new ToolDenied(`ffmpeg could not remux the video: ${r.stderr.slice(-400)}`);
+  const after = await probe(ctx, out);
+  const whole = EditPlan.parse({ clips: [{ video }], name: outBase });
+  const up = await ctx.uploadVideo(join(dir, out), out, { plan: whole, attachments: ctx.attachments });
+  ctx.renders.push({ id: up.id, name: out, content_type: "video/mp4" });
+  return {
+    summary: `${label} (no re-encode): ${out}`,
+    output: { video_id: up.id, target, mode: "remux" as const, reasons: plan.reasons, warnings: plan.warnings, before: facts(before), after: facts(after) },
+  };
+}
+
+export const videoHdTool = defineTool({
+  name: "video_hd",
+  description:
+    "Prepare a video for TikTok HD, WhatsApp HD, or WhatsApp Status without losing quality. mode auto: when it already fits the target, streams are only copied into a clean MP4; otherwise it is re-encoded once to that target's spec.",
+  category: "write",
+  input: z.object({
+    video: z.number().int().min(1).max(10).describe("Which file (1 = first)"),
+    target: HdTarget.default("tiktok"),
+    mode: TikTokHdMode.default("auto"),
+  }),
+  risk: () => "safe",
+  describe: (i) => `${HD_TARGETS[i.target].label} for video ${i.video}`,
+  async execute(i, ctx) {
+    const res = await runVideoHd(i.video, i.target, i.mode, ctx);
+    return { ok: true, ...res };
+  },
+});
 
 export const videoTiktokHdTool = defineTool({
   name: "video_tiktok_hd",
@@ -914,39 +1005,9 @@ export const videoTiktokHdTool = defineTool({
   risk: () => "safe",
   describe: (i) => `TikTok HD for video ${i.video}`,
   async execute(i, ctx) {
-    const bin = ffmpegBin();
-    if (!bin) throw new ToolDenied("ffmpeg is not installed on the runner PC (ffmpeg.org). Tell the owner.");
-    const { file, name } = await attachmentFile(ctx, i.video);
-    const before = await probe(ctx, file);
-    const facts = (p: VideoProbe) => ({ size: `${p.width}×${p.height}`, fps: p.fps, codec: p.video_codec, mb: round2(p.size_bytes / 1024 ** 2), seconds: p.duration });
-    // already prepared on the TikTok HD page: use that very file, no second copy or re-encode
-    const attached = ctx.attachments[i.video - 1];
-    if (i.mode === "auto" && isTiktokHdPrepared(name) && attached) {
-      return { ok: true, summary: `TikTok HD: ${name} is already prepared`, output: { video_id: attached.id, mode: "remux", reasons: [], before: facts(before), after: facts(before) } };
-    }
-    let plan: ReturnType<typeof tiktokHdPlan>;
-    try {
-      plan = tiktokHdPlan(before, i.mode);
-    } catch (err) {
-      throw new ToolDenied((err as Error).message);
-    }
-    const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").slice(0, 60) || `video-${i.video}`;
-    if (plan.mode === "reencode") {
-      const edit = EditPlan.parse({ clips: [{ video: i.video }], preset: "tiktok_fhd", fit: plan.fit, fps: plan.fps, name: `${base}-tiktok-hd` });
-      const r = await videoEditTool.execute(edit, ctx);
-      const out = r.output as { video_id: string; file: string; size_mb: number };
-      const after = await probe(ctx, out.file);
-      return { ok: true, summary: `TikTok HD (re-encoded): ${out.file}`, output: { video_id: out.video_id, mode: "reencode", reasons: plan.reasons, before: facts(before), after: facts(after) } };
-    }
-    const dir = mediaDir(ctx);
-    const out = `${base}-tiktok-hd.mp4`;
-    const r = await spawn([bin, ...remuxArgs(file, out)], dir, ctx.signal);
-    if (r.code !== 0) throw new ToolDenied(`ffmpeg could not remux the video: ${r.stderr.slice(-400)}`);
-    const after = await probe(ctx, out);
-    const whole = EditPlan.parse({ clips: [{ video: i.video }], name: `${base}-tiktok-hd` });
-    const up = await ctx.uploadVideo(join(dir, out), out, { plan: whole, attachments: ctx.attachments });
-    ctx.renders.push({ id: up.id, name: out, content_type: "video/mp4" });
-    return { ok: true, summary: `TikTok HD (no re-encode): ${out}`, output: { video_id: up.id, mode: "remux", reasons: plan.reasons, before: facts(before), after: facts(after) } };
+    const { summary, output } = await runVideoHd(i.video, "tiktok", i.mode, ctx);
+    const { video_id, mode, reasons, before, after } = output;
+    return { ok: true, summary, output: { video_id, mode, reasons, before, after } };
   },
 });
 
@@ -1322,4 +1383,4 @@ export const videoReviewTool = defineTool({
   },
 });
 
-export const VIDEO_TOOLS = [videoProbeTool, videoIndexTool, videoTranscribeTool, videoEditTool, videoReviewTool, suggestEditsTool, videoTiktokHdTool];
+export const VIDEO_TOOLS = [videoProbeTool, videoIndexTool, videoTranscribeTool, videoEditTool, videoReviewTool, suggestEditsTool, videoHdTool, videoTiktokHdTool];

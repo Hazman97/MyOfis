@@ -1,4 +1,4 @@
-import { DIRECT_JOBS, VIDEO_TYPES } from "@agent-office/shared";
+import { DIRECT_JOBS, HD_TARGETS, VIDEO_TYPES, type HdTarget } from "@agent-office/shared";
 import { TOOL_REGISTRY, runTool } from "@agent-office/tools";
 import { MessageStreamer } from "./text.ts";
 import { makeToolContext } from "./toolContext.ts";
@@ -29,14 +29,31 @@ export const directRuntime: AgentRuntime = {
       }
       if (!done.length) throw new Error("no video to transcribe");
       msg.push(`Transcribed: ${done.join("; ")}.`);
-    } else if (tool === "video_tiktok_hd") {
+    } else if (tool === "video_hd" || tool === "video_tiktok_hd") {
       const n = toolCtx.attachments.findIndex((a) => !!VIDEO_TYPES[a.content_type]);
       if (n < 0) throw new Error("no video to prepare");
-      const out = await runTool(def, { video: n + 1, mode: job.input.mode ?? "auto" }, toolCtx);
+      const target: HdTarget = tool === "video_tiktok_hd" ? "tiktok" : ((job.input.target as HdTarget | undefined) ?? "tiktok");
+      const args = tool === "video_hd" ? { video: n + 1, target, mode: job.input.mode ?? "auto" } : { video: n + 1, mode: job.input.mode ?? "auto" };
+      const out = await runTool(def, args, toolCtx);
       if (!out.ok) throw new Error(out.summary);
-      const o = out.output as { mode: string; reasons: string[]; before: { size: string; fps: number; mb: number }; after: { size: string; fps: number; mb: number } };
-      const how = o.mode === "remux" ? "No re-encode: the picture is untouched, only the file was cleaned up for TikTok." : `Re-encoded once to TikTok's spec because: ${o.reasons.join("; ")}.`;
-      msg.push(`${how}\nBefore: ${o.before.size}, ${o.before.fps} fps, ${o.before.mb} MB. After: ${o.after.size}, ${o.after.fps} fps, ${o.after.mb} MB.`);
+      const o = out.output as {
+        mode: string;
+        reasons: string[];
+        warnings?: string[];
+        before: { size: string; fps: number; mb: number };
+        after: { size: string; fps: number; mb: number };
+      };
+      const label = HD_TARGETS[target].label;
+      const how =
+        target === "tiktok"
+          ? o.mode === "remux"
+            ? "No re-encode: the picture is untouched, only the file was cleaned up for TikTok."
+            : `Re-encoded once to TikTok's spec because: ${o.reasons.join("; ")}.`
+          : o.mode === "remux"
+            ? `Ready for ${label} (no re-encode: the picture is untouched).`
+            : `Ready for ${label} (re-encoded once because: ${o.reasons.join("; ")}).`;
+      const warnLine = o.warnings?.length ? `\nWarnings: ${o.warnings.join("; ")}` : "";
+      msg.push(`${how}\nBefore: ${o.before.size}, ${o.before.fps} fps, ${o.before.mb} MB. After: ${o.after.size}, ${o.after.fps} fps, ${o.after.mb} MB.${warnLine}`);
     } else {
       const out = await runTool(def, job.input.plan, toolCtx);
       if (!out.ok) throw new Error(out.summary);

@@ -363,6 +363,8 @@ For heavier edits, **Edit fully in OpenCut**:
 
 The hub checks OpenCut's GitHub once a day and tells you on Telegram when it releases something new or its API plans change.
 
+**Video HD (`/video-hd`).** One place to prepare finished videos for **TikTok HD** (1080×1920), **WhatsApp HD** (720p, keeps aspect ratio, ~2.5 Mbit/s), and **WhatsApp Status** (720×1280). Pick one or more targets on the same upload; files that already fit are remuxed untouched, others are re-encoded once on your PC without AI tokens.
+
 ## TikTok agent: your clips, posted every day
 
 Drop your own clips (scenery, walking, static shots) into a folder on the runner PC. The **TikTok** agent then:

@@ -122,7 +122,12 @@ export function renderInfographicHtml(visual: ExplainerVisual, opts: RenderTempl
           play: function() { return this; }
         }
       };
-      renderFrame(0);
+      var initT = 0;
+      try {
+        var sp = new URLSearchParams(location.search);
+        if (sp.has("t")) initT = Math.max(0, Math.min(duration, Number(sp.get("t")) || duration));
+      } catch {}
+      renderFrame(initT);
     })();
   </script>
 </body>

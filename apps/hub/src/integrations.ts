@@ -232,7 +232,8 @@ const StoredTts = z.object({
   base_url: z.string().default(""),
   key_enc: z.string().nullable().default(null),
   key_hint: z.string().nullable().default(null),
-  voice: z.string().default("af_sarah"),
+  model: z.string().default(""),
+  voice: z.string().default(""),
   speed: z.number().default(1.0),
 });
 
@@ -240,6 +241,7 @@ export const TtsSettingsInput = z.object({
   base_url: z.string().max(500),
   /** Write-only. Omit to keep, "" to clear. */
   api_key: z.string().max(500).optional(),
+  model: z.string().max(100).optional(),
   voice: z.string().max(50).optional(),
   speed: z.number().min(0.25).max(4.0).optional(),
 });
@@ -248,6 +250,7 @@ export interface TtsPublic {
   base_url: string;
   has_key: boolean;
   key_hint: string | null;
+  model: string;
   voice: string;
   speed: number;
 }
@@ -265,6 +268,7 @@ export function ttsSettings(db: Db, secrets: Secrets) {
       base_url: s.base_url,
       has_key: !!s.key_enc,
       key_hint: s.key_hint,
+      model: s.model,
       voice: s.voice,
       speed: s.speed,
     };
@@ -272,7 +276,7 @@ export function ttsSettings(db: Db, secrets: Secrets) {
 
   return {
     public: pub,
-    plan(): { base_url: string; key: string | null; voice: string; speed: number } | null {
+    plan(): { base_url: string; key: string | null; model: string; voice: string; speed: number } | null {
       const envBase = process.env.TTS_API_BASE?.trim();
       const s = read();
       const base = envBase || s.base_url.replace(/\/$/, "");
@@ -280,7 +284,8 @@ export function ttsSettings(db: Db, secrets: Secrets) {
       return {
         base_url: base,
         key: s.key_enc ? secrets.decrypt(s.key_enc) : null,
-        voice: s.voice || "af_sarah",
+        model: s.model,
+        voice: s.voice,
         speed: s.speed || 1.0,
       };
     },
@@ -292,7 +297,8 @@ export function ttsSettings(db: Db, secrets: Secrets) {
         base_url: data.base_url.replace(/\/$/, ""),
         key_enc: keyChanged ? (data.api_key ? secrets.encrypt(data.api_key) : null) : prev.key_enc,
         key_hint: keyChanged ? (data.api_key ? keyHint(data.api_key) : null) : prev.key_hint,
-        voice: data.voice ?? prev.voice ?? "af_sarah",
+        model: data.model ?? prev.model ?? "",
+        voice: data.voice ?? prev.voice ?? "",
         speed: data.speed ?? prev.speed ?? 1.0,
       };
       db.insert(settings).values({ key: TTS_KEY, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();

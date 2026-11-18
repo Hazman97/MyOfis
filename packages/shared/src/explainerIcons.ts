@@ -1,12 +1,8 @@
 /**
  * Curated SVG icon path definitions (subset of Lucide icons).
- * License: ISC (https://github.com/lucide-icons/lucide/blob/main/LICENSE)
+ * License: ISC — full text in ./explainerIcons.LICENSE.txt
  *
  * Copyright (c) 2022-2024, Lucide Contributors
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
  */
 
 export const EXPLAINER_ICONS: Record<string, string> = {

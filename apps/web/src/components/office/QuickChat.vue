@@ -24,11 +24,15 @@ import { canDictate, canSpeak } from "../../speech.ts";
 import { fmtTime } from "../../format.ts";
 import { useChatThread } from "../../chat/useChatThread.ts";
 import {
+  detectNewReply,
   formatLiteMarkdown,
   isAudioAttachment,
   isChattableAgent,
   isDocAttachment,
   isVideoAttachment,
+  readStoredBool,
+  resolveInitialDockOpen,
+  type ReplySnapshot,
 } from "../../chat/chatThreadHelpers.ts";
 
 const props = defineProps<{
@@ -48,12 +52,8 @@ const office = useOffice();
 const LS_OPEN_KEY = "ao:quickchat:open";
 const LS_AGENT_KEY = "ao:quickchat:agent";
 
-function readStoredOpen(): boolean {
-  try {
-    return localStorage.getItem(LS_OPEN_KEY) === "true";
-  } catch {
-    return false;
-  }
+function readStoredOpen(): boolean | null {
+  return readStoredBool(typeof localStorage !== "undefined" ? localStorage : null, LS_OPEN_KEY);
 }
 
 function readStoredAgent(): string | null {
@@ -64,7 +64,10 @@ function readStoredAgent(): string | null {
   }
 }
 
-const isOpen = ref<boolean>(props.open ?? readStoredOpen());
+const isOpen = ref<boolean>(resolveInitialDockOpen(props.open, readStoredOpen()));
+if (props.open === undefined) {
+  emit("update:open", isOpen.value);
+}
 const unread = ref(false);
 const scroller = ref<HTMLElement>();
 const textareaRef = ref<HTMLTextAreaElement>();
@@ -156,8 +159,8 @@ const {
   photos,
   uploading,
   uploadPct,
-  stopping,
   listening,
+  loadingMessages,
   speaking,
   removePhoto,
   addPhotos,
@@ -186,16 +189,24 @@ const needsApproval = computed(() => agentActivity.value === "waiting_approval")
 // Last ~6 messages for quick context
 const visibleMessages = computed(() => messages.value.slice(-6));
 
-// Notice unread reply arrival if collapsed
+// Notice unread reply arrival if collapsed (only when a reply arrives after a user message)
+let replySnapshot: ReplySnapshot | null = null;
 watch(
-  () => messages.value.map((m) => `${m.job_id}:${live(m).status}:${live(m).reply.length}`).join("|"),
-  () => {
-    if (!isOpen.value) {
+  () => ({
+    loading: loadingMessages.value,
+    threadKey: `${activeAgentId.value ?? ""}:${threadId.value ?? ""}`,
+    items: messages.value.map((m) => ({ job_id: m.job_id, reply: live(m).reply })),
+  }),
+  ({ loading, threadKey, items }) => {
+    const res = detectNewReply(replySnapshot, threadKey, items, loading);
+    replySnapshot = res.next;
+    if (res.hasNewReply && !isOpen.value) {
       unread.value = true;
-    } else {
+    } else if (isOpen.value && !loading) {
       void scrollToBottom();
     }
   },
+  { deep: true },
 );
 
 async function scrollToBottom(force = false) {
@@ -277,8 +288,9 @@ const fullChatUrl = computed(() => {
       <button
         v-if="!isOpen"
         type="button"
-        class="group fixed bottom-5 right-5 z-30 flex size-13 items-center justify-center rounded-full border border-line-strong bg-surface text-fg shadow-card backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-accent hover:shadow-lg active:scale-95"
+        class="group fixed right-5 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:bottom-5 z-30 flex size-13 items-center justify-center rounded-full border border-line-strong bg-surface text-fg shadow-card backdrop-blur-md transition-all duration-200 hover:scale-105 hover:border-accent hover:shadow-lg active:scale-95"
         :aria-label="`Open quick chat with ${currentAgent?.name ?? 'agent'}`"
+        :data-unread="unread ? 'true' : 'false'"
         @click="isOpen = true"
       >
         <span v-if="currentAgent" class="relative">
@@ -309,7 +321,7 @@ const fullChatUrl = computed(() => {
     >
       <aside
         v-if="isOpen"
-        class="fixed bottom-5 right-5 z-30 flex h-130 max-h-[calc(100vh-5rem)] w-92 max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-line bg-surface/98 shadow-2xl backdrop-blur-xl transition-all max-sm:inset-x-0 max-sm:bottom-0 max-sm:h-[82vh] max-sm:w-full max-sm:max-w-none max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-x-0 max-sm:border-b-0"
+        class="fixed right-5 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:bottom-5 z-40 flex h-130 max-h-[calc(100vh-5rem)] w-92 max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl backdrop-blur-xl transition-all max-sm:inset-x-0 max-sm:bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] max-sm:h-[calc(82vh-3.5rem)] max-sm:max-h-[calc(100vh-5rem-env(safe-area-inset-bottom,0px))] max-sm:w-full max-sm:max-w-none max-sm:rounded-b-none max-sm:rounded-t-2xl max-sm:border-x-0 max-sm:border-b-0"
         role="region"
         aria-label="Office quick chat"
       >
@@ -452,7 +464,7 @@ const fullChatUrl = computed(() => {
                   </p>
                 </div>
 
-                <!-- Footer actions: time, read aloud, stop button -->
+                <!-- Footer actions: time, read aloud -->
                 <div class="mt-1 flex items-center gap-2.5 px-1 text-[10px] text-faint">
                   <span class="font-mono">{{ fmtTime(m.created_at) }}</span>
                   <button
@@ -464,15 +476,6 @@ const fullChatUrl = computed(() => {
                     <component :is="speaking === m.job_id ? Square : Volume2" :size="11" />
                     {{ speaking === m.job_id ? "Stop" : "Listen" }}
                   </button>
-                  <button
-                    v-if="live(m).status === 'running'"
-                    type="button"
-                    class="text-danger hover:underline font-semibold"
-                    :disabled="stopping === m.job_id"
-                    @click="stopReply(m.job_id)"
-                  >
-                    {{ stopping === m.job_id ? "Stopping…" : "Stop" }}
-                  </button>
                 </div>
               </div>
             </div>
@@ -481,8 +484,12 @@ const fullChatUrl = computed(() => {
 
         <!-- Attachment Previews -->
         <div v-if="photos.length" class="flex items-center gap-2 border-t border-line bg-surface-2/60 px-3 py-2 overflow-x-auto">
-          <div v-for="p in photos" :key="p.id" class="group relative size-12 shrink-0 rounded-lg overflow-hidden border border-line">
-            <img :src="p.preview" :alt="p.name" class="size-full object-cover" />
+          <div v-for="p in photos" :key="p.id" class="group relative size-12 shrink-0 rounded-lg overflow-hidden border border-line bg-surface">
+            <div v-if="isVideoAttachment(p) || isAudioAttachment(p) || isDocAttachment(p)" class="flex size-full flex-col items-center justify-center p-1 text-center text-[10px] text-muted">
+              <span>{{ isVideoAttachment(p) ? "🎬" : isAudioAttachment(p) ? "🎙️" : "📄" }}</span>
+              <span class="w-full truncate font-mono text-[8px]">{{ p.name }}</span>
+            </div>
+            <img v-else :src="p.preview" :alt="p.name" class="size-full object-cover" />
             <button
               type="button"
               class="absolute inset-0 flex items-center justify-center bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
@@ -506,7 +513,7 @@ const fullChatUrl = computed(() => {
             <input
               ref="fileInput"
               type="file"
-              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
+              accept="image/jpeg,image/png,image/webp"
               multiple
               class="hidden"
               @change="onFileSelect"
@@ -515,7 +522,7 @@ const fullChatUrl = computed(() => {
               type="button"
               class="rounded-lg p-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
               :class="photos.length >= 4 ? 'opacity-40 pointer-events-none' : ''"
-              title="Attach photo/video (max 4)"
+              title="Attach photo (max 4)"
               aria-label="Attach photo"
               @click="fileInput?.click()"
             >
@@ -571,7 +578,8 @@ const fullChatUrl = computed(() => {
 
 <style scoped>
 .quick-chat-container {
-  isolation: isolate;
+  position: relative;
+  z-index: 40;
 }
 </style>
 

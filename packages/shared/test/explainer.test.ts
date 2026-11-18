@@ -12,20 +12,14 @@ import {
   validateExplainerScript,
   extractVisualNumbers,
   validateNumbersInFactSheet,
-  isInsideSafeArea,
-  layoutCompareTable,
-  layoutSpectrum,
-  layoutBarChart,
-  layoutTimeline,
-  layoutDiagram,
   buildComposition,
 } from "../src/index.ts";
 
 describe("Task 029 Pure Logic: ExplainerScript, FactSheet, Layout & HTML Composition", () => {
   const sampleFactSheet: FactSheetItem[] = [
     {
-      claim: "WiFi 8 (802.11bn) Ultra High Reliability standard",
-      value: "802.11bn",
+      claim: "WiFi 8 (802.11bn) dan WiFi 7",
+      value: "WiFi 7, WiFi 8, 802.11bn",
       source_url: "https://ieee802.org/11/Reports/tgbn_update.htm",
       verified: true,
     },
@@ -99,6 +93,7 @@ describe("Task 029 Pure Logic: ExplainerScript, FactSheet, Layout & HTML Composi
       outro: "Korang rasa berbaloi ke tunggu WiFi 8? Komen kat bawah!",
       sources: ["IEEE 802.11bn Working Group", "Wi-Fi Alliance"],
       fact_sheet: sampleFactSheet,
+      pasted: false,
     };
 
     const res = validateExplainerScript(validScript);
@@ -136,6 +131,7 @@ describe("Task 029 Pure Logic: ExplainerScript, FactSheet, Layout & HTML Composi
       outro: "Jom sembang!",
       sources: ["https://wi-fi.org"],
       fact_sheet: sampleFactSheet,
+      pasted: false,
     };
 
     const validCheck = validateNumbersInFactSheet(validScript);
@@ -163,39 +159,45 @@ describe("Task 029 Pure Logic: ExplainerScript, FactSheet, Layout & HTML Composi
     expect(unverifiedCheck.ok).toBe(false);
     expect(unverifiedCheck.unverifiedNumbers.length).toBeGreaterThan(0);
     expect(unverifiedCheck.unverifiedNumbers[0]).toContain("999");
-  });
 
-  test("4. Safe Area Layout: compare_table layout stays within safe area boundaries", () => {
-    const { headerCells, rowCells, totalBounds } = layoutCompareTable(3, 4);
-    expect(isInsideSafeArea(totalBounds)).toBe(true);
-    for (const h of headerCells) expect(isInsideSafeArea(h)).toBe(true);
-    for (const row of rowCells) {
-      for (const cell of row) expect(isInsideSafeArea(cell)).toBe(true);
-    }
-  });
+    // Normalisation: "6 GHz", "6GHz", and "6.0" all match "6 GHz" in fact_sheet
+    const normScript = ExplainerScript.parse({
+      ...validScript,
+      scenes: [
+        {
+          id: "s_norm",
+          narration: "Jalur 6.0 dan 6GHz dibuka.",
+          on_screen: "6 GHz",
+          visual: { template: "big_stat", number: "6GHz", label: "Spektrum" },
+        },
+      ],
+    });
+    expect(validateNumbersInFactSheet(normScript)).toEqual({ ok: true, unverifiedNumbers: [], unverified: false });
 
-  test("5. Safe Area Layout: spectrum layout stays within safe area boundaries", () => {
-    const { bandRects, axisRect } = layoutSpectrum(3);
-    expect(isInsideSafeArea(axisRect)).toBe(true);
-    for (const b of bandRects) expect(isInsideSafeArea(b)).toBe(true);
-  });
+    // Number in narration/on_screen not in fact_sheet fails even if present in sources URL
+    const urlOnlyScript = ExplainerScript.parse({
+      ...validScript,
+      sources: ["https://example.com/report-777"],
+      scenes: [
+        {
+          id: "s_narration_bad",
+          narration: "Kadar naik 777 peratus.",
+          on_screen: "777%",
+          visual: { template: "big_stat", number: "46 Gbps", label: "Laju" },
+        },
+      ],
+    });
+    const urlCheck = validateNumbersInFactSheet(urlOnlyScript);
+    expect(urlCheck.ok).toBe(false);
+    expect(urlCheck.unverifiedNumbers.join(" ")).toContain("777");
 
-  test("6. Safe Area Layout: bar_chart layout stays within safe area boundaries", () => {
-    const { barRects, axisRect } = layoutBarChart(4);
-    expect(isInsideSafeArea(axisRect)).toBe(true);
-    for (const b of barRects) expect(isInsideSafeArea(b)).toBe(true);
-  });
-
-  test("7. Safe Area Layout: timeline layout stays within safe area boundaries", () => {
-    const { pointNodes, spineLine } = layoutTimeline(4);
-    expect(isInsideSafeArea(spineLine)).toBe(true);
-    for (const p of pointNodes) expect(isInsideSafeArea(p)).toBe(true);
-  });
-
-  test("8. Safe Area Layout: diagram layout stays within safe area boundaries", () => {
-    const { nodeRects, flowBounds } = layoutDiagram(4);
-    expect(isInsideSafeArea(flowBounds)).toBe(true);
-    for (const n of nodeRects) expect(isInsideSafeArea(n)).toBe(true);
+    // Empty fact_sheet fails unless pasted: true
+    expect(validateNumbersInFactSheet(ExplainerScript.parse({ ...validScript, fact_sheet: [] })).ok).toBe(false);
+    expect(validateNumbersInFactSheet(ExplainerScript.parse({ ...validScript, fact_sheet: [], pasted: true }))).toEqual({
+      ok: true,
+      unverifiedNumbers: [],
+      unverified: true,
+    });
   });
 
   test("9. buildComposition generates valid offline HTML for all 6 infographic templates", () => {

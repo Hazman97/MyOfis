@@ -12,6 +12,7 @@ const TOOL_PROGRAMS: Record<string, string> = {
   meeting_transcribe: "whisper",
   video_edit: "ffmpeg",
   video_tiktok_hd: "ffmpeg",
+  video_hd: "ffmpeg",
   motion_render: "hyperframes",
   clip_find: "ffmpeg",
   clip_render: "ffmpeg",

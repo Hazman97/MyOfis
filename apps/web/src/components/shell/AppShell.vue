@@ -111,7 +111,7 @@ const allGroups: { sign: string; items: NavItem[] }[] = [
       { to: "/skills", label: "Skills", icon: Sparkles, badge: "skills" },
     ],
   },
-  { sign: "Work", items: [{ to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/studio", label: "Video Studio", icon: Clapperboard }, { to: "/clip-factory", label: "Clip Factory", icon: Scissors }, { to: "/tiktok-hd", label: "TikTok HD", icon: MonitorUp }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
+  { sign: "Work", items: [{ to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/studio", label: "Video Studio", icon: Clapperboard }, { to: "/clip-factory", label: "Clip Factory", icon: Scissors }, { to: "/video-hd", label: "Video HD", icon: MonitorUp }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
   {
     sign: "System",
     items: [
@@ -131,7 +131,7 @@ const allMore: NavItem[] = [
   { to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" },
   { to: "/studio", label: "Video Studio", icon: Clapperboard },
   { to: "/clip-factory", label: "Clip Factory", icon: Scissors },
-  { to: "/tiktok-hd", label: "TikTok HD", icon: MonitorUp },
+  { to: "/video-hd", label: "Video HD", icon: MonitorUp },
   { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/projects", label: "Projects", icon: FolderGit2 },
   { to: "/runners", label: "Runners", icon: Server, owner: true },

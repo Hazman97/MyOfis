@@ -5,6 +5,7 @@ import { useOffice } from "../stores/office.ts";
 import { canDictate, dictate, speak, stopSpeaking, type Dictation } from "../speech.ts";
 import {
   extractSpeakableText,
+  fetchAndOpenThread,
   isAudioAttachment,
   isVideoAttachment,
   liveMessageState,
@@ -58,20 +59,19 @@ export function useChatThread(
 
   async function openThread(id: string | null) {
     threadId.value = id;
-    options.onThreadChanged?.(id);
-    if (!id) {
-      messages.value = [];
-      return;
-    }
-    loadingMessages.value = true;
-    try {
-      messages.value = (await api.chatThread(id)).messages;
-    } catch (e) {
-      error.value = (e as Error).message;
-      messages.value = [];
-    } finally {
-      loadingMessages.value = false;
-    }
+    loadingMessages.value = Boolean(id);
+    const err = await fetchAndOpenThread(
+      id,
+      async (tid) => (await api.chatThread(tid)).messages,
+      (msgs) => {
+        messages.value = msgs;
+      },
+      (tid) => {
+        loadingMessages.value = false;
+        options.onThreadChanged?.(tid);
+      },
+    );
+    if (err) error.value = err;
   }
 
   async function addPhotos(inputFiles: FileList | File[]) {

@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { EditPlan, EditSuggestionsInput, RenderInfo, Transcript, VIDEO_PRESETS, VideoShotIndex, ClipCandidateSchema, type ClipCandidate, type EditSuggestions, type Job, type TikTokHdMode } from "@agent-office/shared";
+import { EditPlan, EditSuggestionsInput, HD_TARGETS, RenderInfo, Transcript, VIDEO_PRESETS, VideoShotIndex, ClipCandidateSchema, type ClipCandidate, type EditSuggestions, type HdTarget, type Job, type TikTokHdMode } from "@agent-office/shared";
 import { z } from "zod";
 import type { Hub } from "./core.ts";
 import { contentDrafts, editSuggestions, events, jobs, runs, settings, uploads } from "./db/schema.ts";
@@ -16,6 +16,7 @@ import { toDraft } from "./content.ts";
 export const VIDEO_RENDER_JOB = "video_render";
 export const VIDEO_TRANSCRIBE_JOB = "video_transcribe";
 export const TIKTOK_HD_JOB = "tiktok_hd";
+export const VIDEO_HD_JOB = "video_hd";
 
 export class Studio {
   constructor(private readonly hub: Hub) {}
@@ -175,6 +176,34 @@ export class Studio {
     );
   }
 
+  /** "Video HD": remux or re-encode a finished video for one or more targets (no AI). Returns created jobs. */
+  videoHd(uploadId: string, targets: HdTarget[], mode: TikTokHdMode, ws = "owner"): Job[] {
+    const up = this.hub.publisher.upload(uploadId);
+    if (!up || up.workspace_id !== ws || !up.content_type.startsWith("video/")) throw new HttpError(404, "video not found");
+    const agent = this.#editor(null, ws, "video_hd");
+    const unique = [...new Set(targets)];
+    return unique.map((target) => {
+      const label = HD_TARGETS[target].label;
+      return this.hub.createJob(
+        {
+          agent_id: agent.id,
+          project_id: null,
+          type: VIDEO_HD_JOB,
+          title: `${label}: ${up.name}`.slice(0, 200),
+          input: {
+            text: `Prepare "${up.name}" for ${label}`,
+            attachments: [{ id: up.id, name: up.name, content_type: up.content_type }],
+            source_upload_id: up.id,
+            target,
+            mode,
+          },
+          trigger: "manual",
+        },
+        ws,
+      );
+    });
+  }
+
   /** "TikTok HD": remux or re-encode a finished video for TikTok on the runner PC (no AI). Returns the job. */
   tiktokHd(uploadId: string, mode: TikTokHdMode, ws = "owner"): Job {
     const up = this.hub.publisher.upload(uploadId);
@@ -193,11 +222,17 @@ export class Studio {
     );
   }
 
-  /** The TikTok HD page: recent jobs with their source, result video and what was done. */
-  tiktokHdList(ws = "owner") {
-    const rows = this.hub.db.select().from(jobs).where(and(eq(jobs.type, TIKTOK_HD_JOB), eq(jobs.workspace_id, ws))).orderBy(desc(jobs.created_at)).limit(30).all();
+  /** The Video HD page: recent `video_hd` and legacy `tiktok_hd` jobs with their target, source, result, and note. */
+  videoHdList(ws = "owner") {
+    const rows = this.hub.db
+      .select()
+      .from(jobs)
+      .where(and(inArray(jobs.type, [VIDEO_HD_JOB, TIKTOK_HD_JOB]), eq(jobs.workspace_id, ws)))
+      .orderBy(desc(jobs.created_at))
+      .limit(60)
+      .all();
     return rows.map((j) => {
-      const input = j.input as { source_upload_id?: string; mode?: string; attachments?: { name: string }[] };
+      const input = j.input as { source_upload_id?: string; target?: HdTarget; mode?: string; attachments?: { name: string }[] };
       const runIds = this.hub.db.select({ id: runs.id }).from(runs).where(eq(runs.job_id, j.id)).all().map((r) => r.id);
       const evs = runIds.length
         ? this.hub.db
@@ -215,6 +250,7 @@ export class Studio {
         job_id: j.id,
         status: j.status,
         created_at: j.created_at,
+        target: input.target ?? ("tiktok" as HdTarget),
         mode: input.mode ?? "auto",
         source: { id: input.source_upload_id ?? null, name: input.attachments?.[0]?.name ?? "" },
         result: made ? { id: made.id, name: made.name, size: made.size } : null,
@@ -222,6 +258,11 @@ export class Studio {
         error: j.status === "failed" ? failed : j.status === "cancelled" ? this.#cancelReason(j.id) : null,
       };
     });
+  }
+
+  /** Legacy alias for TikTok HD list. */
+  tiktokHdList(ws = "owner") {
+    return this.videoHdList(ws);
   }
 
   /** Why a job was stopped (time limit, the owner, pause), from its job.cancelled event. */

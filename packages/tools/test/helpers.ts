@@ -42,7 +42,7 @@ export function makeCtx(
       return `artifacts/test/${name}`;
     },
     projectContext: opts.projectContext ?? null,
-    saveDraft: (d) => drafts.push(d),
+    saveDraft: (d) => { drafts.push(d); },
     addFeatureNote: (f) => features.push(f),
     memoryStores: { memory: [], user: [] },
     memoryWriteApproval: false,

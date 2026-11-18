@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VIDEO_PRESETS, finishedSeconds, subtitleCues, tiktokHdPlan } from "@agent-office/shared";
+import { VIDEO_PRESETS, finishedSeconds, hdPlan, subtitleCues, tiktokHdPlan } from "@agent-office/shared";
 import {
   EditPlan,
   TOOL_REGISTRY,
@@ -12,6 +12,7 @@ import {
   buildEditArgs,
   captionsAss,
   evaluateReview,
+  isHdPrepared,
   isTiktokHdPrepared,
   parseBlackdetect,
   parseCropdetect,
@@ -272,6 +273,52 @@ describe("TikTok HD", () => {
   });
 });
 
+describe("Video HD (hdPlan & WhatsApp args)", () => {
+  const readyWa = { width: 1280, height: 720, fps: 30, duration: 20, video_codec: "h264", size_bytes: 10 * 1024 ** 2, pix_fmt: "yuv420p", audio_codec: "aac", vfr: false, rotation: 0, mbps: 2 };
+  const readyStatus = { ...readyWa, width: 720, height: 1280 };
+  const readyTiktok = { ...readyWa, width: 1080, height: 1920, mbps: 12 };
+
+  test("every target remuxes an already-fitting file", () => {
+    expect(hdPlan(readyTiktok, "tiktok")).toEqual({ mode: "remux", reasons: [], fps: 30, fit: "crop", warnings: [] });
+    expect(hdPlan(readyWa, "whatsapp")).toEqual({ mode: "remux", reasons: [], fps: 30, fit: "crop", warnings: [] });
+    expect(hdPlan({ ...readyWa, width: 720, height: 1280 }, "whatsapp")).toEqual({ mode: "remux", reasons: [], fps: 30, fit: "crop", warnings: [] });
+    expect(hdPlan(readyStatus, "whatsapp_status")).toEqual({ mode: "remux", reasons: [], fps: 30, fit: "crop", warnings: [] });
+  });
+
+  test("phone 4K HEVC 10-bit VFR re-encodes with clear reasons for all targets", () => {
+    const phone4k = { width: 2160, height: 3840, fps: 25, duration: 15, video_codec: "hevc", size_bytes: 50 * 1024 ** 2, pix_fmt: "yuv420p10le", audio_codec: "aac", vfr: true, rotation: 0, mbps: 35 };
+    for (const target of ["tiktok", "whatsapp", "whatsapp_status"] as const) {
+      const plan = hdPlan(phone4k, target);
+      expect(plan.mode).toBe("reencode");
+      expect(plan.reasons.join(" | ")).toMatch(/2160×3840.*25 fps.*variable frame rate.*yuv420p10le/);
+    }
+  });
+
+  test("Status > 60 s produces a split warning and never refuses", () => {
+    const longStatus = hdPlan({ ...readyStatus, duration: 61 }, "whatsapp_status");
+    expect(longStatus.mode).toBe("remux");
+    expect(longStatus.warnings).toEqual(["61 s is over 60 s; WhatsApp will split it into 2 parts"]);
+  });
+
+  test("WhatsApp > 64 MB produces a soft size warning and never refuses", () => {
+    const bigWa = hdPlan({ ...readyWa, size_bytes: 70 * 1024 ** 2 }, "whatsapp");
+    expect(bigWa.warnings.length).toBe(1);
+    expect(bigWa.warnings[0]).toMatch(/70 MB is over 64 MB/);
+  });
+
+  test("buildEditArgs produces WhatsApp keep-aspect scale, 2.5M maxrate, AAC 128k, 30 fps", () => {
+    const plan = EditPlan.parse({ preset: "whatsapp_hd", fps: 30, fit: "crop", clips: [{ video: 1 }] });
+    const inputs = [{ file: "in-1.mp4", probe: { width: 1920, height: 1080, fps: 30, duration: 10, size_bytes: 10_000_000, has_audio: true, video_codec: "h264", audio_codec: "aac" } }];
+    const args = buildEditArgs(plan, inputs, "x264", "out.mp4", null);
+    const fc = args[args.indexOf("-filter_complex") + 1]!;
+    expect(fc).toContain("scale='if(gt(iw,ih),1280,if(eq(iw,ih),720,-2))':'if(lt(iw,ih),1280,if(eq(iw,ih),720,-2))'");
+    expect(fc).not.toContain("boxblur");
+    expect(fc).not.toContain("pad=");
+    expect(fc).toContain("fps=30");
+    expect(args).toEqual(expect.arrayContaining(["-maxrate", "2.5M", "-bufsize", "5M", "-b:a", "128k"]));
+  });
+});
+
 describe.skipIf(!ffmpeg || !ffprobe)("TikTok HD with real ffmpeg", () => {
   let dir: string;
   beforeAll(async () => {
@@ -321,6 +368,55 @@ describe.skipIf(!ffmpeg || !ffprobe)("TikTok HD with real ffmpeg", () => {
     expect(a.sent.length).toBe(0);
     expect(a.ctx.renders.length).toBe(0);
   });
+
+  test("isHdPrepared recognizes prepared filenames per target and video_tiktok_hd keeps exact old output shape", async () => {
+    expect(isHdPrepared("clip-tiktok-hd.mp4", "tiktok")).toBe(true);
+    expect(isHdPrepared("clip-wa-hd.mp4", "whatsapp")).toBe(true);
+    expect(isHdPrepared("clip-wa-hd-whatsapp_hd.mp4", "whatsapp")).toBe(true);
+    expect(isHdPrepared("clip-wa-status.mp4", "whatsapp_status")).toBe(true);
+    expect(isHdPrepared("clip-wa-status-whatsapp_v.mp4", "whatsapp_status")).toBe(true);
+    expect(isHdPrepared("clip-wa-hd.mp4", "tiktok")).toBe(false);
+
+    const a = ctxFor("ready.mov", "video/quicktime", "ws-shape");
+    const r = await runTool(TOOL_REGISTRY.video_tiktok_hd!, { video: 1 }, a.ctx);
+    expect(r.ok).toBe(true);
+    expect(Object.keys(r.output as object).sort()).toEqual(["after", "before", "mode", "reasons", "video_id"]);
+  });
+
+  test("video_hd renders real testsrc2 clips for tiktok, whatsapp (landscape & portrait), and whatsapp_status", async () => {
+    const run = (args: string[]) => Bun.spawn([ffmpeg!, "-hide_banner", "-loglevel", "error", "-y", ...args], { cwd: dir }).exited;
+    expect(await run(["-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=25:duration=2", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "land1080.mp4"])).toBe(0);
+    expect(await run(["-f", "lavfi", "-i", "testsrc2=size=1080x1920:rate=25:duration=2", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "port1080.mp4"])).toBe(0);
+
+    // 1. WhatsApp HD landscape -> 1280x720, 30 fps, h264, aac, <= 2.5 Mbps
+    const waLand = ctxFor("land1080.mp4", "video/mp4", "ws-wa-land");
+    const rWaLand = await runTool(TOOL_REGISTRY.video_hd!, { video: 1, target: "whatsapp", mode: "auto" }, waLand.ctx);
+    expect(rWaLand.ok).toBe(true);
+    expect(waLand.sent[0]).toMatch(/-wa-hd/);
+    const pWaLand = info(waLand.sent[0]!);
+    expect(pWaLand).toMatchObject({ width: 1280, height: 720, fps: 30, video_codec: "h264", audio_codec: "aac" });
+    expect(pWaLand.mbps ?? 0).toBeLessThanOrEqual(3.5); // short 2s clip VBV ceiling
+
+    // 2. WhatsApp HD portrait -> 720x1280, 30 fps, h264, aac
+    const waPort = ctxFor("port1080.mp4", "video/mp4", "ws-wa-port");
+    const rWaPort = await runTool(TOOL_REGISTRY.video_hd!, { video: 1, target: "whatsapp", mode: "auto" }, waPort.ctx);
+    expect(rWaPort.ok).toBe(true);
+    expect(info(waPort.sent[0]!)).toMatchObject({ width: 720, height: 1280, fps: 30, video_codec: "h264", audio_codec: "aac" });
+
+    // 3. WhatsApp Status -> 720x1280, 30 fps, h264, aac
+    const waStatus = ctxFor("land1080.mp4", "video/mp4", "ws-wa-status");
+    const rStatus = await runTool(TOOL_REGISTRY.video_hd!, { video: 1, target: "whatsapp_status", mode: "auto" }, waStatus.ctx);
+    expect(rStatus.ok).toBe(true);
+    expect(waStatus.sent[0]).toMatch(/-wa-status/);
+    expect(info(waStatus.sent[0]!)).toMatchObject({ width: 720, height: 1280, fps: 30, video_codec: "h264", audio_codec: "aac" });
+
+    // 4. TikTok HD -> 1080x1920, 30 fps, h264, aac
+    const tt = ctxFor("land1080.mp4", "video/mp4", "ws-tt");
+    const rTt = await runTool(TOOL_REGISTRY.video_hd!, { video: 1, target: "tiktok", mode: "auto" }, tt.ctx);
+    expect(rTt.ok).toBe(true);
+    expect(tt.sent[0]).toMatch(/-tiktok-hd/);
+    expect(info(tt.sent[0]!)).toMatchObject({ width: 1080, height: 1920, fps: 30, video_codec: "h264", audio_codec: "aac" });
+  }, 180_000);
 });
 
 describe("Task 024 & Task 026: overlays, per-boundary transitions, letterbox crop, emoji, shot index & review", () => {
@@ -482,6 +578,25 @@ describe("Task 024 & Task 026: overlays, per-boundary transitions, letterbox cro
   test("captionsAss wraps emoji 🔥 in a monochrome outline font override so libass never renders tofu", () => {
     const ass = captionsAss([{ text: "Panaskan suasana 🔥 sekarang!", start: 0, end: 2, position: "middle" }], VIDEO_PRESETS.tiktok_fhd);
     expect(ass).toMatch(/\{\\fn(Segoe UI Symbol|Noto Emoji)\\b0\}🔥\{\\fnArial\\b1\}/);
+    expect(ass).not.toContain("/fn");
+  });
+
+  test("generateAnimatedCaptions + captionsAss wraps emoji exactly once with no /fn literal leakage", async () => {
+    const { generateAnimatedCaptions } = await import("@agent-office/shared");
+    const caps = generateAnimatedCaptions(
+      [
+        { w: "Kandang", s: 0.0, e: 0.4 },
+        { w: "lembu", s: 0.4, e: 0.8 },
+        { w: "ini", s: 0.8, e: 1.1 },
+      ],
+      0,
+      2,
+      "pop",
+    );
+    expect(caps.length).toBe(1);
+    const ass = captionsAss(caps.map((c) => ({ ...c, position: "bottom" as const })), VIDEO_PRESETS.tiktok_fhd);
+    expect(ass).toMatch(/\{\\fn(Segoe UI Symbol|Noto Emoji)\\b0\}🏠\{\\fnArial\\b1\}/);
+    expect(ass).not.toContain("/fn");
   });
 
   test("repeat guard refuses the 3rd identical failed tool call with a clear error message", async () => {

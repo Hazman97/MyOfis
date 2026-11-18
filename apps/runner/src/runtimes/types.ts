@@ -15,7 +15,7 @@ export interface RunContext {
   /** Upload a file to the hub for the owner to view; returns its storage path. */
   uploadArtifact(name: string, data: Uint8Array, contentType: string): Promise<string>;
   /** Send a content draft to the hub (Marketing). */
-  saveDraft(req: DraftRequest): void;
+  saveDraft(req: DraftRequest): Promise<{ ok: boolean; error?: string } | void> | { ok: boolean; error?: string } | void;
   /** Send a released-feature note to the hub (Coder). */
   addFeatureNote(req: { project_id: string; note: FeatureNoteData }): void;
   saveMemory(target: "memory" | "user", ops: MemoryOp[]): void;

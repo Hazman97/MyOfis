@@ -17,14 +17,30 @@ function contextOf(ctx: ToolContext): ProjectContext {
   return ctx.projectContext;
 }
 
-function pickProject(ctx: ToolContext, slug: string | undefined): Ctx {
+export function resolveProject(ctx: ToolContext, ref: string | undefined): Ctx {
   const pc = contextOf(ctx);
-  const p = slug ? pc.projects.find((x) => x.slug === slug) : pc.projects.find((x) => x.id === ctx.projectId) ?? (pc.projects.length === 1 ? pc.projects[0] : undefined);
+  const p = ref
+    ? pc.projects.find((x) => x.slug === ref || x.id === ref)
+    : pc.projects.find((x) => x.id === ctx.projectId) ?? (pc.projects.length === 1 ? pc.projects[0] : undefined);
   if (!p) {
     const names = pc.projects.map((x) => x.slug).join(", ") || "none";
-    throw new ToolDenied(slug ? `unknown project "${slug}". Projects: ${names}` : `say which project (one of: ${names})`);
+    throw new ToolDenied(ref ? `unknown project "${ref}". Projects: ${names}` : `say which project (one of: ${names})`);
   }
   return p;
+}
+
+export function validateDraftAgainstBrief(p: Ctx, body: string, selfCheck: z.infer<typeof SelfCheck>, kind: string): void {
+  const failed = (["facts_match_brief", "only_released_features", "no_overclaims", "tone_and_language_match"] as const).filter((k) => !selfCheck[k]);
+  if (failed.length) throw new ToolDenied(`self-check failed (${failed.join(", ")}). Fix the draft so every check is true, then save it again.`);
+  const lower = body.toLowerCase();
+  const banned = forbiddenPhrases(p).find((f) => lower.includes(f));
+  if (banned) throw new ToolDenied(`the draft says "${banned}", which the brief forbids. Rewrite without it.`);
+  const copied = kind === "style_guide" ? null : copiedFrom(body, p.brief?.good_examples ?? []);
+  if (copied) throw new ToolDenied(`the draft copies an example post word for word ("${copied}…"). Learn the style; write new sentences.`);
+}
+
+function pickProject(ctx: ToolContext, slug: string | undefined): Ctx {
+  return resolveProject(ctx, slug);
 }
 
 export const readBriefTool = defineTool({
@@ -124,13 +140,7 @@ export const saveDraftTool = defineTool({
   describe: (i) => `save a ${i.platform} ${i.kind} draft: ${i.title}`,
   async execute(i, ctx) {
     const p = pickProject(ctx, i.project);
-    const failed = (["facts_match_brief", "only_released_features", "no_overclaims", "tone_and_language_match"] as const).filter((k) => !i.self_check[k]);
-    if (failed.length) throw new ToolDenied(`self-check failed (${failed.join(", ")}). Fix the draft so every check is true, then save it again.`);
-    const lower = i.body.toLowerCase();
-    const banned = forbiddenPhrases(p).find((f) => lower.includes(f));
-    if (banned) throw new ToolDenied(`the draft says "${banned}", which the brief forbids. Rewrite without it.`);
-    const copied = i.kind === "style_guide" ? null : copiedFrom(i.body, p.brief?.good_examples ?? []);
-    if (copied) throw new ToolDenied(`the draft copies an example post word for word ("${copied}…"). Learn the style; write new sentences.`);
+    validateDraftAgainstBrief(p, i.body, i.self_check, i.kind);
     let meta: WebPost | undefined;
     let cover: string | null = null;
     if (i.cover_photo) {
@@ -140,13 +150,27 @@ export const saveDraftTool = defineTool({
       cover = a.id;
     }
     let video: string | null = null;
+    let factSheet: { claim: string; value: string; source_url?: string; verified: boolean }[] | undefined;
+    let unverified: boolean | undefined;
     if (i.video) {
       const v = i.video === "last" ? ctx.renders.at(-1) : [...ctx.renders, ...ctx.attachments].find((f) => f.id === i.video && f.content_type.startsWith("video/"));
       if (!v) throw new ToolDenied(`unknown video "${i.video}": use the video_id that video_edit returned`);
       video = v.id;
+      const rv = ctx.renders.find((r) => r.id === v.id);
+      if (rv?.fact_sheet?.length) factSheet = rv.fact_sheet;
+      if (rv?.unverified) unverified = true;
     }
-    if (cover || video) meta = WebPost.parse({ post_type: "social", cover_upload_id: cover, video_upload_id: video });
-    ctx.saveDraft({ project_id: p.id, platform: i.platform, kind: i.kind, title: i.title, body: i.body, self_check: i.self_check, ...(meta ? { meta } : {}) });
+    if (cover || video) {
+      meta = WebPost.parse({
+        post_type: "social",
+        cover_upload_id: cover,
+        video_upload_id: video,
+        ...(factSheet ? { fact_sheet: factSheet } : {}),
+        ...(unverified ? { unverified } : {}),
+      });
+    }
+    const ack = await ctx.saveDraft({ project_id: p.id, platform: i.platform, kind: i.kind, title: i.title, body: i.body, self_check: i.self_check, ...(meta ? { meta } : {}) });
+    if (ack && !ack.ok) throw new ToolDenied(`hub refused draft: ${ack.error || "unknown error"}`);
     return { ok: true, summary: `draft saved: ${i.platform} ${i.kind}`, output: { saved: true, project: p.slug, status: "waiting for the owner" } };
   },
 });

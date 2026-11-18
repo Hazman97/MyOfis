@@ -1,14 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import {
   clipSpeechBubble,
+  detectNewReply,
   extractOccLinks,
   extractSpeakableText,
+  fetchAndOpenThread,
   formatLiteMarkdown,
   isAudioAttachment,
   isChattableAgent,
   isDocAttachment,
   isVideoAttachment,
   liveMessageState,
+  readStoredBool,
+  resolveInitialDockOpen,
+  type ReplySnapshot,
 } from "../src/chat/chatThreadHelpers.ts";
 import type { ChatMessage } from "../src/api/http.ts";
 import type { JobView, RunView } from "@agent-office/shared";
@@ -119,6 +124,102 @@ describe("chatThreadHelpers", () => {
 
     const shortText = "Baik, saya sedang siapkan analisa.";
     expect(clipSpeechBubble(shortText, 60)).toBe("Baik, saya sedang siapkan analisa.");
+  });
+
+  test("readStoredBool & resolveInitialDockOpen restore stored open/closed state when prop is undefined (item 3)", () => {
+    const fakeStore = (val: string | null) => ({ getItem: () => val });
+    const throwingStore = {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+    };
+
+    expect(readStoredBool(fakeStore("true"), "k")).toBe(true);
+    expect(readStoredBool(fakeStore("false"), "k")).toBe(false);
+    expect(readStoredBool(fakeStore(null), "k")).toBe(null);
+    expect(readStoredBool(throwingStore, "k")).toBe(null);
+
+    // When prop is undefined (uncontrolled initial), stored value is restored
+    expect(resolveInitialDockOpen(undefined, true)).toBe(true);
+    expect(resolveInitialDockOpen(undefined, false)).toBe(false);
+    expect(resolveInitialDockOpen(undefined, null)).toBe(false);
+    // Explicit prop wins
+    expect(resolveInitialDockOpen(false, true)).toBe(false);
+    expect(resolveInitialDockOpen(true, false)).toBe(true);
+  });
+
+  test("fetchAndOpenThread invokes onReady strictly after messages are applied (item 5)", async () => {
+    let currentMessages: ChatMessage[] = [];
+    const events: string[] = [];
+    const sampleMsg: ChatMessage = {
+      job_id: "j1",
+      agent_id: "a1",
+      text: "Hi",
+      created_at: "2026-11-18T00:00:00Z",
+      status: "done",
+      run_id: "r1",
+      reply: "Hello!",
+    };
+
+    const err = await fetchAndOpenThread(
+      "cht_1",
+      async () => [sampleMsg],
+      (msgs) => {
+        currentMessages = msgs;
+        events.push(`applied:${msgs.length}`);
+      },
+      (tid) => {
+        events.push(`ready:${tid}:count=${currentMessages.length}`);
+      },
+    );
+
+    expect(err).toBeNull();
+    expect(events).toEqual(["applied:1", "ready:cht_1:count=1"]);
+  });
+
+  test("detectNewReply ignores initial load and agent switch, triggers only on new reply after user message (item 8)", () => {
+    let snap: ReplySnapshot | null = null;
+
+    // 1. Loading state does not trigger unread
+    let res = detectNewReply(snap, "a1:t1", [], true);
+    snap = res.next;
+    expect(res.hasNewReply).toBe(false);
+
+    // 2. Initial thread load with an existing reply does NOT trigger unread
+    res = detectNewReply(snap, "a1:t1", [{ job_id: "j1", reply: "Old reply" }], false);
+    snap = res.next;
+    expect(res.hasNewReply).toBe(false);
+
+    // 3. Switching to another agent/thread with existing reply does NOT trigger unread
+    res = detectNewReply(snap, "a2:t2", [{ job_id: "j2", reply: "Another old reply" }], false);
+    snap = res.next;
+    expect(res.hasNewReply).toBe(false);
+
+    // 4. User sends a new message (no reply yet) -> does NOT trigger unread
+    res = detectNewReply(
+      snap,
+      "a2:t2",
+      [
+        { job_id: "j2", reply: "Another old reply" },
+        { job_id: "j3", reply: "" },
+      ],
+      false,
+    );
+    snap = res.next;
+    expect(res.hasNewReply).toBe(false);
+
+    // 5. Agent reply arrives for j3 -> DOES trigger unread
+    res = detectNewReply(
+      snap,
+      "a2:t2",
+      [
+        { job_id: "j2", reply: "Another old reply" },
+        { job_id: "j3", reply: "Here is my answer!" },
+      ],
+      false,
+    );
+    snap = res.next;
+    expect(res.hasNewReply).toBe(true);
   });
 });
 

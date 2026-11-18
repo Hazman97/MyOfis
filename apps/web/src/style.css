@@ -420,11 +420,13 @@
 @keyframes office-speech-pop {
   from {
     opacity: 0;
-    transform: translateY(3px) scale(0.94);
+    translate: 0 3px;
+    scale: 0.94;
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    translate: 0 0;
+    scale: 1;
   }
 }
 

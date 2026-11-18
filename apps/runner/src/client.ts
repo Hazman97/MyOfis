@@ -43,6 +43,7 @@ interface ActiveRun {
   seq: number;
   /** Sent but not yet acked by the hub; re-sent after reconnect. */
   outbox: Map<number, RunnerRunMessage>;
+  ackWaiters: Map<number, (result: { ok: boolean; error?: string }) => void>;
   done: boolean;
 }
 
@@ -208,6 +209,13 @@ export class RunnerClient {
         const run = this.#runs.get(msg.run_id);
         if (!run) return;
         for (const seq of run.outbox.keys()) if (seq <= msg.seq) run.outbox.delete(seq);
+        for (const [seq, resolve] of run.ackWaiters) {
+          if (seq <= msg.seq) {
+            run.ackWaiters.delete(seq);
+            const err = seq === msg.seq ? msg.error : undefined;
+            resolve(err ? { ok: false, error: err } : { ok: true });
+          }
+        }
         if (run.done && run.outbox.size === 0) this.#runs.delete(msg.run_id);
         return;
       }
@@ -236,12 +244,30 @@ export class RunnerClient {
     if (this.#ws?.readyState === WebSocket.OPEN) this.#ws.send(JSON.stringify(msg));
   }
 
-  #sendRun(runId: string, body: Unsequenced<RunnerRunMessage>): void {
+  #sendRun(runId: string, body: Unsequenced<RunnerRunMessage>): number | null {
     const run = this.#runs.get(runId);
-    if (!run) return;
+    if (!run) return null;
     const msg = { ...body, run_id: runId, seq: run.seq++ } as RunnerRunMessage;
     run.outbox.set(msg.seq, msg);
     if (this.#ready) this.#sendRaw(msg);
+    return msg.seq;
+  }
+
+  #sendRunAck(runId: string, body: Unsequenced<RunnerRunMessage>): Promise<{ ok: boolean; error?: string }> {
+    const run = this.#runs.get(runId);
+    if (!run) return Promise.resolve({ ok: false, error: "run not active" });
+    return new Promise((resolve) => {
+      const seq = this.#sendRun(runId, body);
+      if (seq === null) return resolve({ ok: false, error: "run not active" });
+      const timer = setTimeout(() => {
+        run.ackWaiters.delete(seq);
+        resolve({ ok: false, error: "hub ack timeout" });
+      }, 15_000);
+      run.ackWaiters.set(seq, (res) => {
+        clearTimeout(timer);
+        resolve(res);
+      });
+    });
   }
 
   async #upload(runId: string, name: string, data: Uint8Array, contentType: string): Promise<string> {
@@ -485,7 +511,7 @@ export class RunnerClient {
 
   async #execute(a: RunAssignment): Promise<void> {
     if (this.#runs.has(a.run_id)) return; // duplicate assignment
-    const run: ActiveRun = { abort: new AbortController(), seq: 0, outbox: new Map(), done: false };
+    const run: ActiveRun = { abort: new AbortController(), seq: 0, outbox: new Map(), ackWaiters: new Map(), done: false };
     this.#runs.set(a.run_id, run);
     this.#sendRun(a.run_id, { type: "run.accepted" });
     this.#log(`run ${a.run_id} started (${a.agent.slug} / ${a.provider.slug}:${a.agent.model})`);
@@ -502,7 +528,7 @@ export class RunnerClient {
         requestApproval: (req) => this.#requestApproval(a.run_id, req, run.abort.signal),
         handoff: (req) => this.#sendRun(a.run_id, { type: "run.handoff", ...req }),
         uploadArtifact: (name, data, type) => this.#upload(a.run_id, name, data, type),
-        saveDraft: (d) => this.#sendRun(a.run_id, { type: "run.draft", ...d }),
+        saveDraft: (d) => this.#sendRunAck(a.run_id, { type: "run.draft", ...d }),
         addFeatureNote: (f) => this.#sendRun(a.run_id, { type: "run.feature_note", ...f }),
         saveMemory: (target, ops) => this.#sendRun(a.run_id, { type: "run.memory", target, ops }),
         proposeSkill: (p) => this.#sendRun(a.run_id, { type: "run.skill", ...p }),
@@ -531,6 +557,8 @@ export class RunnerClient {
       this.#log(`run ${a.run_id} ${cancelled ? "cancelled" : `failed: ${error}`}`);
     } finally {
       run.done = true;
+      for (const [, resolve] of run.ackWaiters) resolve({ ok: false, error: "run ended" });
+      run.ackWaiters.clear();
       if (run.outbox.size === 0) this.#runs.delete(a.run_id);
     }
   }

@@ -1,22 +1,23 @@
-import type { AgentInput } from "@agent-office/shared";
+import { CLIP_SCORE_PROMPT_V1, type AgentInput } from "@agent-office/shared";
 import type { BuiltinAgent } from "./index.ts";
 
 export const CLIP_FACTORY_PROMPT = `You are Clip Factory, the office's autonomous short-form clipping specialist. You turn long videos (podcasts, talks, meetings, events, vlogs) into high-retention 9:16 vertical shorts (TikTok, Reels, YouTube Shorts) with 3-second hooks, sentence-aligned cuts, virality scores, and animated subtitles.
 
 How you work:
-1. When given a long video, call clip_find(video: N, prompt?: "...") to find the most viral moments.
-   - clip_find uses whisper transcript sentence boundaries (never mid-word), audio energy peaks (ebur128), and shot index.
-   - It scores each candidate clip 0-99 across hook (first 3s), flow, value, emotion, and trend.
-2. Review the returned candidate clips.
-3. Call clip_render to render the best candidate into a vertical 9:16 (TikTok FHD 1080x1920) clip with:
-   - word-by-word animated captions with vector outline emoji
-   - an opening hook overlay in the first 2.5s
-   - fit "blur" (text-safe)
-   - and automatically save it as a draft for the owner's review.
+1. When given a long video, call clip_find(video: N, prompt?: "...") to discover candidate transcript windows across the entire video.
+   - clip_find uses whisper transcript sentence boundaries (never mid-word), audio energy peaks (ebur128), and shot cuts.
+   - It stores the windows as unscored and returns their transcript text, timestamps, audio peaks, and shot cuts to you.
+2. Judge each window as text using ${"CLIP_SCORE_PROMPT_V1"}:
+${CLIP_SCORE_PROMPT_V1}
+   - Call clip_score(video: N, clips: [...]) with your evaluated subscores, 1-sentence reasons per dimension, 3 punchy hooks, headline, and summary_reason.
+   - clip_score computes the weighted 0-99 virality score and saves the scored clips.
+3. When asked to render a clip (or when producing the top clip for Drafts):
+   - Call read_brief first so your post caption, hashtags, tone, and self_check follow the project's brief.
+   - Call clip_render with the chosen start/end, hook (shown on screen in the first 2.5s), headline, caption (your own post body + hashtags), and honest self_check.
 4. Reply in chat with:
    - The clips found and their virality scores (e.g. 84/99)
-   - The 1-line reasons why they work
-   - Confirmation that the top clip has been rendered and added to Drafts for approval.
+   - Your 1-line reasons why they work
+   - Confirmation that the top clip has been rendered and added to Drafts for approval (only if clip_render returned draft_saved: true).
 
 Rules:
 - Never cut mid-sentence or mid-word: always start at a sentence start and end at a sentence end.
@@ -65,7 +66,9 @@ export const clipFactoryAgent: BuiltinAgent = {
     system_prompt: CLIP_FACTORY_PROMPT,
     tools: [
       "clip_find",
+      "clip_score",
       "clip_render",
+      "read_brief",
       "video_probe",
       "video_index",
       "video_transcribe",
@@ -87,6 +90,6 @@ export const clipFactoryAgent: BuiltinAgent = {
   },
   needsLlm: true,
   upgrade: {
-    tools: ["clip_find", "clip_render", "motion_render"],
+    tools: ["clip_find", "clip_score", "clip_render", "read_brief", "motion_render"],
   },
 };

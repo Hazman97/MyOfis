@@ -10,6 +10,7 @@ import AgentPanel from "../components/office/AgentPanel.vue";
 import AgentRadialMenu from "../components/office/AgentRadialMenu.vue";
 import OfficePlayHint from "../components/office/OfficePlayHint.vue";
 import QuickChat from "../components/office/QuickChat.vue";
+import { readStoredBool } from "../chat/chatThreadHelpers.ts";
 import WorkFeed from "../components/office/WorkFeed.vue";
 import { api, type Room } from "../api/http.ts";
 import { me } from "../me.ts";
@@ -48,7 +49,9 @@ watch(view, (v) => {
 const inspected = ref<string | null>(null);
 
 // Quick chat dock state
-const quickChatOpen = ref(false);
+const quickChatOpen = ref(
+  readStoredBool(typeof localStorage !== "undefined" ? localStorage : null, "ao:quickchat:open") ?? false,
+);
 const quickChatAgentId = ref<string | null>(null);
 
 function onSelectAgent(id: string | null) {
@@ -57,6 +60,7 @@ function onSelectAgent(id: string | null) {
     const a = office.agentById[id];
     if (a && !a.config.external) {
       quickChatAgentId.value = id;
+      quickChatOpen.value = true;
     }
   }
 }
