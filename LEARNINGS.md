@@ -118,3 +118,15 @@ SEBELUM TAMBAH: search entries bawah untuk root cause yang sama. Kalau ada, upda
   - Peraturan penuh: `docs/FRONTEND.md` (AGENTS.md suruh baca fail tu untuk kerja UI).
 🔗 **Ref:** commit cdb9c6a (kelas ditukar), apps/web/src/views/VideoStudioView.vue
 🏷️ **Status:** active
+
+## [2026-11-18] [infra] [medium] — Skrip screenshot Playwright tak tutup browser → PC berat berjam-jam
+❌ **Silap:** skrip screenshot Gemini (`capture-030.mjs`, Node + Playwright) tersangkut / dibatalkan tanpa tutup Chrome headless. Chrome terus render office 3D selama ~1 jam lebih.
+🔍 **Root cause:** office 3D (Three.js/WebGL) dalam Chrome headless guna **SwiftShader** (WebGL dikira CPU, tiada GPU) → ~70% CPU seluruh PC. `browser.close()` tak dipanggil bila skrip gagal/dibatalkan, dan tiada had masa. Defender nampak "makan kuat" sebab scan fail yang ditulis Chrome.
+✅ **Fix:** bunuh pokok proses `node` skrip tu (`taskkill /PID <node> /T /F`); CPU turun dari ~70% ke ~21%.
+📌 **Elak lagi:**
+  - setiap skrip browser (Claude, Gemini): `try { … } finally { await browser.close() }` + had masa keseluruhan (contoh `setTimeout(() => process.exit(1), 120_000).unref()`);
+  - shot office 3D: tunggu sekejap (≤ 3 s) lepas render, ambil gambar, terus tutup; jangan biar page hidup;
+  - lepas kerja browser, semak tiada `chrome-headless-shell` tertinggal: `Get-Process chrome-headless-shell`;
+  - PC berat tiba-tiba: semak `Get-Process | Sort CPU -Desc` dan `% Processor Time` sebelum salahkan Defender.
+🔗 **Ref:** tasks/gemini/SUPERVISOR.md (peraturan skrip browser), apps/web/scripts/shots.mjs, apps/web/scripts/office-shot.mjs
+🏷️ **Status:** active

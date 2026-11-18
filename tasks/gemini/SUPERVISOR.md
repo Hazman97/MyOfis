@@ -21,6 +21,11 @@ Claude's time is limited, so every task must come back with its own proof.
 - **No new packages**, no migrations, no Docker, no changes to auth, unless the task says so.
 - Never print or log secrets (`.env`, tokens, keys). Never touch the owner's real database or `data/`.
 - Do not stop or restart the owner's hub, runner, OpenChatCut or anything you did not start.
+- **Browser/screenshot scripts** (Playwright): always `try { … } finally { await browser.close() }`, plus an overall
+  time limit (e.g. `setTimeout(() => process.exit(1), 120_000).unref()`). The 3D office renders on the CPU in headless
+  Chrome (SwiftShader): shoot after a short wait (≤ 3 s) and close at once. Before handing back, check that no
+  `chrome-headless-shell` you started is still running. (A forgotten one ate ~70 % CPU for an hour on 2026-11-18;
+  see LEARNINGS.md.)
 - Never delete or move files you did not create. Do not run `git commit`, `git push`, `git reset` or `git checkout --`.
 
 ## The report (`tasks/gemini/NNN-report.md`)

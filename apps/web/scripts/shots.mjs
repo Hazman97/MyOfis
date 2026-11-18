@@ -27,6 +27,11 @@ const VARIANTS = {
 const variants = (args.variants ?? "desktop-light,phone-light").split(",");
 mkdirSync(out, { recursive: true });
 
+// never leave a headless Chrome running (LEARNINGS.md 2026-11-18); many routes x 4 variants still fit in 5 minutes
+setTimeout(() => {
+  console.error("shots: gave up after 5 minutes");
+  process.exit(1);
+}, 300_000).unref();
 const browser = await chromium.launch();
 try {
   for (const v of variants) {
