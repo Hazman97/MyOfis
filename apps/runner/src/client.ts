@@ -18,7 +18,7 @@ import {
 import { aiSdkRuntime } from "./runtimes/aiSdk.ts";
 import { mockRuntime } from "./runtimes/mock.ts";
 import { directRuntime } from "./runtimes/direct.ts";
-import { hyperframesBinary, openchatcutToken, whisperBinary, type ApprovalRequest, type ConsultAnswer } from "@agent-office/tools";
+import { TOOL_REGISTRY, hyperframesBinary, openchatcutToken, whisperBinary, type ApprovalRequest, type ConsultAnswer } from "@agent-office/tools";
 import { RunError, type AgentRuntime } from "./runtimes/types.ts";
 import { resolveOpenCode } from "./opencode/binary.ts";
 import { opencodeRuntime } from "./opencode/runtime.ts";
@@ -63,6 +63,8 @@ export interface RunnerClientOptions {
   onReplaced?: () => void;
   /** Override the programs this runner reports (tests). */
   programs?: string[];
+  /** Override the tools this runner reports (tests: an out-of-date runner). */
+  tools?: string[];
   log?: (msg: string) => void;
 }
 
@@ -138,6 +140,7 @@ export class RunnerClient {
           runtimes: [mockRuntime.id, aiSdkRuntime.id, directRuntime.id, ...(resolveOpenCode() ? [opencodeRuntime.id] : [])],
           max_concurrent_runs: this.#opts.maxConcurrentRuns ?? 1,
           programs: this.#opts.programs ?? detectPrograms(),
+          tools: this.#opts.tools ?? Object.keys(TOOL_REGISTRY),
         },
         active_runs: this.activeRunIds,
       });

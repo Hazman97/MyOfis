@@ -6,6 +6,8 @@ import {
   dayKey,
   fixEscapedNewlines,
   requiredPrograms,
+  jobTools,
+  runnerKnowsTools,
   skillsFor,
   DIRECT_JOBS,
   DIRECT_JOB_MIN_MINUTES,
@@ -1068,7 +1070,7 @@ Error: ${r.error}` : ""}` });
         // a room on the owner's AI: the room's daily limit
         if (!render && (roomBudgetLeft(this.db, job.workspace_id) ?? 1) <= 0) continue;
         const need = requiredPrograms({ tools: agent.tools, runtime: agent.config.runtime, job_type: job.type });
-        const conn = this.#pickRunner(agent.runner_id, load, need);
+        const conn = this.#pickRunner(agent.runner_id, load, need, jobTools({ tools: agent.tools, job_type: job.type }));
         if (!conn) continue;
         load.set(conn.runnerId, (load.get(conn.runnerId) ?? 0) + 1);
         this.#startRun(conn, job, agent);
@@ -1081,17 +1083,27 @@ Error: ${r.error}` : ""}` });
   /**
    * A free runner for the job. With `need` (programs from the agent's tools, e.g. ffmpeg, git):
    * only runners that reported all of them; if none online has them, any runner (the tool then
-   * says what is missing). A pinned runner is always used as is.
+   * says what is missing).
+   * With `tools`: never a runner whose code lacks one of them ("unknown tool"); a runner too old to
+   * report its tools is used only when no online runner reports them all. A pinned runner is used
+   * as is, unless it lacks the tools and another online runner has them (the AWS runner on old
+   * code got Video HD jobs on 2026-11-19).
    */
-  #pickRunner(preferred: string | null, load: Map<string, number>, need: string[] = []): RunnerConn | undefined {
+  #pickRunner(preferred: string | null, load: Map<string, number>, need: string[] = [], tools: string[] = []): RunnerConn | undefined {
     const free = (c: RunnerConn) => (load.get(c.runnerId) ?? 0) < c.maxRuns;
+    const caps = new Map(this.db.select().from(runners).all().map((r) => [r.id, (r.capabilities as { programs?: string[]; tools?: string[] } | null) ?? {}]));
+    const knows = (c: RunnerConn) => runnerKnowsTools(caps.get(c.runnerId)?.tools, tools);
+    const online = [...this.conns.values()];
+    const someoneKnows = online.some((c) => knows(c) === true);
+    const usable = (c: RunnerConn) => (someoneKnows ? knows(c) === true : knows(c) !== false);
     if (preferred) {
       const c = this.conns.get(preferred);
-      return c && free(c) ? c : undefined;
+      if (!c || usable(c)) return c && free(c) ? c : undefined;
+      // the pinned runner cannot run it: fall through to the others
     }
-    let pool = [...this.conns.values()];
+    let pool = online.filter(usable);
     if (need.length) {
-      const programs = new Map(this.db.select().from(runners).all().map((r) => [r.id, (r.capabilities as { programs?: string[] } | null)?.programs ?? []]));
+      const programs = new Map([...caps].map(([id, c]) => [id, c.programs ?? []]));
       const able = pool.filter((c) => need.every((p) => programs.get(c.runnerId)?.includes(p)));
       // an able runner that is busy now: wait for it rather than send the job where it cannot work
       if (able.length) pool = able;

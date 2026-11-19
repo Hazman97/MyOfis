@@ -293,6 +293,9 @@ export const RunnerCapabilities = z.object({
   max_concurrent_runs: z.number().int().positive().default(1),
   /** Helper programs found on PATH (git, node, ffmpeg, blender…): shown on the Runners page. */
   programs: z.array(z.string()).default([]),
+  /** The tools this runner's code knows. Missing on runners older than 2026-11-19: the hub then
+   *  prefers runners that list every tool a job needs (an out-of-date runner fails with "unknown tool"). */
+  tools: z.array(z.string()).max(1000).optional(),
 });
 export type RunnerCapabilities = z.infer<typeof RunnerCapabilities>;
 

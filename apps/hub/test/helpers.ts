@@ -50,7 +50,7 @@ export interface TestEnv {
   dir: string;
   hub: HubServer;
   api: <T = any>(path: string, init?: { method?: string; body?: unknown; auth?: string | null }) => Promise<{ status: number; body: T }>;
-  pairRunner(name?: string, opts?: { programs?: string[] }): Promise<RunnerClient>;
+  pairRunner(name?: string, opts?: { programs?: string[]; tools?: string[] }): Promise<RunnerClient>;
   web(since?: number): Promise<WebClient>;
   close(): Promise<void>;
 }
@@ -98,7 +98,7 @@ export async function createTestEnv(timings: Parameters<typeof startHub>[1] = {}
     dir,
     hub,
     api,
-    async pairRunner(name = "test-runner", opts: { programs?: string[] } = {}) {
+    async pairRunner(name = "test-runner", opts: { programs?: string[]; tools?: string[] } = {}) {
       const { body: code } = await api<{ code: string }>("/api/runners/pairing-code", { method: "POST" });
       const { body } = await api<{ token: string }>("/api/runners/pair", { body: { code: code.code, name }, auth: null });
       const client = new RunnerClient({

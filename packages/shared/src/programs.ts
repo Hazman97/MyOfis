@@ -29,6 +29,21 @@ const TOOL_PROGRAMS: Record<string, string> = {
   browser_check: "node",
 };
 
+/** The tools a job runs: a Video Studio job only its one tool, otherwise every tool of the agent. */
+export function jobTools(input: { tools: readonly string[]; job_type?: string }): string[] {
+  const direct = input.job_type ? DIRECT_JOBS[input.job_type] : undefined;
+  return direct ? [direct] : [...input.tools];
+}
+
+/**
+ * Whether a runner's code has every tool: true / false from its reported list, null for an old
+ * runner that reports none (unknown).
+ */
+export function runnerKnowsTools(reported: readonly string[] | undefined | null, tools: readonly string[]): boolean | null {
+  if (!reported) return null;
+  return tools.every((t) => reported.includes(t));
+}
+
 export function requiredPrograms(input: { tools: readonly string[]; runtime?: string; job_type?: string }): string[] {
   // a Video Studio job (render, transcribe) runs only its one tool
   const direct = input.job_type ? DIRECT_JOBS[input.job_type] : undefined;

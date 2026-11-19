@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { requiredPrograms, type Agent } from "@agent-office/shared";
+import { requiredPrograms, runnerKnowsTools, type Agent } from "@agent-office/shared";
 import { createTestEnv, waitFor, type TestEnv } from "./helpers.ts";
 
 let env: TestEnv;
@@ -40,4 +40,29 @@ test("a job goes to the runner that has the programs its tools need; other jobs 
 
   await env.api(`/api/agents/${echo.id}`, { method: "PATCH", body: { tools: ["video_probe"] } });
   expect(await runnerOf(env, { ...echo, tools: ["video_probe"] })).toBe(editingPc);
+});
+
+test("runnerKnowsTools: true / false from the list, null when the runner reports none", () => {
+  expect(runnerKnowsTools(["video_edit", "video_hd"], ["video_hd"])).toBe(true);
+  expect(runnerKnowsTools(["video_edit"], ["video_hd"])).toBe(false);
+  expect(runnerKnowsTools(undefined, ["video_hd"])).toBeNull();
+});
+
+test("a job never goes to a runner whose code lacks its tools, even when the agent is pinned there", async () => {
+  env = await createTestEnv();
+  // an out-of-date runner (its code has no video_probe) that the agent is pinned to, and an up-to-date one
+  await env.pairRunner("old-pc", { programs: ["ffmpeg"], tools: ["read_file"] });
+  await env.pairRunner("new-pc", { programs: ["ffmpeg"] });
+  await waitFor(() => Object.values(env.hub.hub.store.state.runners).filter((r) => r.online).length === 2, 5000, "two runners online");
+  const { body: rs } = await env.api<{ runners: { id: string; name: string }[] }>("/api/runners");
+  const oldPc = rs.runners.find((r) => r.name === "old-pc")!.id;
+  const newPc = rs.runners.find((r) => r.name === "new-pc")!.id;
+
+  const { body } = await env.api<{ agents: Agent[] }>("/api/agents");
+  const echo = body.agents.find((a) => a.slug === "echo")!;
+  await env.api(`/api/agents/${echo.id}`, { method: "PATCH", body: { tools: ["video_probe"], runner_id: oldPc } });
+  expect(await runnerOf(env, echo)).toBe(newPc);
+  // tools the old runner knows: the pin holds
+  await env.api(`/api/agents/${echo.id}`, { method: "PATCH", body: { tools: ["read_file"], runner_id: oldPc } });
+  expect(await runnerOf(env, echo)).toBe(oldPc);
 });
