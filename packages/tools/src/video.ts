@@ -15,6 +15,7 @@ import {
   MEDIA_TYPES,
   VIDEO_TYPES,
   isFiller,
+  isNonSpeech,
   packTranscript,
   subtitleCues,
   tightCuts,
@@ -1059,7 +1060,8 @@ export function parseWhisperJson(json: unknown, duration: number, model: string)
   for (const seg of j.transcription ?? []) {
     const raw = seg.text ?? "";
     const w = raw.trim();
-    if (!w || /^\[.*\]$/.test(w)) continue; // [BLANK_AUDIO], [Music]
+    // sound tags: [BLANK_AUDIO], [Music], (laughs), *music*, ♪ … (punctuation pieces are kept: they join the word before)
+    if (!w || (isNonSpeech(w) && !/^[,.?!]+$/.test(w))) continue;
     const s = round2((seg.offsets?.from ?? 0) / 1000);
     const e = round2((seg.offsets?.to ?? 0) / 1000);
     const prev = words.at(-1);

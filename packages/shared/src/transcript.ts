@@ -25,6 +25,38 @@ const FILLERS = new Set(["um", "umm", "uhm", "uh", "uhh", "er", "erm", "em", "em
 const bare = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 export const isFiller = (w: string) => FILLERS.has(bare(w));
 
+/** Whisper's sound tags, not speech: [Music], (laughs), *music*, ♪ … ♪, or symbols only. */
+export const isNonSpeech = (w: string) => {
+  const t = w.trim().replace(/[,.?!]+$/, "");
+  return !bare(t) || /^[[(*♪♫].*[\])*♪♫]$/u.test(t) || /^[♪♫]/u.test(t);
+};
+
+/**
+ * The words that are real speech: sound tags dropped, and whisper's hallucination loops (the same
+ * sentence of 2+ words three or more times in a row, typical on music with no talking) cut to
+ * their first time. Stored transcripts stay as they are; this runs wherever words are used.
+ */
+export function speechWords(words: readonly TranscriptWord[]): TranscriptWord[] {
+  const kept = words.filter((x) => !isNonSpeech(x.w));
+  const sentences: TranscriptWord[][] = [];
+  let cur: TranscriptWord[] = [];
+  for (const x of kept) {
+    cur.push(x);
+    if (/[.?!]$/.test(x.w)) (sentences.push(cur), (cur = []));
+  }
+  if (cur.length) sentences.push(cur);
+  const key = (s: TranscriptWord[]) => s.map((x) => bare(x.w)).join(" ");
+  const out: TranscriptWord[] = [];
+  for (let i = 0; i < sentences.length; ) {
+    let j = i + 1;
+    while (j < sentences.length && key(sentences[j]!) === key(sentences[i]!)) j++;
+    const loop = j - i >= 3 && sentences[i]!.length >= 2;
+    for (const s of loop ? [sentences[i]!] : sentences.slice(i, j)) out.push(...s);
+    i = j;
+  }
+  return out;
+}
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -34,7 +66,8 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
  */
 export function packTranscript(t: Transcript, video: number, maxChars = 12_000): string {
   const head = `Video ${video} · ${r1(t.duration)}s · language ${t.language}`;
-  if (!t.words.length) return `${head}\n(no speech found)`;
+  const words = speechWords(t.words);
+  if (!words.length) return `${head}\n(no speech found)`;
   const lines: string[] = [head];
   let phrase: TranscriptWord[] = [];
   const flush = () => {
@@ -44,8 +77,8 @@ export function packTranscript(t: Transcript, video: number, maxChars = 12_000):
     phrase = [];
   };
   const pauses = (t.silences ?? []).filter((p) => p.e - p.s >= 0.5);
-  t.words.forEach((x, i) => {
-    const prev = t.words[i - 1];
+  words.forEach((x, i) => {
+    const prev = words[i - 1];
     // a measured silence between the two words, else the gap in the word times
     // (whisper often stretches a word over the pause after it, so look from the previous word's start)
     const quiet = prev ? pauses.find((p) => p.s >= prev.s && (p.s + p.e) / 2 <= x.s) : undefined;
@@ -56,7 +89,7 @@ export function packTranscript(t: Transcript, video: number, maxChars = 12_000):
   });
   flush();
   let out = lines.join("\n");
-  if (out.length > maxChars) out = `${out.slice(0, maxChars)}\n… (transcript cut here; ${t.words.length} words in all)`;
+  if (out.length > maxChars) out = `${out.slice(0, maxChars)}\n… (transcript cut here; ${words.length} words in all)`;
   return out;
 }
 
@@ -77,7 +110,7 @@ export interface TightOptions {
  */
 export function tightCuts(t: Transcript, video: number, opts: TightOptions = {}): Clip[] {
   const { min_pause = 0.6, pad = 0.12, drop_fillers = true, from = 0, to = t.duration } = opts;
-  const words = t.words.filter((x) => x.e > from && x.s < to && x.e > x.s);
+  const words = speechWords(t.words).filter((x) => x.e > from && x.s < to && x.e > x.s);
   const speech = drop_fillers ? words.filter((x) => !isFiller(x.w)) : words;
   if (!speech.length) return [{ video, start: r2(from), end: r2(to), speed: 1, zoom: "none" }];
   const cuts: [number, number][] = [];
@@ -147,7 +180,7 @@ export function subtitleCues(
       cues.push({ text: sub.uppercase ? text.toUpperCase() : text, start: at(cue[0]!.s), end: Math.max(at(cue.at(-1)!.e), at(cue[0]!.s) + 0.3) });
       cue = [];
     };
-    for (const x of t?.words ?? []) {
+    for (const x of speechWords(t?.words ?? [])) {
       const mid = (x.s + x.e) / 2;
       if (mid < c.start || mid > end || isFiller(x.w) || !x.w.trim()) continue;
       const prev = cue.at(-1);

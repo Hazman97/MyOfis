@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { EditPlan, isFiller, packTranscript, subtitleCues, tightCuts, type Transcript } from "../src/index.ts";
+import { EditPlan, isFiller, isNonSpeech, packTranscript, speechWords, subtitleCues, tightCuts, type Transcript } from "../src/index.ts";
 
 const t: Transcript = {
   language: "en",
@@ -74,4 +74,22 @@ describe("transcripts", () => {
     expect(subtitleCues(EditPlan.parse({ clips: [{ video: 1 }] }), { 1: t })).toEqual([]);
     expect(subtitleCues(plan, {})).toEqual([]);
   });
+
+  test("sound tags and whisper loops never become subtitles", () => {
+    for (const w of ["*music*", "[Music]", "(laughs)", "♪", "♪ la la ♪", "*Music*."]) expect(isNonSpeech(w)).toBe(true);
+    for (const w of ["music", "funny.", "RM500", "Woo!"]) expect(isNonSpeech(w)).toBe(false);
+    // a music-only video: whisper wrote *music* tags (seen 2026-11-18 on a BBQ clip)
+    const music: Transcript = { language: "en", duration: 10, model: "m", words: [{ w: "*music*", s: 0, e: 2 }, { w: "*music*", s: 2, e: 4 }] };
+    const plan = EditPlan.parse({ clips: [{ video: 1 }], subtitles: { style: "line" } });
+    expect(subtitleCues(plan, { 1: music }, { 1: 10 })).toEqual([]);
+    expect(packTranscript(music, 1)).toContain("(no speech found)");
+    // a hallucination loop: the same sentence every second is kept once; real repeats stay
+    const say = (text: string, s: number) => text.split(" ").map((w, i) => ({ w, s: s + i * 0.2, e: s + i * 0.2 + 0.15 }));
+    const words = [...say("Woo!", 0), ...say("Woo!", 1), ...say("Woo!", 1.5), ...say("This is so funny.", 2), ...say("This is so funny.", 3), ...say("This is so funny.", 4), ...say("This is so funny.", 5), ...say("Okay bye.", 6)];
+    expect(speechWords(words).map((x) => x.w).join(" ")).toBe("Woo! Woo! Woo! This is so funny. Okay bye.");
+    // two times in a row is still speech
+    const twice = [...say("Thank you.", 0), ...say("Thank you.", 1)];
+    expect(speechWords(twice)).toHaveLength(4);
+  });
 });
+
