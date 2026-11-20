@@ -31,6 +31,7 @@ import {
   UPLOAD_PART_BYTES,
   WebPostEdit,
   HdTarget,
+  HD_TARGETS,
   TikTokHdMode,
   ExternalActivityInput,
   freshFetch,
@@ -45,6 +46,9 @@ import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
 import { fileResponse } from "./uploads.ts";
+import { publicHdSettings } from "./integrations.ts";
+import { PublicHdError } from "./publicHd.ts";
+import { renderPublicHdHtml } from "./publicHdPage.ts";
 import { checkConnection, listModels, scanModels, testModel } from "./modelCheck.ts";
 import { systemInfo } from "./systemInfo.ts";
 import { Members } from "./members.ts";
@@ -181,6 +185,83 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   app.get("/api/health", (c) => c.json({ ok: true }));
   /** The login page asks which way to sign in. */
   app.get("/api/auth/mode", (c) => c.json({ mode: auth.mode }));
+
+  // ------------------------------------------------------------ public Video HD (no login, isolated storage)
+  const pubHd = publicHdSettings(db);
+  const publicHdPartQuery = z.object({
+    name: z.string().max(200).default("video.mp4"),
+    total: z.coerce.number().int().positive(),
+    offset: z.coerce.number().int().min(0),
+    targets: z.string().min(1).max(100),
+    mode: TikTokHdMode.default("auto"),
+  });
+
+  app.get("/api/public/hd/config", (c) => {
+    const s = pubHd.get();
+    return c.json({
+      enabled: s.enabled,
+      targets: HD_TARGETS,
+      limits: s,
+      turnstile_site_key: config.publicHdTurnstile.siteKey,
+    });
+  });
+
+  app.put("/api/public/hd/parts/:key", async (c) => {
+    const key = c.req.param("key");
+    const q = publicHdPartQuery.parse(c.req.query());
+    const targets = q.targets
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) => HdTarget.parse(t));
+    if (!targets.length || targets.length > 3) throw new HttpError(400, "invalid targets");
+    const bytes = await partBytes(c);
+    // a body sent without content-length is only measured after reading
+    if (bytes.byteLength > UPLOAD_PART_BYTES) throw new HttpError(400, "part too large");
+    // Cloudflare sets CF-Connecting-IP (a visitor cannot forge it through the tunnel); X-Forwarded-For can be forged
+    const ip = c.req.header("cf-connecting-ip")?.trim() || "local";
+    const turnstileToken = c.req.header("x-turnstile-token")?.trim() || c.req.query("turnstile_token")?.trim();
+    try {
+      const res = await hub.publicHd.putPart({
+        key,
+        name: q.name,
+        total: q.total,
+        offset: q.offset,
+        bytes,
+        targets: [...new Set(targets)],
+        mode: q.mode,
+        ip,
+        turnstileToken,
+      });
+      return c.json(res);
+    } catch (err) {
+      if (err instanceof PublicHdError) return c.json({ error: err.message }, err.status);
+      throw err;
+    }
+  });
+
+  app.get("/api/public/hd/jobs/:id", (c) => {
+    const job = hub.publicHd.getJob(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    return c.json({
+      id: job.id,
+      status: job.status,
+      queue_position: job.queue_position,
+      error: job.error,
+      results: job.results,
+    });
+  });
+
+  app.get("/api/public/hd/jobs/:id/file/:target", (c) => {
+    const target = HdTarget.safeParse(c.req.param("target"));
+    if (!target.success) return c.json({ error: "not found" }, 404);
+    const found = hub.publicHd.resultFilePath(c.req.param("id"), target.data);
+    if (!found) return c.json({ error: "not found" }, 404);
+    return fileResponse(found.path, "video/mp4", c.req.header("range"), {
+      "content-disposition": `attachment; filename="${found.downloadName}"`,
+      "x-robots-tag": "noindex",
+    });
+  });
 
   app.post("/api/auth/login", async (c) => {
     if (!loginLimit()) throw new HttpError(429, "too many attempts, wait a minute");
@@ -732,6 +813,10 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       return c.json({ ok: false, error: (err as Error).message }, 400);
     }
   });
+
+  api.get("/settings/integrations/public-hd", (c) => c.json({ public_hd: pubHd.get(), stats: hub.publicHd.stats() }));
+  api.put("/settings/integrations/public-hd", async (c) => c.json({ public_hd: pubHd.set(await c.req.json()), stats: hub.publicHd.stats() }));
+  api.post("/settings/integrations/public-hd/clear", (c) => c.json({ ...hub.publicHd.clearAll(), stats: hub.publicHd.stats() }));
 
   // members (owner only): invite by email, disable, share agents with a daily limit
   api.get("/members", (c) => c.json({ members: members.list() }));
@@ -1520,6 +1605,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const file = Bun.file(config.systemDocPath);
     if (!(await file.exists())) throw new HttpError(404, "not found");
     return c.body(await file.text(), 200, { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff", "cache-control": "public, max-age=300", "x-robots-tag": "noindex" });
+  });
+
+  // Self-contained public Video HD page (no login, no Vite bundle, no /assets).
+  app.get("/video-hd/public", (c) => {
+    return c.html(renderPublicHdHtml(), 200, {
+      "x-content-type-options": "nosniff",
+      "x-robots-tag": "noindex",
+      "cache-control": "no-store",
+    });
   });
 
   // ------------------------------------------------------------ web app (production build)

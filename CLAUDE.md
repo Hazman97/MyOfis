@@ -349,6 +349,7 @@ Owner request: chat with one agent, send photos + points, get a post for the pro
   - **Without MyOfis:** `scripts/transkrip.ps1` (installed at `C:\whisper\transkrip.ps1`) + Explorer **Send to → Transkrip (Whisper)** writes `.txt` + `.srt` beside the file. Windows PowerShell 5.1 turns native stderr into errors, so the script uses `ErrorActionPreference = "Continue"` and checks exit codes.
   - Editor's `video_transcribe` still runs without VAD: with VAD, word times moved up to ~1.2 s in a test. Check before switching it.
 - **`GET /aitext`** (no login, owner request 2026-10-19) serves `SYSTEM.md` (`SYSTEM_DOC_PATH`) as plain text so the owner can give another AI one link. It holds the same content as the public repo, with no secrets. On the domain it needs a Cloudflare Access **Bypass** application for path `aitext` only (the owner sets it in the dashboard); the rest stays behind Access. Keep SYSTEM.md free of secrets and private data.
+- **Public Video HD (`/video-hd/public`, task 038):** self-contained no-login HTML page + `/api/public/hd/*` routes registered before `app.route("/api", api)`. Uses `PUBLIC_HD_DIR` (`incoming/`, `out/`, `public-hd.db`), runs `ffmpeg` directly at priority 19 via shared `hdPlan()` + `buildHdArgs()`, enforces per-IP/daily/queue/storage limits + optional Turnstile, sweeps after 24 h, and writes zero rows to owner tables (`jobs`, `uploads`, `events`). See `docs/public-video-hd.md`.
 
 ## Status and next steps (handoff, 2026-10-17)
 Read this first when picking the project up in a new session.

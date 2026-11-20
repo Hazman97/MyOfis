@@ -29,6 +29,7 @@ import type { Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { agentShares, agents, approvals, contentDrafts, featureLog, jobs, projects, runners, runs } from "./db/schema.ts";
 import type { Backups } from "./backup.ts";
+import type { PublicHd } from "./publicHd.ts";
 import type { Publisher } from "./publisher.ts";
 import type { UploadParts } from "./uploads.ts";
 import type { Studio } from "./studio.ts";
@@ -116,6 +117,7 @@ export class Hub {
   /** Set by the server after construction (memory, skills, session search). */
   learning!: Learning;
   backups!: Backups;
+  publicHd!: PublicHd;
   publisher!: Publisher;
   /** Videos sent in parts (chat, Editor's renders). */
   uploadParts!: UploadParts;

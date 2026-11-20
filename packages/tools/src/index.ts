@@ -26,12 +26,17 @@ export { checkUrl } from "./web.ts";
 export { htmlToText, isPrivateAddress } from "./research.ts";
 export { gitDefaultBranch, giteaRepoOf } from "./git.ts";
 export {
+  HD_PRESET,
+  HD_SUFFIX,
   buildEditArgs,
+  buildHdArgs,
   captionsAss,
   chooseClipFit,
   clipLengths,
   emojiFontName,
   evaluateReview,
+  ffmpegBin,
+  ffprobeBin,
   isHdPrepared,
   isTiktokHdPrepared,
   parseBlackdetect,
@@ -48,6 +53,8 @@ export {
   whisperModel,
   whisperVadModel,
   wrapAssEmoji,
+  type Encoder,
+  type VideoProbe,
 } from "./video.ts";
 export { EditPlan } from "@agent-office/shared";
 export { openchatcutToken, parseMcpBody } from "./openchatcut.ts";

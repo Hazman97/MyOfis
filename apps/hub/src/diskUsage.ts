@@ -82,6 +82,7 @@ export class DiskUsage {
       { key: "database", label: "Database", what: "Agents, jobs, events, drafts, settings (SQLite)", path: db, group: "data" },
       { key: "files", label: "Files", what: "Uploads, videos, renders, documents", path: this.config.filesDir, group: "data" },
       { key: "backups", label: "Backups", what: "Nightly database copies + mirrored files", path: this.config.backup.dir, group: "data" },
+      { key: "public-hd", label: "Public Video HD", what: "Temporary public uploads, outputs, and public-hd.db (not backed up)", path: this.config.publicHdDir, group: "data" },
       { key: "projects", label: "Project briefs", what: "projects/<slug>/brief.yaml", path: this.config.projectsDir, group: "data" },
       { key: "skills", label: "Skills", what: "skills/<name>/SKILL.md", path: this.config.skillsDir, group: "data" },
       { key: "logs", label: "Logs", what: "Hub and runner logs (background mode)", path: resolve(dirname(db === ":memory:" ? "data/x" : db), "logs"), group: "data" },

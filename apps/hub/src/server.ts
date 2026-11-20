@@ -15,6 +15,8 @@ import { Integrations } from "./integrations.ts";
 import { ReleaseWatcher } from "./releases.ts";
 import { TelegramBot } from "./telegram.ts";
 import { Backups } from "./backup.ts";
+import { publicHdSettings } from "./integrations.ts";
+import { PublicHd } from "./publicHd.ts";
 import { UploadParts } from "./uploads.ts";
 import { Studio } from "./studio.ts";
 import { Docs } from "./docs.ts";
@@ -83,6 +85,16 @@ export function startHub(
   releases.start();
   const telegram = new TelegramBot(hub, integrations, config.telegramApiBase, config.secretsKey);
   telegram.start();
+  hub.publicHd = new PublicHd({
+    dir: config.publicHdDir,
+    secretsKey: config.secretsKey,
+    turnstile: config.publicHdTurnstile,
+    getSettings: () => publicHdSettings(db).get(),
+    onStorageFull: async (used, cap) => {
+      const gb = (b: number) => (b / 1024 ** 3).toFixed(1);
+      await telegram.notify(`⚠️ Public Video HD: storan penuh (${gb(used)} / ${gb(cap)} GB). Muat naik baharu ditolak.`).catch(() => {});
+    },
+  });
   const app = createHttpApp(hub, auth, scheduler, integrations, telegram);
 
   const sendWeb = (ws: ServerWebSocket<SocketData>, msg: HubToWeb) => ws.send(JSON.stringify(msg));
@@ -190,8 +202,15 @@ export function startHub(
   });
 
   const sweep = setInterval(() => hub.sweep(), opts.sweepMs ?? 5_000);
-  // nightly backup: checked every 10 minutes, runs once a day after BACKUP_HOUR
+  // nightly backup + public HD sweep/digest: checked every 10 minutes
   const backupTimer = setInterval(() => {
+    try {
+      hub.publicHd.sweep();
+      const digest = hub.publicHd.dailyDigestIfDue();
+      if (digest) telegram.notify(digest).catch(() => {});
+    } catch (err) {
+      console.error(`[hub] public-hd sweep failed: ${(err as Error).message}`);
+    }
     if (!hub.backups.due()) return;
     try {
       const b = hub.backups.run();
@@ -298,6 +317,7 @@ export function startHub(
       scheduler.stop();
       releases.stop();
       telegram.stop();
+      hub.publicHd.close();
       hub.shutdown();
       // Bun 1.3.x: stop(true) never resolves once the server itself has closed a WebSocket
       // (revoke / heartbeat timeout). Connections are closed regardless, so cap the wait.

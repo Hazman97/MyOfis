@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { PublicHdSettingsInput, PublicHdSettingsSchema, type PublicHdSettings } from "@agent-office/shared";
 import type { Secrets } from "./crypto.ts";
 import { keyHint } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
@@ -303,6 +304,28 @@ export function ttsSettings(db: Db, secrets: Secrets) {
       };
       db.insert(settings).values({ key: TTS_KEY, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
       return pub();
+    },
+  };
+}
+
+// ---------------------------------------------------------------- Public Video HD (Task 038)
+
+const PUBLIC_HD_KEY = "public_hd";
+
+export function publicHdSettings(db: Db) {
+  const get = (): PublicHdSettings => {
+    const row = db.select().from(settings).where(eq(settings.key, PUBLIC_HD_KEY)).get();
+    const parsed = PublicHdSettingsSchema.safeParse(row?.value);
+    return parsed.success ? parsed.data : PublicHdSettingsSchema.parse({});
+  };
+
+  return {
+    get,
+    set(input: unknown): PublicHdSettings {
+      const patch = PublicHdSettingsInput.parse(input);
+      const next = PublicHdSettingsSchema.parse({ ...get(), ...patch });
+      db.insert(settings).values({ key: PUBLIC_HD_KEY, value: next }).onConflictDoUpdate({ target: settings.key, set: { value: next } }).run();
+      return next;
     },
   };
 }

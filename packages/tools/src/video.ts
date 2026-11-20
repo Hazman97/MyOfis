@@ -335,7 +335,7 @@ export async function spawn(argv: string[], cwd: string, signal: AbortSignal, on
 }
 
 export const ffmpegBin = () => Bun.which("ffmpeg");
-const ffprobeBin = () => Bun.which("ffprobe");
+export const ffprobeBin = () => Bun.which("ffprobe");
 
 let nvencOk: boolean | null = null;
 
@@ -902,17 +902,35 @@ export function remuxArgs(input: string, out: string): string[] {
   return ["-hide_banner", "-nostdin", "-y", "-i", input, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-map_metadata", "-1", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", out];
 }
 
-const HD_SUFFIX: Record<HdTarget, string> = {
+export const HD_SUFFIX: Record<HdTarget, string> = {
   tiktok: "-tiktok-hd",
   whatsapp: "-wa-hd",
   whatsapp_status: "-wa-status",
 };
 
-const HD_PRESET: Record<HdTarget, VideoPresetId> = {
+export const HD_PRESET: Record<HdTarget, VideoPresetId> = {
   tiktok: "tiktok_fhd",
   whatsapp: "whatsapp_hd",
   whatsapp_status: "whatsapp_v",
 };
+
+/** Pure plan + ffmpeg argument builder for Video HD (shared by video_hd tool and PublicHd). */
+export function buildHdArgs(
+  inputFile: string,
+  outFile: string,
+  before: VideoProbe,
+  target: HdTarget,
+  mode: TikTokHdMode,
+  encoder: Encoder = "x264",
+): { plan: ReturnType<typeof hdPlan>; args: string[]; editPlan: EditPlan | null } {
+  const plan = hdPlan(before, target, mode);
+  if (plan.mode === "remux") {
+    return { plan, args: remuxArgs(inputFile, outFile), editPlan: null };
+  }
+  const editPlan = EditPlan.parse({ clips: [{ video: 1 }], preset: HD_PRESET[target], fit: plan.fit, fps: plan.fps, name: "hd" });
+  const args = buildEditArgs(editPlan, [{ file: inputFile, probe: before, crop: null }], encoder, outFile, null);
+  return { plan, args, editPlan };
+}
 
 /** A video file that our Video HD tool or page already produced for the target. Pure. */
 export function isHdPrepared(name: string, target: HdTarget = "tiktok"): boolean {

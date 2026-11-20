@@ -40,6 +40,12 @@ const EnvSchema = z
     BACKUP_DIR: z.string().default("./data/backups"),
     BACKUP_KEEP: z.coerce.number().int().min(1).max(365).default(14),
     BACKUP_HOUR: z.coerce.number().int().min(0).max(23).default(3),
+    /** Separate directory for public Video HD (/video-hd/public): incoming/, out/, public-hd.db. */
+    PUBLIC_HD_DIR: z.string().default("./data/public-hd"),
+    PUBLIC_HD_TURNSTILE_SITE_KEY: z.string().default(""),
+    PUBLIC_HD_TURNSTILE_SECRET: z.string().default(""),
+    /** Tests point Turnstile verification at a fake API. */
+    TURNSTILE_API_BASE: z.string().default("https://challenges.cloudflare.com"),
     ANTHROPIC_API_KEY: z.string().default(""),
     OPENAI_API_KEY: z.string().default(""),
     OLLAMA_BASE_URL: z.string().default(""),
@@ -98,6 +104,8 @@ export interface HubConfig {
   skillsDir: string;
   /** Nightly backups (data/backups/<date>/): keep this many days; run after this hour (Malaysia time). */
   backup: { dir: string; keep: number; hour: number };
+  publicHdDir: string;
+  publicHdTurnstile: { siteKey: string; secret: string; apiBase: string };
   webSearchApiBase: string;
   facebookGraphBase: string;
   threadsGraphBase: string;
@@ -150,6 +158,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     projectsDir: resolve(e.PROJECTS_DIR),
     skillsDir: resolve(e.SKILLS_DIR),
     backup: { dir: resolve(e.BACKUP_DIR), keep: e.BACKUP_KEEP, hour: e.BACKUP_HOUR },
+    publicHdDir: resolve(e.PUBLIC_HD_DIR),
+    publicHdTurnstile: {
+      siteKey: e.PUBLIC_HD_TURNSTILE_SITE_KEY.trim(),
+      secret: e.PUBLIC_HD_TURNSTILE_SECRET.trim(),
+      apiBase: e.TURNSTILE_API_BASE.replace(/\/$/, ""),
+    },
     webSearchApiBase: e.WEB_SEARCH_API_BASE.replace(/\/$/, ""),
     facebookGraphBase: e.FACEBOOK_GRAPH_BASE.replace(/\/$/, ""),
     threadsGraphBase: e.THREADS_GRAPH_BASE.replace(/\/$/, ""),

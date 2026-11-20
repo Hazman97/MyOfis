@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { Archive, GitBranch, Globe, LoaderCircle, Send, Volume2 } from "lucide-vue-next";
+import { Archive, Film, GitBranch, Globe, LoaderCircle, Send, Volume2 } from "lucide-vue-next";
 import ConfirmButton from "../components/ConfirmButton.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SettingsTabs from "../components/SettingsTabs.vue";
 import { api, type BackupInfo, type GiteaSettings, type TelegramSettings, type TtsSettings, type WebSearchProvider, type WebSearchSettings } from "../api/http.ts";
-import { fmtDateTime } from "../format.ts";
+import { fmtBytes, fmtDateTime } from "../format.ts";
 
 const gitea = ref<GiteaSettings | null>(null);
 const telegram = ref<TelegramSettings | null>(null);
@@ -20,6 +20,20 @@ const ttsMsg = ref("");
 const ttsError = ref("");
 const ttsTesting = ref(false);
 const ttsAudioUrl = ref<string | null>(null);
+const pubHdForm = reactive({
+  enabled: false,
+  max_mb: 500,
+  max_minutes: 10,
+  per_ip_hour: 3,
+  per_ip_day: 6,
+  daily_total: 30,
+  max_queue: 5,
+  storage_cap_gb: 20,
+  retention_hours: 24,
+});
+const pubHdStats = ref<{ today_count: number; active_count: number; storage_bytes: number; turnstile_configured: boolean } | null>(null);
+const pubHdMsg = ref("");
+const pubHdError = ref("");
 const msg = ref("");
 const error = ref("");
 
@@ -39,8 +53,41 @@ onMounted(async () => {
   }
   fillWebSearch(r.web_search);
   assistant.value = r.assistant ?? null;
-  await loadBackups();
+  await Promise.all([loadBackups(), loadPublicHd()]);
 });
+
+async function loadPublicHd() {
+  try {
+    const res = await api.publicHd();
+    Object.assign(pubHdForm, res.public_hd);
+    pubHdStats.value = res.stats;
+  } catch {
+    // non-fatal
+  }
+}
+
+async function savePublicHd() {
+  pubHdError.value = pubHdMsg.value = "";
+  try {
+    const res = await api.savePublicHd({ ...pubHdForm });
+    Object.assign(pubHdForm, res.public_hd);
+    pubHdStats.value = res.stats;
+    pubHdMsg.value = "Saved.";
+  } catch (e) {
+    pubHdError.value = (e as Error).message;
+  }
+}
+
+async function clearPublicHdNow() {
+  pubHdError.value = pubHdMsg.value = "";
+  try {
+    const res = await api.clearPublicHd();
+    pubHdStats.value = res.stats;
+    pubHdMsg.value = `Padam selesai (${res.deleted_jobs} tugasan dibersihkan).`;
+  } catch (e) {
+    pubHdError.value = (e as Error).message;
+  }
+}
 
 async function saveTts() {
   ttsError.value = ttsMsg.value = "";
@@ -396,6 +443,69 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
             <span>{{ ttsTesting ? "Testing…" : "Uji Suara" }}</span>
           </button>
           <button class="btn btn-primary btn-sm">Save</button>
+        </div>
+      </form>
+
+      <form class="card space-y-4 p-5" @submit.prevent="savePublicHd">
+        <div class="flex items-center gap-2.5">
+          <span class="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent"><Film :size="18" /></span>
+          <div>
+            <h2 class="font-semibold">Public Video HD (<code>/video-hd/public</code>)</h2>
+            <p class="text-xs text-muted">
+              {{ pubHdForm.enabled ? "Enabled" : "Disabled" }}
+              <template v-if="pubHdStats"> · Today: {{ pubHdStats.today_count }} · Storage: {{ fmtBytes(pubHdStats.storage_bytes) }}</template>
+            </p>
+          </div>
+          <label class="ml-auto inline-flex items-center gap-2 text-sm cursor-pointer">
+            <input v-model="pubHdForm.enabled" type="checkbox" class="accent-accent" />
+            <span>Aktifkan</span>
+          </label>
+        </div>
+        <p class="text-sm text-muted">
+          Halaman awam tanpa log masuk untuk TikTok HD, WhatsApp HD &amp; WhatsApp Status. Fail dan pangkalan data diasingkan daripada pejabat anda.
+        </p>
+        <p v-if="pubHdStats && !pubHdStats.turnstile_configured" class="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">
+          Amaran: <code>PUBLIC_HD_TURNSTILE_SITE_KEY</code> / <code>_SECRET</code> tidak ditetapkan — muat naik awam berjalan tanpa Turnstile.
+        </p>
+        <div class="grid gap-3 sm:grid-cols-4">
+          <div>
+            <label class="label" for="phd-mb">Max MB</label>
+            <input id="phd-mb" v-model.number="pubHdForm.max_mb" type="number" min="10" max="2000" class="input font-mono" />
+          </div>
+          <div>
+            <label class="label" for="phd-min">Max min</label>
+            <input id="phd-min" v-model.number="pubHdForm.max_minutes" type="number" min="1" max="60" class="input font-mono" />
+          </div>
+          <div>
+            <label class="label" for="phd-ip-hr">IP / hour</label>
+            <input id="phd-ip-hr" v-model.number="pubHdForm.per_ip_hour" type="number" min="1" max="100" class="input font-mono" />
+          </div>
+          <div>
+            <label class="label" for="phd-ip-day">IP / day</label>
+            <input id="phd-ip-day" v-model.number="pubHdForm.per_ip_day" type="number" min="1" max="500" class="input font-mono" />
+          </div>
+          <div>
+            <label class="label" for="phd-day">Total / day</label>
+            <input id="phd-day" v-model.number="pubHdForm.daily_total" type="number" min="1" max="5000" class="input font-mono" />
+          </div>
+          <div>
+            <label class="label" for="phd-q">Max queue</label>
+            <input id="phd-q" v-model.number="pubHdForm.max_queue" type="number" min="1" max="50" class="input font-mono" />
+          </div>
+          <div>
+            <label class="label" for="phd-gb">Storage cap (GB)</label>
+            <input id="phd-gb" v-model.number="pubHdForm.storage_cap_gb" type="number" min="1" max="500" class="input font-mono" />
+          </div>
+          <div>
+            <label class="label" for="phd-ret">Keep (hours)</label>
+            <input id="phd-ret" v-model.number="pubHdForm.retention_hours" type="number" min="1" max="168" class="input font-mono" />
+          </div>
+        </div>
+        <p v-if="pubHdMsg" class="rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">{{ pubHdMsg }}</p>
+        <p v-if="pubHdError" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ pubHdError }}</p>
+        <div class="flex flex-wrap gap-2 border-t border-line pt-4">
+          <ConfirmButton small confirm-label="Padam semua fail?" @confirm="clearPublicHdNow">Padam semua sekarang</ConfirmButton>
+          <button class="btn btn-primary btn-sm ml-auto">Save</button>
         </div>
       </form>
 

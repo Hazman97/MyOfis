@@ -27,6 +27,8 @@ export function testConfig(dir: string): HubConfig {
     projectsDir: join(dir, "projects"),
     skillsDir: join(dir, "skills"),
     backup: { dir: join(dir, "backups"), keep: 3, hour: 3 },
+    publicHdDir: join(dir, "public-hd"),
+    publicHdTurnstile: { siteKey: "", secret: "", apiBase: "https://challenges.cloudflare.com" },
     webSearchApiBase: "",
     facebookGraphBase: "http://127.0.0.1:1",
     threadsGraphBase: "http://127.0.0.1:1",

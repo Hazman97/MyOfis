@@ -8,6 +8,7 @@ import type {
   EditSuggestions,
   HdTarget,
   LogEntry,
+  PublicHdSettings,
   ProjectDoc,
   FeatureNote,
   FeatureNoteInput,
@@ -479,6 +480,12 @@ export const api = {
     request<{ tts: TtsSettings }>("/settings/integrations/tts", { method: "PUT", body }),
   testTts: (body: { text?: string; voice?: string } = {}) =>
     request<{ ok: boolean; bytes?: number; duration_estimate_s?: number; content_type?: string; audio_base64?: string; error?: string }>("/settings/integrations/tts/test", { method: "POST", body }),
+  publicHd: () =>
+    request<{ public_hd: PublicHdSettings; stats: { today_count: number; active_count: number; storage_bytes: number; turnstile_configured: boolean; recent_logs: { id: number; ip_hash: string; size: number; created_at: number; result: string; detail: string | null }[] } }>("/settings/integrations/public-hd"),
+  savePublicHd: (body: Partial<PublicHdSettings>) =>
+    request<{ public_hd: PublicHdSettings; stats: { today_count: number; active_count: number; storage_bytes: number; turnstile_configured: boolean; recent_logs: { id: number; ip_hash: string; size: number; created_at: number; result: string; detail: string | null }[] } }>("/settings/integrations/public-hd", { method: "PUT", body }),
+  clearPublicHd: () =>
+    request<{ deleted_jobs: number; stats: { today_count: number; active_count: number; storage_bytes: number; turnstile_configured: boolean; recent_logs: { id: number; ip_hash: string; size: number; created_at: number; result: string; detail: string | null }[] } }>("/settings/integrations/public-hd/clear", { method: "POST" }),
   saveWebSearch: (body: { provider: WebSearchProvider; searxng_url?: string; key_provider?: "tavily" | "brave"; api_key?: string }) =>
     request<{ web_search: WebSearchSettings }>("/settings/integrations/web-search", { method: "PUT", body }),
   testWebSearch: () =>

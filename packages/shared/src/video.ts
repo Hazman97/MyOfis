@@ -410,3 +410,34 @@ export const VideoShotIndex = z.object({
   shots: z.array(ShotInfo).max(120),
 });
 export type VideoShotIndex = z.infer<typeof VideoShotIndex>;
+
+// ---------------------------------------------------------------- Public Video HD (Task 038)
+
+export const PublicHdSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  max_mb: z.number().int().min(10).max(2000).default(500),
+  max_minutes: z.number().int().min(1).max(60).default(10),
+  per_ip_hour: z.number().int().min(1).max(100).default(3),
+  per_ip_day: z.number().int().min(1).max(500).default(6),
+  daily_total: z.number().int().min(1).max(5000).default(30),
+  max_queue: z.number().int().min(1).max(50).default(5),
+  storage_cap_gb: z.number().min(1).max(500).default(20),
+  retention_hours: z.number().int().min(1).max(168).default(24),
+});
+export type PublicHdSettings = z.infer<typeof PublicHdSettingsSchema>;
+
+export const PublicHdSettingsInput = PublicHdSettingsSchema.partial();
+
+export interface PublicHdTargetResult {
+  target: HdTarget;
+  mode: "remux" | "reencode";
+  file: string;
+  size_bytes: number;
+  width: number;
+  height: number;
+  fps: number;
+  codec: string;
+  duration: number;
+  reasons: string[];
+  warnings: string[];
+}
