@@ -75,3 +75,73 @@ $ bun test packages/tools/test/beats.test.ts
  19 expect() calls
 Ran 1 test across 1 file. [846.00ms]
 ```
+
+
+## Step 5 — Wiring, prompts & built-in skill
+- Updated `packages/shared/src/programs.ts`, `packages/tools/src/index.ts`, `packages/agents/src/editor.ts`, `packages/agents/src/tiktok.ts`, `packages/agents/src/index.ts`, `apps/hub/test/manual.test.ts`, and `apps/hub/test/memory.test.ts` (added `"beat-montage-bm"` to `BUILTIN_SKILLS` expectations).
+- `bun test apps/hub/test/manual.test.ts`:
+```text
+ 3 pass
+ 0 fail
+ 18 expect() calls
+```
+- `bun test apps/hub/test/memory.test.ts`:
+```text
+ 6 pass
+ 0 fail
+ 36 expect() calls
+Ran 6 tests across 1 file. [4.62s]
+```
+
+## Step 6 — Studio beat ticks
+- Added `BeatAnalysisSchema` (`packages/shared/src/beats.ts`), `beats()` / `setBeats()` / `music_beats` on `info()` (`apps/hub/src/studio.ts`), `"beats"` action on `/api/runner/video-data` (`apps/hub/src/http.ts`), `"beats"` in `ToolContext.videoData` (`packages/tools/src/types.ts`), and Beat ticks lane in `apps/web/src/views/VideoStudioView.vue` (`apps/web/src/api/http.ts`).
+- `bun test apps/hub/test/beats.test.ts`:
+```text
+ 1 pass
+ 0 fail
+ 6 expect() calls
+Ran 1 test across 1 file. [933.00ms]
+```
+
+## Step 7 — Real Check & Final Verification
+
+### Real Check (120 BPM click track + 3 color clips → `music_beats` → `montage_plan` → `video_edit`)
+Raw output:
+```text
+BEATS: {"bpm":120,"confidence":1,"beatsCount":16,"firstBeats":[0.0232,0.4876,0.9985,1.4861,1.9969,2.4845,2.9954,3.483,3.9938,4.5047,4.9923,5.5031],"bars":[0.9985,2.9954,4.9923,6.9892]}
+PLANNED_CUTS: [0.999,1.997]
+PLAN_CLIPS: [{"video":1,"start":0,"end":0.999,"speed":1,"zoom":"in"},{"video":2,"start":0,"end":0.998,"speed":1,"zoom":"out"},{"video":3,"start":0,"end":0.998,"speed":1,"zoom":"in"}]
+EDIT_OUT: {"ok":true,"summary":"rendered beat-montage-tiktok_fhd.mp4 (3s, 0.32 MB)","output":{"video_id":"upl_test","file":"beat-montage-tiktok_fhd.mp4","preset":"TikTok FHD 1080×1920 (9:16)","seconds":3,"size_mb":0.32,"encoder":"NVIDIA GPU (h264_nvenc)"}}
+FFPROBE: {
+    "streams": [
+        { "codec_name": "h264", "width": 1080, "height": 1920, "r_frame_rate": "30/1" },
+        { "codec_name": "aac", "r_frame_rate": "0/0" }
+    ],
+    "format": { "duration": "3.000000", "size": "332547", "bit_rate": "886792" }
+}
+SCENE_CUTS_PTS: [1,2]
+SIDE_BY_SIDE:
+  cut#1: planned=0.999s | detected_scene=1.000s | delta=0.001s
+  cut#2: planned=1.997s | detected_scene=2.000s | delta=0.003s
+```
+- Real track from owner's music folder: NOT RUN (owner's `data/` not touched).
+
+### Final Verification
+- `bun run typecheck`:
+```text
+$ tsc -p packages/shared && tsc -p packages/agents && tsc -p packages/tools && tsc -p apps/hub && tsc -p apps/runner && bun run --cwd apps/web typecheck
+$ vue-tsc --noEmit -p tsconfig.json
+```
+(exit 0)
+- `bun test`:
+```text
+ 428 pass
+ 1 skip
+ 0 fail
+ 4604 expect() calls
+Ran 429 tests across 78 files. [312.29s]
+```
+- `bun run --cwd apps/web build`:
+```text
+✓ built in 2.77s
+```
