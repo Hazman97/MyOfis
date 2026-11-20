@@ -27,6 +27,7 @@ import {
   type Agent,
   Transcript,
   VideoShotIndex,
+  BeatAnalysisSchema,
   ClipCandidateSchema,
   UPLOAD_PART_BYTES,
   WebPostEdit,
@@ -486,7 +487,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
     if (!runner) throw new HttpError(401, "unauthorized");
-    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions", "index_get", "index_put", "clips_get", "clips_put"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
+    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions", "index_get", "index_put", "clips_get", "clips_put", "beats"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
     const run = getRun(db, body.run_id);
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tools = getAgent(db, run.agent_id)?.tools ?? [];
@@ -498,6 +499,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       index_put: ["video_probe", "video_index"],
       clips_get: ["clip_find", "clip_score", "video_edit"],
       clips_put: ["clip_find", "clip_score"],
+      beats: ["music_beats", "montage_plan"],
     }[body.action];
     if (!need.some((t) => tools.includes(t))) throw new HttpError(403, `this agent may not use ${need.join(" / ")}`);
     const job = getJob(db, run.job_id);
@@ -527,6 +529,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       case "clips_put":
         hub.studio.setClipResults(fileOf(body.params.upload_id), z.array(ClipCandidateSchema).parse(body.params.clips));
         return c.json({ data: { saved: true } });
+      case "beats": {
+        const track = z.string().min(1).max(200).parse(body.params.track);
+        if (body.params.beats !== undefined) {
+          const parsed = BeatAnalysisSchema.parse(body.params.beats);
+          hub.studio.setBeats(track, parsed, ws);
+          return c.json({ data: { beats: parsed, saved: true } });
+        }
+        return c.json({ data: { beats: hub.studio.beats(track, ws) } });
+      }
     }
   });
 

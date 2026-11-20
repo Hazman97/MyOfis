@@ -46,6 +46,7 @@ export class Studio {
       transcripts: Object.fromEntries(render.attachments.map((a) => [a.id, this.transcript(a.id, ws)])),
       transcribe_job: transcribing ? { id: transcribing.id, status: transcribing.status } : null,
       suggestions: this.latestSuggestions(render.attachments.map((a) => a.id), ws),
+      music_beats: render.plan.music?.track ? this.beats(render.plan.music.track, ws) : null,
     };
   }
 
@@ -117,6 +118,24 @@ export class Studio {
     const value = z.array(ClipCandidateSchema).parse(clips);
     const key = `video.clips.${uploadId}`;
     this.hub.db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+  }
+
+  beats(track: string, ws = "owner"): { bpm: number; beats: number[]; bars: number[]; confidence: number } | null {
+    const safe = track.trim();
+    if (!safe) return null;
+    const raw = this.hub.db.select({ value: settings.value }).from(settings).where(eq(settings.key, `music.beats.${ws}.${safe}`)).get()?.value;
+    if (!raw) return null;
+    return raw as { bpm: number; beats: number[]; bars: number[]; confidence: number };
+  }
+
+  setBeats(track: string, data: { bpm: number; beats: number[]; bars: number[]; confidence: number }, ws = "owner"): void {
+    const safe = track.trim();
+    if (!safe) return;
+    this.hub.db
+      .insert(settings)
+      .values({ key: `music.beats.${ws}.${safe}`, value: data })
+      .onConflictDoUpdate({ target: settings.key, set: { value: data } })
+      .run();
   }
 
   saveSuggestions(runId: string, ws: string, attachments: EditSuggestions["attachments"], data: unknown): EditSuggestions {

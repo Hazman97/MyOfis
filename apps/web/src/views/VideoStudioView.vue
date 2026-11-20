@@ -756,6 +756,23 @@ async function useOwnEdit(e: Event) {
               </button>
             </div>
           </div>
+
+          <!-- Beat ticks lane when plan has music and beat data -->
+          <div v-if="plan.music && info?.music_beats?.beats?.length && total" class="space-y-1">
+            <div class="text-[11px] text-muted flex items-center justify-between">
+              <span>Beat ticks ({{ info.music_beats.bpm }} BPM)</span>
+              <span class="text-[10px] font-mono">{{ info.music_beats.beats.filter((b: number) => b <= (total ?? 0)).length }} beats</span>
+            </div>
+            <div class="relative h-4 w-full overflow-hidden rounded-md border border-line bg-sunken" aria-label="Beat ticks on the timeline">
+              <span
+                v-for="(b, idx) in info.music_beats.beats.filter((t: number) => t <= (total ?? 0))"
+                :key="idx"
+                class="absolute top-0 bottom-0"
+                :class="info.music_beats.bars.includes(b) ? 'w-0.5 bg-accent' : 'w-px bg-muted/50'"
+                :style="{ left: `${Math.min(100, (b / total) * 100)}%` }"
+              />
+            </div>
+          </div>
         </div>
 
         <!-- Transitions Section -->

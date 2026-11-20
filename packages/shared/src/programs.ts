@@ -18,6 +18,8 @@ const TOOL_PROGRAMS: Record<string, string> = {
   clip_render: "ffmpeg",
   explainer_render: "ffmpeg",
   clip_library: "ffmpeg",
+  music_beats: "ffmpeg",
+  montage_plan: "ffmpeg",
   openchatcut: "openchatcut",
   openchatcut_import: "openchatcut",
   git_clone: "git",

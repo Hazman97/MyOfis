@@ -1,6 +1,7 @@
 import type {
   Agent,
   AgentEvent,
+  BeatAnalysis,
   ContentDraft,
   DocHit,
   DraftDecision,
@@ -345,6 +346,7 @@ export interface VideoInfo {
   last_render_job: { id: string; status: string; created_at: string; result_upload_id: string | null } | null;
   /** Speech of each source file, keyed by upload id (render.attachments[].id); null = not transcribed yet. */
   transcripts: Record<string, Transcript | null>;
+  music_beats?: BeatAnalysis | null;
   /** The newest "Transcribe" job for this video (no AI, whisper on the runner PC). */
   transcribe_job: { id: string; status: string } | null;
   /** Editor's newest edit options for this video's source files, if any. */

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, join } from "node:path";
 import { z } from "zod";
-import { VIDEO_TYPES } from "@agent-office/shared";
+import { VIDEO_TYPES, type BeatAnalysis } from "@agent-office/shared";
 import { isSecretPath } from "./safety.ts";
 import { ToolDenied, defineTool, type ToolContext } from "./types.ts";
 import { ffmpegBin, mediaDir, probe, spawn } from "./video.ts";
@@ -29,9 +29,10 @@ export interface ClipEntry {
   uses: number;
   last_used: string | null;
 }
-interface ClipIndex {
+export interface ClipIndex {
   version: 1;
   clips: Record<string, ClipEntry>;
+  music_beats?: Record<string, BeatAnalysis & { duration: number }>;
 }
 
 const INDEX = ".myofis-clips.json";

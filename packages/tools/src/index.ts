@@ -14,6 +14,7 @@ import { DOC_TOOLS } from "./docs.ts";
 import { meetingTranscribeTool } from "./meeting.ts";
 import { motionRenderTool } from "./motion.ts";
 import { clipFindTool, clipRenderTool, clipScoreTool } from "./clipFactory.ts";
+import { analyzeTrackBeats, montagePlanTool, musicBeatsTool } from "./beats.ts";
 import { explainerRenderTool } from "./explainer.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -63,6 +64,7 @@ export { clipFindTool, clipRenderTool, clipScoreTool } from "./clipFactory.ts";
 export { explainerRenderTool } from "./explainer.ts";
 export { buildHyperframesArgs, hyperframesBinary, motionEnv, motionRenderTool } from "./motion.ts";
 export { chooseClips, clipKey, musicTracks, readIndex, scanFolder, type ClipEntry } from "./clips.ts";
+export { analyzeTrackBeats, montagePlanTool, musicBeatsTool } from "./beats.ts";
 
 /** Every tool an agent can be granted, by name. Agents list the names they may use in `agents.tools`. */
 export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
@@ -91,6 +93,8 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     clipFindTool,
     clipScoreTool,
     clipRenderTool,
+    musicBeatsTool,
+    montagePlanTool,
     explainerRenderTool,
   ].map((t) => [t.name, t as unknown as ToolDef]),
 );

@@ -48,6 +48,28 @@ export interface BuiltinAgent {
   upgrade?: { tools?: string[]; previousPrompts?: string[] };
 }
 
+export const BEAT_MONTAGE_BM_SKILL = `---
+name: beat-montage-bm
+description: Cara buat montaj ikut beat muzik (cut setiap 1/2/4 beat, teks 5-9 patah perkataan bertukar ikut bar, hook awal, dan loop lancar).
+---
+
+# Beat-Sync Montage (Bahasa Malaysia)
+
+## 1. Pilih \`cut_every\` ikut kelajuan lagu
+- Lagu laju (>= 130 BPM): guna \`cut_every: 2\` (atau \`4\`) supaya penonton sempat nampak klip dan jumlah klip kekal <= 80.
+- Lagu sederhana (90–125 BPM): guna \`cut_every: 1\` untuk rasa bertenaga, atau \`2\` untuk suasana tenang.
+
+## 2. Tulis baris teks (5–9 patah perkataan)
+- Tulis 1 \`hook\` pembukaan (0 hingga bar pertama) yang terus tarik perhatian sebelum orang scroll.
+- Tulis 4–8 baris pendek Bahasa Malaysia (5–9 patah perkataan setiap satu). Setiap baris bertukar tepat pada permulaan bar.
+
+## 3. Aliran kerja wajib
+1. \`clip_library(action: "pick")\` untuk pilih 3–6 klip yang sesuai dengan tema.
+2. \`music_beats(track: "...")\` untuk kesan BPM, beat, dan bar.
+3. \`montage_plan(track, target_seconds, cut_every, hook, lines, loop: true)\` untuk bina \`edit_plan\`.
+4. Semak \`edit_plan\`, kemudian \`video_edit\` -> \`video_review\` -> \`save_draft\`.
+`;
+
 /** SKILL.md files seeded once into the skills folder (the owner may edit or delete them). */
 export const BUILTIN_SKILLS: { name: string; content: string }[] = [
   { name: "short-video-editing", content: SHORT_VIDEO_EDITING_SKILL },
@@ -55,6 +77,7 @@ export const BUILTIN_SKILLS: { name: string; content: string }[] = [
   { name: "motion-text-tiktok", content: MOTION_TEXT_TIKTOK_SKILL },
   { name: "clip-factory-playbook", content: CLIP_FACTORY_PLAYBOOK_SKILL },
   { name: "tech-explainer-bm", content: techExplainerBmSkill.content },
+  { name: "beat-montage-bm", content: BEAT_MONTAGE_BM_SKILL },
 ];
 
 /** Seeded on first boot by slug; never overwrites owner edits. */
