@@ -21,6 +21,9 @@ Claude's time is limited, so every task must come back with its own proof.
 - **No new packages**, no migrations, no Docker, no changes to auth, unless the task says so.
 - Never print or log secrets (`.env`, tokens, keys). Never touch the owner's real database or `data/`.
 - Do not stop or restart the owner's hub, runner, OpenChatCut or anything you did not start.
+- **ffmpeg/ffprobe on files from strangers** (public pages, uploads anyone can send): check the container by magic
+  bytes first (`sniffContainer` in `apps/hub/src/publicHd.ts`) and pass `-f`. ffmpeg picks a demuxer by content, so an
+  `ffconcat` list or playlist disguised as a video makes it open other files on the PC (found in review 038).
 - **Browser/screenshot scripts** (Playwright): always `try { … } finally { await browser.close() }`, plus an overall
   time limit (e.g. `setTimeout(() => process.exit(1), 120_000).unref()`). The 3D office renders on the CPU in headless
   Chrome (SwiftShader): shoot after a short wait (≤ 3 s) and close at once. Before handing back, check that no
