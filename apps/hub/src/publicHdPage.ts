@@ -218,6 +218,30 @@ export function renderPublicHdHtml(): string {
       font-weight: 600;
       white-space: nowrap;
     }
+    .result-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .play-btn {
+      background: var(--surface-2);
+      color: inherit;
+      border: 1px solid var(--line);
+      padding: 8px 14px;
+      border-radius: 10px;
+      font: inherit;
+      font-size: 0.86rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .preview {
+      display: block;
+      width: 100%;
+      max-height: 70vh;
+      background: #000;
+      border-radius: 10px;
+      margin: 4px 0 12px;
+    }
     .tip {
       font-size: 0.84rem;
       color: var(--muted);
@@ -235,7 +259,7 @@ export function renderPublicHdHtml(): string {
     @media (max-width: 440px) {
       .modes { grid-template-columns: 1fr; }
       .result-row { flex-direction: column; align-items: stretch; }
-      .dl-btn { text-align: center; }
+      .dl-btn, .play-btn { flex: 1; text-align: center; }
     }
   </style>
 </head>
@@ -454,14 +478,44 @@ export function renderPublicHdHtml(): string {
           left.appendChild(title);
           left.appendChild(meta);
 
+          const fileUrl = "/api/public/hd/jobs/" + encodeURIComponent(id) + "/file/" + encodeURIComponent(r.target);
+          const actions = document.createElement("div");
+          actions.className = "result-actions";
+          const play = document.createElement("button");
+          play.type = "button";
+          play.className = "play-btn";
+          play.textContent = "▶ Tengok";
           const a = document.createElement("a");
           a.className = "dl-btn";
-          a.href = "/api/public/hd/jobs/" + encodeURIComponent(id) + "/file/" + encodeURIComponent(r.target);
+          a.href = fileUrl + "?download=1";
           a.textContent = "Muat Turun";
           a.download = "";
+          actions.appendChild(play);
+          actions.appendChild(a);
           row.appendChild(left);
-          row.appendChild(a);
+          row.appendChild(actions);
           resultsList.appendChild(row);
+
+          // The player is made only when asked, so nothing streams until the visitor wants it.
+          let video = null;
+          play.onclick = () => {
+            if (!video) {
+              video = document.createElement("video");
+              video.className = "preview";
+              video.controls = true;
+              video.playsInline = true;
+              video.preload = "metadata";
+              video.src = fileUrl;
+              resultsList.insertBefore(video, row.nextSibling);
+              video.play().catch(() => {});
+              play.textContent = "✕ Tutup";
+            } else {
+              video.pause();
+              video.remove();
+              video = null;
+              play.textContent = "▶ Tengok";
+            }
+          };
         }
         resultsCard.hidden = false;
       }

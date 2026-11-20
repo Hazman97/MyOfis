@@ -405,7 +405,10 @@ describe("Task 038: Public Video HD (/video-hd/public)", () => {
       const dl = await fetch(`${srv.url}/api/public/hd/jobs/${up1.json.id}/file/${target}`);
       expect(dl.status).toBe(200);
       expect(dl.headers.get("x-robots-tag")).toBe("noindex");
-      expect(dl.headers.get("content-disposition")).toContain("attachment;");
+      expect(dl.headers.get("content-disposition")).toContain("inline;");
+      const saved = await fetch(`${srv.url}/api/public/hd/jobs/${up1.json.id}/file/${target}?download=1`, { headers: { range: "bytes=0-0" } });
+      await saved.arrayBuffer();
+      expect(saved.headers.get("content-disposition")).toContain("attachment;");
       const outBuf = new Uint8Array(await dl.arrayBuffer());
       const outPath = join(tmp, `out1-${target}.mp4`);
       writeFileSync(outPath, outBuf);

@@ -257,8 +257,10 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     if (!target.success) return c.json({ error: "not found" }, 404);
     const found = hub.publicHd.resultFilePath(c.req.param("id"), target.data);
     if (!found) return c.json({ error: "not found" }, 404);
+    // Inline by default so the page's <video> can play it; ?download=1 saves it as a file.
+    const disposition = c.req.query("download") === "1" ? "attachment" : "inline";
     return fileResponse(found.path, "video/mp4", c.req.header("range"), {
-      "content-disposition": `attachment; filename="${found.downloadName}"`,
+      "content-disposition": `${disposition}; filename="${found.downloadName}"`,
       "x-robots-tag": "noindex",
     });
   });
