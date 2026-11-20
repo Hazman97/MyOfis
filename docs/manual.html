@@ -2100,6 +2100,15 @@
     <li><b>Auto vs Keep as is:</b> Jika video sudah menepati spec sasaran, fail hanya disalin (remux) tanpa turun kualiti; jika tidak, ia di-encode sekali mengikut spec sasaran.</li>
     <li><b>Tip WhatsApp kualiti 100% asal:</b> WhatsApp sentiasa memampatkan video chat/Status; untuk kualiti asal tanpa kompressi, hantar fail asal sebagai <b>Document</b>.</li>
   </ul>
+
+  <h3>Halaman awam untuk orang lain (<code>/video-hd/public</code>)</h3>
+  <p>Sesiapa sahaja boleh guna Video HD tanpa login di <code>https://myofis.bijokdev.com/video-hd/public</code>. Kerja diproses di PC awak, tetapi semuanya berasingan daripada data awak: storan sendiri (<code>data/public-hd</code>), DB sendiri, dan tiada apa-apa muncul di pejabat, Board, Drafts atau Telegram (kecuali ringkasan harian).</p>
+  <ul>
+    <li><b>Hidupkan:</b> Settings → Integrations → <b>Public Video HD</b> → Aktifkan. Bila dimatikan, halaman tulis "Ditutup sementara". Kad yang sama tunjuk had, kiraan hari ini, storan, dan butang <b>Padam semua sekarang</b>.</li>
+    <li><b>Pelawat:</b> pilih video → sasaran → mod → tunggu giliran. Setiap hasil ada butang <b>▶ Tengok</b> (main terus dalam halaman, boleh skip) dan <b>Muat Turun</b>.</li>
+    <li><b>Had (boleh ubah):</b> 500 MB, 10 minit, 3 video sejam / 6 sehari setiap IP, 30 sehari semua orang, giliran 5, storan 20 GB. Video dipadam selepas 24 jam.</li>
+    <li><b>Cloudflare:</b> buat app Access <b>baru</b> jenis Bypass untuk dua laluan sahaja: <code>video-hd/public</code> dan <code>api/public/hd</code>. Jangan tambah dalam app MyOfis yang sedia ada. Langkah penuh: <code>docs/public-video-hd.md</code>.</li>
+  </ul>
 </section>
 
 <section id="tiktok">
