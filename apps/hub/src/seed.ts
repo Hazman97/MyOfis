@@ -58,7 +58,7 @@ export function seed(db: Db, config: HubConfig, secrets: Secrets): void {
 
   const llm = pickLlm(db);
   for (const { agent: def, needsLlm, schedules: makeSchedules, upgrade } of BUILTIN_AGENTS) {
-    const existing = db.select({ id: agents.id, workspace_id: agents.workspace_id, tools: agents.tools, system_prompt: agents.system_prompt }).from(agents).where(eq(agents.slug, def.slug)).get();
+    const existing = db.select({ id: agents.id, workspace_id: agents.workspace_id, tools: agents.tools, system_prompt: agents.system_prompt, config: agents.config }).from(agents).where(eq(agents.slug, def.slug)).get();
     if (existing) {
       // new built-in tools: added once (a tool the owner removes later stays removed)
       const add = (upgrade?.tools ?? []).filter((t) => {
@@ -67,11 +67,26 @@ export function seed(db: Db, config: HubConfig, secrets: Secrets): void {
         db.insert(settings).values({ key: marker, value: true }).run();
         return !existing.tools.includes(t);
       });
+      // new built-in skills: added once when config.skills is an explicit list ("all" already includes them)
+      const curSkills = existing.config?.skills;
+      const addSkills = (upgrade?.skills ?? []).filter((sk) => {
+        const marker = `seeded.skill.${def.slug}.${sk}`;
+        if (db.select({ key: settings.key }).from(settings).where(eq(settings.key, marker)).get()) return false;
+        db.insert(settings).values({ key: marker, value: true }).run();
+        return Array.isArray(curSkills) && !curSkills.includes(sk);
+      });
+      const nextConfig = addSkills.length && Array.isArray(curSkills)
+        ? { ...existing.config, skills: [...curSkills, ...addSkills] }
+        : null;
       // a newer built-in prompt replaces an older one the owner never edited
       const prompt = upgrade?.previousPrompts?.includes(existing.system_prompt) ? def.system_prompt : null;
-      if (add.length || prompt) {
+      if (add.length || prompt || nextConfig) {
         db.update(agents)
-          .set({ ...(add.length ? { tools: [...existing.tools, ...add] } : {}), ...(prompt ? { system_prompt: prompt } : {}) })
+          .set({
+            ...(add.length ? { tools: [...existing.tools, ...add] } : {}),
+            ...(prompt ? { system_prompt: prompt } : {}),
+            ...(nextConfig ? { config: nextConfig } : {}),
+          })
           .where(eq(agents.id, existing.id))
           .run();
       }
@@ -89,8 +104,9 @@ export function seed(db: Db, config: HubConfig, secrets: Secrets): void {
     const id = newId("agt");
     const parsed = AgentInput.parse(needsLlm && llm ? { ...def, provider: llm.provider, model: llm.model } : def);
     db.insert(agents).values({ ...parsed, id }).run();
-    // a fresh agent already has its upgrade tools: mark them, so one the owner removes is not added back
+    // a fresh agent already has its upgrade tools/skills: mark them, so one the owner removes is not added back
     for (const t of upgrade?.tools ?? []) db.insert(settings).values({ key: `seeded.tool.${def.slug}.${t}`, value: true }).onConflictDoNothing().run();
+    for (const sk of upgrade?.skills ?? []) db.insert(settings).values({ key: `seeded.skill.${def.slug}.${sk}`, value: true }).onConflictDoNothing().run();
     for (const s of makeSchedules?.(id) ?? []) {
       db.insert(schedules).values({ ...ScheduleInput.parse(s), id: newId("sch") }).run();
       db.insert(settings).values({ key: `seeded.schedule.${def.slug}.${String((s.job_template as { type?: unknown }).type ?? "")}`, value: true }).onConflictDoNothing().run();

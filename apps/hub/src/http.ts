@@ -575,12 +575,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         return c.json({ data: { saved: true } });
       case "beats": {
         const track = z.string().min(1).max(200).parse(body.params.track);
+        const size = body.params.size !== undefined ? z.number().nonnegative().parse(body.params.size) : undefined;
+        const mtime_ms = body.params.mtime_ms !== undefined ? z.number().nonnegative().parse(body.params.mtime_ms) : undefined;
+        const meta = size !== undefined || mtime_ms !== undefined ? { size, mtime_ms } : undefined;
         if (body.params.beats !== undefined) {
           const parsed = BeatAnalysisSchema.parse(body.params.beats);
-          hub.studio.setBeats(track, parsed, ws);
+          hub.studio.setBeats(track, parsed, ws, meta);
           return c.json({ data: { beats: parsed, saved: true } });
         }
-        return c.json({ data: { beats: hub.studio.beats(track, ws) } });
+        return c.json({ data: { beats: hub.studio.beats(track, ws, meta) } });
       }
       case "image_gen_check": {
         const count = z.coerce.number().int().min(1).max(4).default(1).parse(body.params.count);

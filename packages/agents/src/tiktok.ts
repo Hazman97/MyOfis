@@ -139,6 +139,7 @@ Beat-sync montage ("montaj", "ikut beat"):
 /** For a TikTok agent seeded earlier: newer prompt when the owner never changed it. */
 export const tiktokUpgrade = {
   tools: ["music_beats", "montage_plan", "video_review"],
+  skills: ["beat-montage-bm"],
   previousPrompts: [TIKTOK_PROMPT_V1, TIKTOK_PROMPT_V2, TIKTOK_PROMPT_V3, TIKTOK_PROMPT_V4],
 };
 

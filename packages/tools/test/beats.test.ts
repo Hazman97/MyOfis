@@ -29,6 +29,11 @@ describe("Task 032 Step 2: music_beats tool", () => {
 
       const { ctx } = makeCtx(ws);
       ctx.config.clip_folder = clipDir;
+      const beatCalls: { action: string; params: Record<string, unknown> }[] = [];
+      ctx.videoData = async (action, params) => {
+        beatCalls.push({ action, params });
+        return null;
+      };
 
       // Rejects traversal / missing track
       await expect(musicBeatsTool.execute({ track: "../secret.mp3" }, ctx)).rejects.toThrow("invalid track name");
@@ -85,6 +90,12 @@ describe("Task 032 Step 2: music_beats tool", () => {
       expect(mpOut.edit_plan.clips.length).toBeGreaterThanOrEqual(8);
       expect(mpOut.edit_plan.music).toEqual({ track: "click120.mp3", volume_db: -6 });
       expect(mpOut.edit_plan.transition.type).toBe("none");
+      // Fix 7: both music_beats and montage_plan send beats + size + mtime_ms to hub videoData
+      expect(beatCalls.filter((c) => c.action === "beats").length).toBeGreaterThanOrEqual(3);
+      const lastBeatCall = beatCalls.at(-1)!.params;
+      expect(lastBeatCall.track).toBe("click120.mp3");
+      expect(typeof lastBeatCall.size).toBe("number");
+      expect(typeof lastBeatCall.mtime_ms).toBe("number");
     } finally {
       rmSync(ws, { recursive: true, force: true });
       rmSync(clipDir, { recursive: true, force: true });

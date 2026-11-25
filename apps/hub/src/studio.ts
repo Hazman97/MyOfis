@@ -120,21 +120,39 @@ export class Studio {
     this.hub.db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
   }
 
-  beats(track: string, ws = "owner"): { bpm: number; beats: number[]; bars: number[]; confidence: number } | null {
+  beats(
+    track: string,
+    ws = "owner",
+    meta?: { size?: number; mtime_ms?: number },
+  ): { bpm: number; beats: number[]; bars: number[]; confidence: number } | null {
     const safe = track.trim();
     if (!safe) return null;
-    const raw = this.hub.db.select({ value: settings.value }).from(settings).where(eq(settings.key, `music.beats.${ws}.${safe}`)).get()?.value;
+    const raw = this.hub.db.select({ value: settings.value }).from(settings).where(eq(settings.key, `music.beats.${ws}.${safe}`)).get()?.value as
+      | ({ bpm: number; beats: number[]; bars: number[]; confidence: number; size?: number; mtime_ms?: number } | undefined);
     if (!raw) return null;
-    return raw as { bpm: number; beats: number[]; bars: number[]; confidence: number };
+    // Treat file size / mtime mismatch as a cache miss so replaced tracks never serve stale beat ticks
+    if (meta?.size !== undefined && raw.size !== undefined && raw.size !== meta.size) return null;
+    if (meta?.mtime_ms !== undefined && raw.mtime_ms !== undefined && Math.round(raw.mtime_ms) !== Math.round(meta.mtime_ms)) return null;
+    return { bpm: raw.bpm, beats: raw.beats, bars: raw.bars, confidence: raw.confidence };
   }
 
-  setBeats(track: string, data: { bpm: number; beats: number[]; bars: number[]; confidence: number }, ws = "owner"): void {
+  setBeats(
+    track: string,
+    data: { bpm: number; beats: number[]; bars: number[]; confidence: number },
+    ws = "owner",
+    meta?: { size?: number; mtime_ms?: number },
+  ): void {
     const safe = track.trim();
     if (!safe) return;
+    const value = {
+      ...data,
+      ...(meta?.size !== undefined ? { size: meta.size } : {}),
+      ...(meta?.mtime_ms !== undefined ? { mtime_ms: Math.round(meta.mtime_ms) } : {}),
+    };
     this.hub.db
       .insert(settings)
-      .values({ key: `music.beats.${ws}.${safe}`, value: data })
-      .onConflictDoUpdate({ target: settings.key, set: { value: data } })
+      .values({ key: `music.beats.${ws}.${safe}`, value })
+      .onConflictDoUpdate({ target: settings.key, set: { value } })
       .run();
   }
 

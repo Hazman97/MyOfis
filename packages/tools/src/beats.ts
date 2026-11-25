@@ -9,6 +9,8 @@ import { attachmentFile, ffmpegBin, mediaDir, probe, spawn } from "./video.ts";
 export interface CachedTrackBeats extends BeatAnalysis {
   duration: number;
   cached: boolean;
+  size: number;
+  mtime_ms: number;
 }
 
 /**
@@ -36,7 +38,7 @@ export async function analyzeTrackBeats(
   const idx = readIndex(clipDir);
   const hit = idx.music_beats?.[key];
   if (hit) {
-    return { ...hit, cached: true };
+    return { ...hit, cached: true, size: st.size, mtime_ms: Math.round(st.mtimeMs) };
   }
 
   const bin = ffmpegBin();
@@ -64,7 +66,7 @@ export async function analyzeTrackBeats(
     idx.music_beats ??= {};
     idx.music_beats[key] = { ...analysis, duration };
     writeIndex(clipDir, idx);
-    return { ...analysis, duration, cached: false };
+    return { ...analysis, duration, cached: false, size: st.size, mtime_ms: Math.round(st.mtimeMs) };
   } finally {
     rmSync(rawPath, { force: true });
   }
@@ -86,6 +88,8 @@ export const musicBeatsTool = defineTool({
     await ctx
       .videoData("beats", {
         track: i.track,
+        size: res.size,
+        mtime_ms: res.mtime_ms,
         beats: { bpm: res.bpm, beats: res.beats, bars: res.bars, confidence: res.confidence },
       })
       .catch(() => {});
@@ -135,6 +139,15 @@ export const montagePlanTool = defineTool({
     if (!beatData.beats.length) {
       throw new ToolDenied(`no beats detected in "${i.track}" (silence or no clear pulse)`);
     }
+    // Send beats to the hub so Video Studio shows beat ticks even without a separate music_beats call
+    await ctx
+      .videoData("beats", {
+        track: i.track,
+        size: beatData.size,
+        mtime_ms: beatData.mtime_ms,
+        beats: { bpm: beatData.bpm, beats: beatData.beats, bars: beatData.bars, confidence: beatData.confidence },
+      })
+      .catch(() => {});
 
     const indices =
       i.clips ??

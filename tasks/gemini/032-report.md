@@ -145,3 +145,79 @@ Ran 429 tests across 78 files. [312.29s]
 ```text
 ✓ built in 2.77s
 ```
+
+
+---
+
+## Fixes after review
+
+Addressed every defect listed in `tasks/gemini/032-review.md`:
+
+1. **Short clips never push later cuts off the beat** — `packages/shared/src/montage.ts:116-181`, `packages/shared/src/montage.ts:223-244`
+   - `pickBest()` skips clips shorter than `segDur` whenever a long-enough alternative exists; when no eligible clip is long enough (or the closing loop segment uses a short clip 0), `buildSegmentClips()` keeps exact finished duration `segDur` using `speed = dur / segDur` (`>= 0.5`) or looping the clip.
+   - Tested in `packages/shared/test/montage.test.ts` with a `0.3 s` clip (mixed with `10 s` clips AND all-`0.3 s` clips): every cut lands on its beat (`± 1 frame`).
+2. **`cut_every` 2/4 aligned in phase with bars & always ends on a bar** — `packages/shared/src/montage.ts:56-114`
+   - `buildCutBoundaries()` aligns beat selection phase to `firstBarIdx` (`((i - firstBarIdx) % cutEvery + cutEvery) % cutEvery === 0`) and ensures `endLimit` (whole bar) is always the final cut boundary.
+   - Tested with bars at `0.5, 2.5, 4.5, 6.5` and `cut_every: 2` → exact cuts `[0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5]`, `total_seconds: 6.5`.
+3. **Loop mode with 2 clips and an even segment count** — `packages/shared/src/montage.ts:246-267`
+   - Decides the last two segments first (`segCount - 1 = 0` from `start = 0`, `segCount - 2 != 0`), alternating backwards when `clipCount === 2` and round-robining `0..segCount - 3` otherwise.
+   - Tested with 2 clips + 6 segments (`loop: true`): last = clip 1 from `0`, penultimate = clip 2, zero back-to-back repeats.
+4. **Existing Misi 1K agents get `beat-montage-bm` via `BuiltinAgent.upgrade.skills`** — `packages/agents/src/index.ts:58-60`, `packages/agents/src/tiktok.ts:140-144`, `apps/hub/src/seed.ts:60-112`
+   - Added `skills?: string[]` to `BuiltinAgent.upgrade` and `skills: ["beat-montage-bm"]` to `tiktokUpgrade`.
+   - `seed()` adds each upgrade skill once (`seeded.skill.<slug>.<skill>`) when `existing.config.skills` is an explicit list (`"all"` already includes it) and respects subsequent owner removal.
+   - Tested in `apps/hub/test/beats.test.ts`.
+5. **`splitLineWords` strictly produces 5–9 word chunks** — `packages/shared/src/montage.ts:36-54`
+   - Replaced greedy chunking with balanced division (`numChunks = Math.ceil(n / maxWords)`, `base = Math.floor(n / numChunks)`, remainder distributed across first `rem` chunks) so every chunk is strictly `5..9` words for any line with `>= 5` words (`15` words → `8 + 7`, `10` → `5 + 5`, `11` → `6 + 5`, `19` → `7 + 6 + 6`).
+   - Tightened test in `packages/shared/test/montage.test.ts` to assert `count >= 5 && count <= 9` (never loosened).
+6. **Captions without hook run bar i → bar i+1; split sub-lines snap to beats** — `packages/shared/src/montage.ts:281-342`
+   - Without `hook`, `rawBarEdges` starts at `sortedBars[0]` (so `lines[0]` runs `bar 0 → bar 1`, never flashing `0 → bar 0`).
+   - Split sub-lines snap their transition timestamps to beat boundaries inside `(bStart, bEnd)` instead of arbitrary fractional steps.
+   - Tested in `packages/shared/test/montage.test.ts`.
+7. **Beat ticks validated by `size` + `mtime_ms`, and `montage_plan` sends beats to hub** — `apps/hub/src/studio.ts:123-152`, `apps/hub/src/http.ts:576-588`, `packages/tools/src/beats.ts:9-151`
+   - `analyzeTrackBeats` returns `size` and `mtime_ms`; both `music_beats` and `montage_plan` send `{ track, size, mtime_ms, beats }` to `videoData("beats", ...)`.
+   - `studio.beats()` treats a `size` or `mtime_ms` mismatch as a cache miss (`null`).
+   - Tested in `apps/hub/test/beats.test.ts` and `packages/tools/test/beats.test.ts`.
+
+### Targeted Fix Tests (Raw Output)
+```text
+$ bun test packages/shared/test/montage.test.ts packages/tools/test/beats.test.ts apps/hub/test/beats.test.ts
+ 10 pass
+ 0 fail
+ 143 expect() calls
+Ran 10 tests across 3 files. [2.03s]
+```
+
+### Real ffmpeg Check With ≤ 1 s Short Clip (`0.6 s` clip + two `4 s` clips, 120 BPM, `cut_every: 2`, `loop: true`)
+```text
+BEATS: {"bpm":120,"confidence":1,"firstBeats":[0.0232,0.4876,0.9985,1.4861,1.9969,2.4845,2.9954,3.483,3.9938,4.5047,4.9923,5.5031],"bars":[0.9985,2.9954,4.9923,6.9892]}
+PLAN_CLIPS: [{"video":2,"start":0,"end":0.999,"speed":1,"zoom":"in"},{"video":3,"start":0,"end":0.998,"speed":1,"zoom":"out"},{"video":1,"start":0,"end":0.6,"speed":0.6012,"zoom":"in"},{"video":2,"start":1.11,"end":2.109,"speed":1,"zoom":"out"},{"video":1,"start":0,"end":0.6,"speed":0.6012,"zoom":"in"}]
+PLANNED_CUTS: [0.999,1.997,2.995,3.994] TOTAL_S: 4.992
+EDIT_OUT: {"ok":true,"summary":"rendered beat-montage-fix-tiktok_fhd.mp4 (5s, 0.74 MB)"}
+DET_EXIT: 0 SCENE_CUTS_PTS: [1,2,3,4]
+  cut#1: beat=0.999s | planned=0.999s | detected_scene=1.000s | delta=0.001s
+  cut#2: beat=1.997s | planned=1.997s | detected_scene=2.000s | delta=0.003s
+  cut#3: beat=2.995s | planned=2.995s | detected_scene=3.000s | delta=0.005s
+  cut#4: beat=3.994s | planned=3.994s | detected_scene=4.000s | delta=0.006s
+```
+
+### Final Verification After Fixes (Raw Final Lines)
+- `bun run typecheck`:
+```text
+$ tsc -p packages/shared && tsc -p packages/agents && tsc -p packages/tools && tsc -p apps/hub && tsc -p apps/runner && bun run --cwd apps/web typecheck
+$ vue-tsc --noEmit -p tsconfig.json
+```
+(exit code 0)
+
+- `bun test`:
+```text
+ 461 pass
+ 1 skip
+ 0 fail
+ 5534 expect() calls
+Ran 462 tests across 87 files. [355.11s]
+```
+
+- `bun run --cwd apps/web build`:
+```text
+✓ built in 2.83s
+```

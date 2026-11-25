@@ -2,8 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agents, jobs, runs, runners, uploads } from "../src/db/schema.ts";
-import { hashToken } from "../src/crypto.ts";
+import { eq } from "drizzle-orm";
+import { agents, jobs, runs, runners, settings, uploads } from "../src/db/schema.ts";
+import { hashToken, Secrets } from "../src/crypto.ts";
+import { seed } from "../src/seed.ts";
 import { startHub, type HubServer } from "../src/server.ts";
 import { TOKEN, testConfig } from "./helpers.ts";
 
@@ -62,18 +64,26 @@ describe("Task 032 Step 6: Studio video-data beats action & GET /api/videos/:id"
     const saved = await fetch(`${srv.url}/api/runner/video-data`, {
       method: "POST",
       headers: { authorization: `Bearer ${runnerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ run_id: run2, action: "beats", params: { track: "upbeat.mp3", beats: beatPayload } }),
+      body: JSON.stringify({ run_id: run2, action: "beats", params: { track: "upbeat.mp3", size: 102400, mtime_ms: 1700000000000, beats: beatPayload } }),
     });
     expect(saved.status).toBe(200);
 
-    // 3) Read back via video-data
+    // 3) Read back via video-data: matching size+mtime hits; mismatched size or mtime returns null (Fix 7)
     const readBack = await fetch(`${srv.url}/api/runner/video-data`, {
       method: "POST",
       headers: { authorization: `Bearer ${runnerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ run_id: run2, action: "beats", params: { track: "upbeat.mp3" } }),
+      body: JSON.stringify({ run_id: run2, action: "beats", params: { track: "upbeat.mp3", size: 102400, mtime_ms: 1700000000000 } }),
     });
     expect(readBack.status).toBe(200);
     expect(((await readBack.json()) as any).data.beats).toEqual(beatPayload);
+
+    const readMismatch = await fetch(`${srv.url}/api/runner/video-data`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${runnerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ run_id: run2, action: "beats", params: { track: "upbeat.mp3", size: 999999, mtime_ms: 1700000000000 } }),
+    });
+    expect(readMismatch.status).toBe(200);
+    expect(((await readMismatch.json()) as any).data.beats).toBeNull();
 
     // 4) Studio video info includes music_beats when plan has music.track
     const upId = newId("upl");
@@ -90,5 +100,40 @@ describe("Task 032 Step 6: Studio video-data beats action & GET /api/videos/:id"
     expect(studioRes.status).toBe(200);
     const studioJson = (await studioRes.json()) as any;
     expect(studioJson.music_beats).toEqual(beatPayload);
+  });
+
+  test("Fix 4: BuiltinAgent.upgrade.skills adds beat-montage-bm once to an existing Misi 1K agent seeded with the old skill list", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "seed-skill-upgrade-"));
+    const cfg = testConfig(dir);
+    const srv: HubServer = startHub(cfg, { sweepMs: 60_000, backupCheckMs: 600_000, tokenCheckMs: 0 });
+    cleanups.push(async () => {
+      await srv.stop();
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    });
+
+    const db = srv.hub.db;
+    // Simulate an older DB where tiktok was seeded before beat-montage-bm existed
+    const tt = db.select().from(agents).where(eq(agents.slug, "tiktok")).get()!;
+    db.update(agents)
+      .set({ config: { ...tt.config, skills: ["tiktok-captions-bm", "short-video-editing", "motion-text-tiktok"] } })
+      .where(eq(agents.id, tt.id))
+      .run();
+    db.delete(settings).where(eq(settings.key, "seeded.skill.tiktok.beat-montage-bm")).run();
+
+    const secrets = new Secrets(cfg.secretsKey);
+    seed(db, cfg, secrets);
+
+    const upgraded = db.select().from(agents).where(eq(agents.slug, "tiktok")).get()!;
+    const skillsAfter = Array.isArray(upgraded.config.skills) ? upgraded.config.skills : [];
+    expect(skillsAfter).toContain("beat-montage-bm");
+
+    // If the owner later removes beat-montage-bm, re-running seed() must NOT add it back
+    db.update(agents)
+      .set({ config: { ...upgraded.config, skills: skillsAfter.filter((s) => s !== "beat-montage-bm") } })
+      .where(eq(agents.id, tt.id))
+      .run();
+    seed(db, cfg, secrets);
+    const afterOwnerRemoval = db.select().from(agents).where(eq(agents.slug, "tiktok")).get()!;
+    expect((afterOwnerRemoval.config as { skills?: string[] }).skills).not.toContain("beat-montage-bm");
   });
 });

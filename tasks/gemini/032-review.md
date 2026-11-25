@@ -42,3 +42,10 @@ under "## Fixes after review". Do not commit.
 > Read `tasks/gemini/SUPERVISOR.md`, then `tasks/gemini/032-review.md` and fix every item, tests after each, notes
 > appended to `tasks/gemini/032-report.md` under "## Fixes after review". Never loosen a test to make it pass. Paste
 > raw output only; anything not run is NOT RUN. Do not commit.
+
+---
+## Fixes re-review (Claude, 2026-11-25): PASS
+All 7 items fixed and tested; re-run: typecheck OK, 461 pass / 1 skip / 0 fail, web build OK.
+Leftover nit (do later, not blocking): `buildSegmentClips` can loop a very short clip (e.g. 0.1 s) into many clips; past
+`MAX_CLIPS` they are dropped silently (`montage.ts:299`), so the video ends early and the loop close is lost. Count the
+looped pieces when choosing `cut_every`, or skip clips under ~0.25 s, and add a note.

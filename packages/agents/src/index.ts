@@ -55,9 +55,9 @@ export interface BuiltinAgent {
   needsLlm: boolean;
   /** Schedules created together with the agent (seeded disabled; the owner turns them on). */
   schedules?: (agentId: string) => ScheduleInput[];
-  /** For an agent seeded earlier: tools added once (the owner may remove them later), and older
+  /** For an agent seeded earlier: tools/skills added once (the owner may remove them later), and older
    *  built-in prompts that are replaced by the current one (an edited prompt is never touched). */
-  upgrade?: { tools?: string[]; previousPrompts?: string[] };
+  upgrade?: { tools?: string[]; skills?: string[]; previousPrompts?: string[] };
 }
 
 export const BEAT_MONTAGE_BM_SKILL = `---
