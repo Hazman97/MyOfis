@@ -28,12 +28,18 @@ const pubHdForm = reactive({
   per_ip_day: 6,
   daily_total: 30,
   max_queue: 5,
+  max_files: 4,
   storage_cap_gb: 20,
   retention_hours: 24,
 });
 const pubHdStats = ref<{ today_count: number; active_count: number; storage_bytes: number; turnstile_configured: boolean } | null>(null);
 const pubHdMsg = ref("");
 const pubHdError = ref("");
+const imgGenForm = reactive({ paused: false, max_per_day: 60 });
+const imgGenToday = ref(0);
+const imgGenStatus = ref<"ready" | "paused" | "not_installed">("not_installed");
+const imgGenMsg = ref("");
+const imgGenError = ref("");
 const msg = ref("");
 const error = ref("");
 
@@ -63,6 +69,27 @@ async function loadPublicHd() {
     pubHdStats.value = res.stats;
   } catch {
     // non-fatal
+  }
+  try {
+    const ig = await api.imageGen();
+    Object.assign(imgGenForm, ig.image_gen);
+    imgGenToday.value = ig.today_count;
+    imgGenStatus.value = ig.comfy_status;
+  } catch {
+    // non-fatal
+  }
+}
+
+async function saveImageGen() {
+  imgGenError.value = imgGenMsg.value = "";
+  try {
+    const res = await api.saveImageGen({ ...imgGenForm });
+    Object.assign(imgGenForm, res.image_gen);
+    imgGenToday.value = res.today_count;
+    imgGenStatus.value = res.comfy_status;
+    imgGenMsg.value = "Saved.";
+  } catch (e) {
+    imgGenError.value = (e as Error).message;
   }
 }
 
@@ -493,6 +520,10 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
             <input id="phd-q" v-model.number="pubHdForm.max_queue" type="number" min="1" max="50" class="input font-mono" />
           </div>
           <div>
+            <label class="label" for="phd-files">Files / job</label>
+            <input id="phd-files" v-model.number="pubHdForm.max_files" type="number" min="1" max="20" class="input font-mono" />
+          </div>
+          <div>
             <label class="label" for="phd-gb">Storage cap (GB)</label>
             <input id="phd-gb" v-model.number="pubHdForm.storage_cap_gb" type="number" min="1" max="500" class="input font-mono" />
           </div>
@@ -506,6 +537,37 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
         <div class="flex flex-wrap gap-2 border-t border-line pt-4">
           <ConfirmButton small confirm-label="Padam semua fail?" @confirm="clearPublicHdNow">Padam semua sekarang</ConfirmButton>
           <button class="btn btn-primary btn-sm ml-auto">Save</button>
+        </div>
+      </form>
+
+      <form class="card space-y-4 p-5" aria-labelledby="imggen-title" @submit.prevent="saveImageGen">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 id="imggen-title" class="font-semibold">Local AI Images (ComfyUI)</h2>
+            <p class="text-xs text-muted">
+              Status:
+              <span class="font-mono text-fg">
+                {{ imgGenStatus === "ready" ? "Ready (on demand)" : imgGenStatus === "paused" ? "Dijeda" : "Not installed on any runner" }}
+              </span>
+              · Hari ini: <span class="font-mono text-fg">{{ imgGenToday }} / {{ imgGenForm.max_per_day }}</span>
+            </p>
+          </div>
+          <label class="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+            <input v-model="imgGenForm.paused" type="checkbox" />
+            <span>Jeda gambar AI (Pause)</span>
+          </label>
+        </div>
+        <p class="text-xs text-muted leading-relaxed">
+          ComfyUI hanya dihidupkan apabila diperlukan, berhenti sendiri selepas 5 minit terbiar, dan menunggu jika game sedang menggunakan GPU.
+        </p>
+        <div class="max-w-44">
+          <label class="label" for="ig-max-day">Max / day</label>
+          <input id="ig-max-day" v-model.number="imgGenForm.max_per_day" type="number" min="1" max="500" class="input font-mono" />
+        </div>
+        <p v-if="imgGenError" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ imgGenError }}</p>
+        <p v-else-if="imgGenMsg" class="text-xs font-semibold text-accent">{{ imgGenMsg }}</p>
+        <div class="flex justify-end border-t border-line pt-3">
+          <button type="submit" class="btn btn-sm btn-primary">Save AI image settings</button>
         </div>
       </form>
 

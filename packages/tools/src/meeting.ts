@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { cleanSegments, formatTranscript, parseWhisperSegments, stamp, transcriptParts } from "@agent-office/shared";
 import { attachmentFile, ffmpegBin, mediaDir, spawn, whisperBinary, whisperModel, whisperVadModel } from "./video.ts";
+import { withGpuLock } from "./gpuLock.ts";
 import { ToolDenied, defineTool, type ToolContext } from "./types.ts";
 
 /**
@@ -86,7 +87,9 @@ export const meetingTranscribeTool = defineTool({
       const vad = whisperVadModel();
       ctx.emit({ type: "agent.thinking", payload: { summary: `Transcribing ${a.name} with whisper${vad ? " + VAD" : ""}` } });
       const out = `meeting-${i.file}`;
-      const r = await spawn(meetingWhisperArgs({ bin, model, vad, wav, out, language: i.language }), dir, ctx.signal, undefined, 4 * 60 * 60_000);
+      const r = await withGpuLock("meeting_transcribe:whisper", () =>
+        spawn(meetingWhisperArgs({ bin, model, vad, wav, out, language: i.language }), dir, ctx.signal, undefined, 4 * 60 * 60_000),
+      );
       rmSync(join(dir, wav), { force: true });
       if (r.code !== 0 || !existsSync(join(dir, `${out}.json`))) throw new ToolDenied(`whisper failed: ${r.stderr.slice(-400)}`);
       const { segments, dropped } = cleanSegments(parseWhisperSegments(JSON.parse(readFileSync(join(dir, `${out}.json`), "utf8"))));

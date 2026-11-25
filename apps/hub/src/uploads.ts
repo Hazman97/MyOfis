@@ -7,6 +7,7 @@ import { HttpError } from "./repo.ts";
 const KEY = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_PENDING = 20;
 const PENDING_TTL_MS = 60 * 60_000;
+const IMAGE_PART_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 interface Pending {
   name: string;
@@ -38,12 +39,14 @@ export class UploadParts {
     bytes: Uint8Array,
     runId: string | null = null,
     workspaceId = "owner",
+    allowImages = false,
   ): { received: number; total: number; upload?: ReturnType<Publisher["adoptUpload"]> } {
     this.#sweep();
     if (!KEY.test(key)) throw new HttpError(400, "invalid upload key");
     // phones and some browsers send no type (or octet-stream) for .m4a, .opus, .mkv: go by the name
-    if (!MEDIA_TYPES[p.content_type]) p = { ...p, content_type: mediaTypeFromName(p.name) ?? p.content_type };
-    if (!MEDIA_TYPES[p.content_type]) throw new HttpError(400, "only videos (MP4, MOV, WebM, MKV) or recordings (M4A, MP3, WAV, OGG/Opus, AAC, FLAC) are sent in parts");
+    const isAllowedImage = allowImages && IMAGE_PART_TYPES.has(p.content_type);
+    if (!isAllowedImage && !MEDIA_TYPES[p.content_type]) p = { ...p, content_type: mediaTypeFromName(p.name) ?? p.content_type };
+    if (!isAllowedImage && !MEDIA_TYPES[p.content_type]) throw new HttpError(400, "only videos (MP4, MOV, WebM, MKV) or recordings (M4A, MP3, WAV, OGG/Opus, AAC, FLAC) are sent in parts");
     if (!Number.isSafeInteger(p.total) || p.total < 1 || p.total > MAX_VIDEO_BYTES) throw new HttpError(400, `the file must be under ${MAX_VIDEO_BYTES / 1024 ** 3} GB`);
     if (bytes.length > UPLOAD_PART_BYTES) throw new HttpError(400, "part too large");
     const id = `${owner}:${key}`;

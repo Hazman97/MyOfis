@@ -40,20 +40,26 @@ export const directRuntime: AgentRuntime = {
         mode: string;
         reasons: string[];
         warnings?: string[];
+        files?: { part?: number; parts?: number }[];
         before: { size: string; fps: number; mb: number };
         after: { size: string; fps: number; mb: number };
       };
       const label = HD_TARGETS[target].label;
+      const partNote = o.files && o.files.length > 1 ? ` (${o.files.length} parts)` : "";
       const how =
         target === "tiktok"
           ? o.mode === "remux"
             ? "No re-encode: the picture is untouched, only the file was cleaned up for TikTok."
             : `Re-encoded once to TikTok's spec because: ${o.reasons.join("; ")}.`
           : o.mode === "remux"
-            ? `Ready for ${label} (no re-encode: the picture is untouched).`
-            : `Ready for ${label} (re-encoded once because: ${o.reasons.join("; ")}).`;
+            ? `Ready for ${label}${partNote} (no re-encode: the picture is untouched).`
+            : `Ready for ${label}${partNote} (re-encoded once because: ${o.reasons.join("; ")}).`;
       const warnLine = o.warnings?.length ? `\nWarnings: ${o.warnings.join("; ")}` : "";
       msg.push(`${how}\nBefore: ${o.before.size}, ${o.before.fps} fps, ${o.before.mb} MB. After: ${o.after.size}, ${o.after.fps} fps, ${o.after.mb} MB.${warnLine}`);
+    } else if (tool === "design_render" || tool === "image_generate") {
+      const out = await runTool(def, job.input.params ?? job.input, toolCtx);
+      if (!out.ok) throw new Error(out.summary);
+      msg.push(JSON.stringify(out.output));
     } else {
       const out = await runTool(def, job.input.plan, toolCtx);
       if (!out.ok) throw new Error(out.summary);

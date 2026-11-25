@@ -19,7 +19,7 @@ describe("schedules", () => {
     env = await createTestEnv();
     const { body } = await env.api("/api/schedules");
     const crons = body.schedules.map((s: { cron: string; enabled: boolean }) => `${s.cron}|${s.enabled}`).sort();
-    expect(crons).toEqual(["0 2 * * *|false", "0 20 * * *|false", "0 8 * * *|false", "0 8 * * 1-5|false", "0 9 * * 1|false", "30 7 * * *|false", "30 8 * * 1|false"]);
+    expect(crons).toEqual(["0 2 * * *|false", "0 20 * * *|false", "0 20 * * 0|false", "0 8 * * *|false", "0 8 * * 1-5|false", "0 9 * * 1|false", "30 7 * * *|false", "30 8 * * 1|false"]);
   });
 
   test("a cron schedule creates jobs with trigger=schedule", async () => {

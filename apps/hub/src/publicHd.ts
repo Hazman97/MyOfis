@@ -4,14 +4,17 @@ import { existsSync, mkdirSync, openSync, closeSync, readSync, writeSync, readdi
 import { setPriority } from "node:os";
 import { basename, join } from "node:path";
 import {
+  STORY_MAX_SECONDS,
   TIMEZONE,
   freshFetch,
+  storyParts,
   type HdTarget,
   type PublicHdSettings,
   type PublicHdTargetResult,
+  type SocialPlacement,
   type TikTokHdMode,
 } from "@agent-office/shared";
-import { HD_SUFFIX, buildHdArgs, ffmpegBin, ffprobeBin, parseProbe, type Encoder, type VideoProbe } from "@agent-office/tools";
+import { HD_SUFFIX, buildHdArgs, detectStoryCutPoints, ffmpegBin, ffprobeBin, parseProbe, type Encoder, type VideoProbe } from "@agent-office/tools";
 
 export interface PublicHdConfig {
   dir: string;
@@ -154,6 +157,8 @@ export class PublicHd {
   readonly #now: () => number;
   /** Uploads in progress: one per visitor, sent in order; their full sizes count toward the storage cap. */
   readonly #authorizedParts = new Map<string, { ipHash: string; at: number; total: number; received: number }>();
+  /** Covers map per queued job (placement chips that each target file serves). */
+  readonly #jobCovers = new Map<string, Partial<Record<HdTarget, SocialPlacement[]>>>();
   #running: Promise<void> | null = null;
   #nvencOk: boolean | null = null;
 
@@ -270,6 +275,7 @@ export class PublicHd {
     offset: number;
     bytes: Uint8Array;
     targets: HdTarget[];
+    coversByTarget?: Partial<Record<HdTarget, SocialPlacement[]>>;
     mode: TikTokHdMode;
     ip: string;
     turnstileToken?: string;
@@ -279,6 +285,9 @@ export class PublicHd {
     if (opts.offset + opts.bytes.byteLength > opts.total) throw new PublicHdError(400, "Saiz bahagian melebihi jumlah fail");
 
     const settings = this.#cfg.getSettings();
+    if (opts.targets.length > settings.max_files) {
+      throw new PublicHdError(400, `Maksimum ${settings.max_files} fail bagi setiap muat naik`);
+    }
     const ipHash = this.hashIp(opts.ip);
     const now = this.#now();
 
@@ -388,6 +397,7 @@ export class PublicHd {
       `INSERT INTO public_hd_jobs (id, ip_hash, name, size, targets, mode, status, results, created_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', '[]', ?)`,
       [id, ipHash, safeName, opts.total, JSON.stringify(opts.targets), opts.mode, now],
     );
+    if (opts.coversByTarget) this.#jobCovers.set(id, opts.coversByTarget);
     this.#logAccess(ipHash, opts.total, "queued", safeName);
     this.#pump();
     return { part: false, id };
@@ -436,16 +446,18 @@ export class PublicHd {
     };
   }
 
-  resultFilePath(id: string, target: HdTarget): { path: string; downloadName: string } | null {
+  resultFilePath(id: string, keyOrTarget: string): { path: string; downloadName: string } | null {
     const job = this.getJob(id);
     if (!job || job.status !== "done") return null;
-    const res = job.results.find((r) => r.target === target);
+    const storyMatch = /^story_([1-9]\d?)$/.exec(keyOrTarget);
+    const res = job.results.find((r) => (r.key ? r.key === keyOrTarget : false) || (!storyMatch && r.target === keyOrTarget));
     if (!res) return null;
-    // Construct path strictly from validated job.id + fixed HD_SUFFIX (never from request)
-    const filePath = join(this.outDir, `${job.id}${HD_SUFFIX[target]}.mp4`);
+    // Construct path strictly from validated job.id + fixed HD_SUFFIX + validated part index (never from request)
+    const partSuffix = res.part ? `_${res.part}` : "";
+    const filePath = join(this.outDir, `${job.id}${HD_SUFFIX[res.target]}${partSuffix}.mp4`);
     if (!existsSync(filePath)) return null;
     const base = job.name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").slice(0, 60) || "video";
-    return { path: filePath, downloadName: `${base}${HD_SUFFIX[target]}.mp4` };
+    return { path: filePath, downloadName: `${base}${HD_SUFFIX[res.target]}${partSuffix}.mp4` };
   }
 
   async waitIdle(): Promise<void> {
@@ -519,19 +531,72 @@ export class PublicHd {
         this.#nvencOk = encCheck.stdout.includes("h264_nvenc");
       }
 
+      const inputKind = sniffContainer(readHead(inputPath));
+      if (!inputKind) throw new Error("Bukan fail video yang sah");
+      const withInputFmt = (args: string[]) => {
+        const idx = args.indexOf("-i");
+        if (idx < 0) return args;
+        return [...args.slice(0, idx), "-f", inputKind, ...args.slice(idx)];
+      };
+
+      const coversByTarget = this.#jobCovers.get(id);
       const results: PublicHdTargetResult[] = [];
       for (const target of job.targets) {
+        const covers = coversByTarget?.[target];
+        if (target === "story" && before.duration > STORY_MAX_SECONDS) {
+          const cuts = before.has_audio ? await detectStoryCutPoints(ffmpeg, inputPath, this.dir, new AbortController().signal, before.duration, inputKind) : [];
+          const segs = storyParts(before.duration, cuts);
+          for (let idx = 0; idx < segs.length; idx++) {
+            const seg = segs[idx]!;
+            const part = idx + 1;
+            const outName = `${id}${HD_SUFFIX.story}_${part}.mp4`;
+            const outPath = join(this.outDir, outName);
+
+            let encoder: Encoder = this.#nvencOk ? "nvenc" : "x264";
+            let built = buildHdArgs(inputPath, outPath, before, "story", job.mode, encoder, seg);
+            let r = await spawnLogged([ffmpeg, ...withInputFmt(built.args)], this.dir, true);
+            if (r.code !== 0 && encoder === "nvenc") {
+              this.#nvencOk = false;
+              encoder = "x264";
+              built = buildHdArgs(inputPath, outPath, before, "story", job.mode, encoder, seg);
+              r = await spawnLogged([ffmpeg, ...withInputFmt(built.args)], this.dir, true);
+            }
+            if (r.code !== 0) {
+              throw new Error(`Pemprosesan story_${part} gagal: ${r.stderr.slice(-240)}`);
+            }
+            const after = await this.#probeFile(ffprobe, outPath);
+            results.push({
+              target: "story",
+              key: `story_${part}`,
+              ...(covers?.length ? { covers } : {}),
+              part,
+              parts: segs.length,
+              mode: built.plan.mode,
+              file: outName,
+              size_bytes: after.size_bytes,
+              width: after.width,
+              height: after.height,
+              fps: after.fps,
+              codec: after.video_codec,
+              duration: after.duration,
+              reasons: built.plan.reasons,
+              warnings: built.plan.warnings,
+            });
+          }
+          continue;
+        }
+
         const outName = `${id}${HD_SUFFIX[target]}.mp4`;
         const outPath = join(this.outDir, outName);
 
         let encoder: Encoder = this.#nvencOk ? "nvenc" : "x264";
         let built = buildHdArgs(inputPath, outPath, before, target, job.mode, encoder);
-        let r = await spawnLogged([ffmpeg, ...built.args], this.dir, true);
+        let r = await spawnLogged([ffmpeg, ...withInputFmt(built.args)], this.dir, true);
         if (r.code !== 0 && encoder === "nvenc" && built.plan.mode === "reencode") {
           this.#nvencOk = false;
           encoder = "x264";
           built = buildHdArgs(inputPath, outPath, before, target, job.mode, encoder);
-          r = await spawnLogged([ffmpeg, ...built.args], this.dir, true);
+          r = await spawnLogged([ffmpeg, ...withInputFmt(built.args)], this.dir, true);
         }
         if (r.code !== 0) {
           throw new Error(`Pemprosesan ${target} gagal: ${r.stderr.slice(-240)}`);
@@ -540,6 +605,8 @@ export class PublicHd {
         const after = await this.#probeFile(ffprobe, outPath);
         results.push({
           target,
+          key: target,
+          ...(covers?.length ? { covers } : {}),
           mode: built.plan.mode,
           file: outName,
           size_bytes: after.size_bytes,
@@ -552,6 +619,7 @@ export class PublicHd {
           warnings: built.plan.warnings,
         });
       }
+      this.#jobCovers.delete(id);
 
       const doneAt = this.#now();
       this.db.run(`UPDATE public_hd_jobs SET status = 'done', results = ?, done_at = ? WHERE id = ?`, [JSON.stringify(results), doneAt, id]);
@@ -572,8 +640,8 @@ export class PublicHd {
     const retentionMs = this.#cfg.getSettings().retention_hours * 3600_000;
     const cutoff = now - retentionMs;
     const expired = this.db
-      .query<{ id: string; targets: string }, [number]>(
-        `SELECT id, targets FROM public_hd_jobs WHERE status IN ('done', 'failed') AND COALESCE(done_at, created_at) <= ?`,
+      .query<{ id: string; targets: string; results: string }, [number]>(
+        `SELECT id, targets, results FROM public_hd_jobs WHERE status IN ('done', 'failed') AND COALESCE(done_at, created_at) <= ?`,
       )
       .all(cutoff);
 
@@ -581,6 +649,10 @@ export class PublicHd {
       for (const t of JSON.parse(row.targets) as HdTarget[]) {
         rmSync(join(this.outDir, `${row.id}${HD_SUFFIX[t]}.mp4`), { force: true });
       }
+      for (const r of JSON.parse(row.results || "[]") as PublicHdTargetResult[]) {
+        if (r.file && basename(r.file) === r.file) rmSync(join(this.outDir, r.file), { force: true });
+      }
+      this.#jobCovers.delete(row.id);
       rmSync(join(this.incomingDir, `${row.id}.input`), { force: true });
       this.db.run(`DELETE FROM public_hd_jobs WHERE id = ?`, [row.id]);
     }

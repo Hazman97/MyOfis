@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { withGpuLock } from "./gpuLock.ts";
 import {
   EditPlan,
   finishedSeconds,
@@ -22,7 +23,11 @@ import {
   TikTokHdMode,
   HdTarget,
   HD_TARGETS,
+  STORY_MAX_SECONDS,
+  SocialPlacement,
+  hdOutputsFor,
   hdPlan,
+  storyParts,
   type VideoPreset,
   type VideoPresetId,
   emojiFontName,
@@ -874,7 +879,7 @@ export const videoEditTool = defineTool({
     const render = (enc: Encoder) => spawn([bin, ...buildEditArgs(plan, inputs, enc, out, captionsFile, musicFile, overlayInputs)], dir, ctx.signal, onProgress);
     if (nvencOk === null) nvencOk = (await spawn([bin, "-hide_banner", "-encoders"], dir, ctx.signal, undefined, 30_000)).stdout.includes("h264_nvenc");
     let encoder: Encoder = nvencOk ? "nvenc" : "x264";
-    let r = await render(encoder);
+    let r = encoder === "nvenc" ? await withGpuLock("video_edit:nvenc", () => render("nvenc")) : await render("x264");
     if (r.code !== 0 && encoder === "nvenc" && !ctx.signal.aborted) {
       // no NVIDIA GPU / driver after all: the CPU encoder always works
       nvencOk = false;
@@ -903,16 +908,56 @@ export function remuxArgs(input: string, out: string): string[] {
 }
 
 export const HD_SUFFIX: Record<HdTarget, string> = {
+  vertical: "-vertical-hd",
+  story: "-story",
+  feed_4x5: "-feed-4x5",
+  square: "-square",
   tiktok: "-tiktok-hd",
   whatsapp: "-wa-hd",
   whatsapp_status: "-wa-status",
 };
 
 export const HD_PRESET: Record<HdTarget, VideoPresetId> = {
+  vertical: "tiktok_fhd",
+  story: "tiktok_fhd",
+  feed_4x5: "feed_4x5",
+  square: "square",
   tiktok: "tiktok_fhd",
   whatsapp: "whatsapp_hd",
   whatsapp_status: "whatsapp_v",
 };
+
+/** Detect silence midpoints to use as preferred Story split points near 60 s. */
+export async function detectStoryCutPoints(
+  bin: string,
+  inputFile: string,
+  cwd: string,
+  signal: AbortSignal,
+  duration: number,
+  inputFormat?: "mov" | "matroska",
+): Promise<number[]> {
+  try {
+    const args = [
+      bin,
+      "-hide_banner",
+      "-nostdin",
+      ...(inputFormat ? ["-f", inputFormat] : []),
+      "-i",
+      inputFile,
+      "-vn",
+      "-af",
+      "silencedetect=n=-30dB:d=0.3",
+      "-f",
+      "null",
+      "-",
+    ];
+    const r = await spawn(args, cwd, signal, undefined, 120_000);
+    if (r.code !== 0) return [];
+    return parseSilences(r.stderr, duration).map((s) => Math.round(((s.s + s.e) / 2) * 1000) / 1000);
+  } catch {
+    return [];
+  }
+}
 
 /** Pure plan + ffmpeg argument builder for Video HD (shared by video_hd tool and PublicHd). */
 export function buildHdArgs(
@@ -922,20 +967,30 @@ export function buildHdArgs(
   target: HdTarget,
   mode: TikTokHdMode,
   encoder: Encoder = "x264",
+  segment?: { start: number; end: number },
 ): { plan: ReturnType<typeof hdPlan>; args: string[]; editPlan: EditPlan | null } {
   const plan = hdPlan(before, target, mode);
-  if (plan.mode === "remux") {
+  if (plan.mode === "remux" && !segment) {
     return { plan, args: remuxArgs(inputFile, outFile), editPlan: null };
   }
-  const editPlan = EditPlan.parse({ clips: [{ video: 1 }], preset: HD_PRESET[target], fit: plan.fit, fps: plan.fps, name: "hd" });
+  const clip = segment ? { video: 1, start: segment.start, end: segment.end } : { video: 1 };
+  const editPlan = EditPlan.parse({ clips: [clip], preset: HD_PRESET[target], fit: plan.fit, fps: plan.fps, name: "hd" });
   const args = buildEditArgs(editPlan, [{ file: inputFile, probe: before, crop: null }], encoder, outFile, null);
-  return { plan, args, editPlan };
+  return {
+    plan: segment ? { ...plan, mode: "reencode", reasons: plan.reasons.length ? plan.reasons : ["split into ≤ 60 s Story parts"] } : plan,
+    args,
+    editPlan,
+  };
 }
 
 /** A video file that our Video HD tool or page already produced for the target. Pure. */
 export function isHdPrepared(name: string, target: HdTarget = "tiktok"): boolean {
   const base = name.replace(/\.[^.]+$/, "");
   if (target === "tiktok") return /-tiktok-hd(-tiktok_fhd)?$/.test(base);
+  if (target === "vertical") return /-(vertical|tiktok)-hd(-tiktok_fhd)?$/.test(base);
+  if (target === "story") return /-story(_\d+)?(-tiktok_fhd)?$/.test(base);
+  if (target === "feed_4x5") return /-feed-4x5(-feed_4x5)?$/.test(base);
+  if (target === "square") return /-square(-square)?$/.test(base);
   if (target === "whatsapp") return /-wa-hd(-whatsapp_hd)?$/.test(base);
   return /-wa-status(-whatsapp_v)?$/.test(base);
 }
@@ -945,7 +1000,26 @@ export function isTiktokHdPrepared(name: string): boolean {
   return isHdPrepared(name, "tiktok");
 }
 
-async function runVideoHd(video: number, target: HdTarget, mode: TikTokHdMode, ctx: ToolContext) {
+interface HdFileOutput {
+  video_id: string;
+  target: HdTarget;
+  covers?: SocialPlacement[];
+  part?: number;
+  parts?: number;
+  mode: "remux" | "reencode";
+  reasons: string[];
+  warnings: string[];
+  before: { size: string; fps: number; codec: string; mb: number; seconds: number };
+  after: { size: string; fps: number; codec: string; mb: number; seconds: number };
+}
+
+async function runVideoHd(
+  video: number,
+  target: HdTarget,
+  mode: TikTokHdMode,
+  ctx: ToolContext,
+  covers?: SocialPlacement[],
+): Promise<{ summary: string; output: HdFileOutput & { files?: HdFileOutput[] } }> {
   const bin = ffmpegBin();
   if (!bin) throw new ToolDenied("ffmpeg is not installed on the runner PC (ffmpeg.org). Tell the owner.");
   const { file, name } = await attachmentFile(ctx, video);
@@ -954,11 +1028,11 @@ async function runVideoHd(video: number, target: HdTarget, mode: TikTokHdMode, c
   const label = HD_TARGETS[target].label;
   // already prepared for this target: use that very file, no second copy or re-encode
   const attached = ctx.attachments[video - 1];
-  if (mode === "auto" && isHdPrepared(name, target) && attached) {
+  if (mode === "auto" && isHdPrepared(name, target) && attached && !(target === "story" && before.duration > STORY_MAX_SECONDS)) {
     const plan = hdPlan(before, target, "remux");
     return {
       summary: `${label}: ${name} is already prepared`,
-      output: { video_id: attached.id, target, mode: "remux" as const, reasons: [] as string[], warnings: plan.warnings, before: facts(before), after: facts(before) },
+      output: { video_id: attached.id, target, ...(covers ? { covers } : {}), mode: "remux" as const, reasons: [] as string[], warnings: plan.warnings, before: facts(before), after: facts(before) },
     };
   }
   let plan: ReturnType<typeof hdPlan>;
@@ -969,6 +1043,40 @@ async function runVideoHd(video: number, target: HdTarget, mode: TikTokHdMode, c
   }
   const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_").slice(0, 60) || `video-${video}`;
   const outBase = `${base}${HD_SUFFIX[target]}`;
+
+  // Story > 60 s: split into ≤ 60 s parts using silence cut points when available
+  if (target === "story" && before.duration > STORY_MAX_SECONDS) {
+    const dir = mediaDir(ctx);
+    const cuts = before.has_audio ? await detectStoryCutPoints(bin, file, dir, ctx.signal, before.duration) : [];
+    const segs = storyParts(before.duration, cuts);
+    const files: HdFileOutput[] = [];
+    for (let idx = 0; idx < segs.length; idx++) {
+      const seg = segs[idx]!;
+      const partName = `${outBase}_${idx + 1}`;
+      const edit = EditPlan.parse({ clips: [{ video, start: seg.start, end: seg.end }], preset: HD_PRESET[target], fit: plan.fit, fps: plan.fps, name: partName });
+      const r = await videoEditTool.execute(edit, ctx);
+      const out = r.output as { video_id: string; file: string; size_mb: number };
+      const after = await probe(ctx, out.file);
+      files.push({
+        video_id: out.video_id,
+        target,
+        ...(covers ? { covers } : {}),
+        part: idx + 1,
+        parts: segs.length,
+        mode: "reencode",
+        reasons: plan.reasons.length ? plan.reasons : ["split into ≤ 60 s Story parts"],
+        warnings: plan.warnings,
+        before: facts(before),
+        after: facts(after),
+      });
+    }
+    const first = files[0]!;
+    return {
+      summary: `${label} (${segs.length} parts): ${outBase}_1..${segs.length}.mp4`,
+      output: { ...first, files },
+    };
+  }
+
   if (plan.mode === "reencode") {
     const edit = EditPlan.parse({ clips: [{ video }], preset: HD_PRESET[target], fit: plan.fit, fps: plan.fps, name: outBase });
     const r = await videoEditTool.execute(edit, ctx);
@@ -976,7 +1084,7 @@ async function runVideoHd(video: number, target: HdTarget, mode: TikTokHdMode, c
     const after = await probe(ctx, out.file);
     return {
       summary: `${label} (re-encoded): ${out.file}`,
-      output: { video_id: out.video_id, target, mode: "reencode" as const, reasons: plan.reasons, warnings: plan.warnings, before: facts(before), after: facts(after) },
+      output: { video_id: out.video_id, target, ...(covers ? { covers } : {}), mode: "reencode" as const, reasons: plan.reasons, warnings: plan.warnings, before: facts(before), after: facts(after) },
     };
   }
   const dir = mediaDir(ctx);
@@ -989,24 +1097,49 @@ async function runVideoHd(video: number, target: HdTarget, mode: TikTokHdMode, c
   ctx.renders.push({ id: up.id, name: out, content_type: "video/mp4" });
   return {
     summary: `${label} (no re-encode): ${out}`,
-    output: { video_id: up.id, target, mode: "remux" as const, reasons: plan.reasons, warnings: plan.warnings, before: facts(before), after: facts(after) },
+    output: { video_id: up.id, target, ...(covers ? { covers } : {}), mode: "remux" as const, reasons: plan.reasons, warnings: plan.warnings, before: facts(before), after: facts(after) },
   };
 }
 
 export const videoHdTool = defineTool({
   name: "video_hd",
   description:
-    "Prepare a video for TikTok HD, WhatsApp HD, or WhatsApp Status without losing quality. mode auto: when it already fits the target, streams are only copied into a clean MP4; otherwise it is re-encoded once to that target's spec.",
+    "Prepare a video for one target (vertical, story, feed_4x5, square, tiktok, whatsapp, whatsapp_status) or a list of social placements (tiktok, ig_reels, ig_story, ig_feed, fb_reels, fb_story, fb_feed, yt_shorts, threads, whatsapp, whatsapp_status). " +
+    "Platforms sharing the same format produce one file labeled with `covers`. Story clips over 60 s are split into ≤ 60 s parts.",
   category: "write",
   input: z.object({
     video: z.number().int().min(1).max(10).describe("Which file (1 = first)"),
-    target: HdTarget.default("tiktok"),
+    target: HdTarget.optional(),
+    placements: z.array(SocialPlacement).min(1).max(11).optional(),
     mode: TikTokHdMode.default("auto"),
   }),
   risk: () => "safe",
-  describe: (i) => `${HD_TARGETS[i.target].label} for video ${i.video}`,
+  describe: (i) =>
+    i.placements?.length
+      ? `Video HD (${i.placements.join(", ")}) for video ${i.video}`
+      : `${HD_TARGETS[i.target ?? "tiktok"].label} for video ${i.video}`,
   async execute(i, ctx) {
-    const res = await runVideoHd(i.video, i.target, i.mode, ctx);
+    if (i.placements?.length) {
+      const groups = hdOutputsFor(i.placements);
+      const files: HdFileOutput[] = [];
+      const summaries: string[] = [];
+      for (const g of groups) {
+        const res = await runVideoHd(i.video, g.target, i.mode, ctx, g.covers);
+        summaries.push(res.summary);
+        if (res.output.files?.length) files.push(...res.output.files);
+        else files.push(res.output);
+      }
+      const first = files[0]!;
+      return {
+        ok: true,
+        summary: summaries.join("; "),
+        output: {
+          ...first,
+          files,
+        },
+      };
+    }
+    const res = await runVideoHd(i.video, i.target ?? "tiktok", i.mode, ctx);
     return { ok: true, ...res };
   },
 });
@@ -1151,7 +1284,9 @@ export const videoTranscribeTool = defineTool({
       ctx.emit({ type: "agent.thinking", payload: { summary: `Transcribing video ${i.video} (${Math.round(p.duration)} s) with whisper` } });
       const out = `in-${i.video}`;
       try { rmSync(join(dir, `${out}.json`), { force: true }); } catch {}
-      const r = await spawn([bin, "-m", model, "-f", wav, "-l", i.language, "-ojf", "-of", out, "-ml", "1", "-sow", "-np"], dir, ctx.signal, undefined, 60 * 60_000);
+      const r = await withGpuLock("video_transcribe:whisper", () =>
+        spawn([bin, "-m", model, "-f", wav, "-l", i.language, "-ojf", "-of", out, "-ml", "1", "-sow", "-np"], dir, ctx.signal, undefined, 60 * 60_000),
+      );
       if (r.code !== 0 || !existsSync(join(dir, `${out}.json`))) throw new ToolDenied(`whisper failed: ${r.stderr.slice(-400)}`);
       t = parseWhisperJson(JSON.parse(readFileSync(join(dir, `${out}.json`), "utf8")), p.duration, model.split(/[\\/]/).pop() ?? "whisper");
       // whisper's word times touch each other: measure the pauses on the sound itself

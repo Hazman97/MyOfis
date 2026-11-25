@@ -90,8 +90,8 @@ export interface ToolContext {
   attachments: { id: string; name: string; content_type: string }[];
   /** Save an attachment to a file (videos are too big to hold in memory). */
   downloadAttachment(id: string, dest: string): Promise<void>;
-  /** Send a finished video to the hub; it becomes an upload tied to this run. `render` = how it was made (for the studio). */
-  uploadVideo(path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }>;
+  /** Send a finished video or rendered image to the hub; it becomes an upload tied to this run. `render` = how it was made (for the studio). */
+  uploadVideo(path: string, name: string, render?: RenderInfo, contentType?: string): Promise<{ id: string; size: number }>;
   /** Videos this run made (video_edit), in order; save_draft may attach them. */
   renders: {
     id: string;
@@ -110,7 +110,7 @@ export interface ToolContext {
   /** Ask the run's own model what some pictures show (thumbnails of a clip). "" when the model cannot see. */
   describeImages(paths: string[], prompt: string): Promise<string>;
   /** Video Studio data through the hub: a source video's transcript, and Editor's edit options. */
-  videoData(action: "transcript_get" | "transcript_put" | "suggestions" | "index_get" | "index_put" | "clips_get" | "clips_put" | "beats", params: Record<string, unknown>): Promise<unknown>;
+  videoData(action: "transcript_get" | "transcript_put" | "suggestions" | "index_get" | "index_put" | "clips_get" | "clips_put" | "beats" | "image_gen_check", params: Record<string, unknown>): Promise<unknown>;
   /** Data a project's website shares with Agent Office (Kerani: bookings). */
   siteData(projectId: string, resource: "bookings", params: Record<string, string>): Promise<unknown>;
   /** Change or remove a live website post (after the owner approved the tool call). */

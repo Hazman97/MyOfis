@@ -85,7 +85,7 @@ export interface CandidateWindow {
   audio_peak_at?: number;
 }
 
-export interface BrandKit {
+export interface ClipBrandKit {
   logo_url?: string;
   logo_position?: "top_right" | "top_left" | "bottom_right" | "bottom_left";
   logo_opacity?: number;

@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { EditPlan, EditSuggestionsInput, HD_TARGETS, RenderInfo, Transcript, VIDEO_PRESETS, VideoShotIndex, ClipCandidateSchema, type ClipCandidate, type EditSuggestions, type HdTarget, type Job, type TikTokHdMode } from "@agent-office/shared";
+import { EditPlan, EditSuggestionsInput, HD_TARGETS, RenderInfo, Transcript, VIDEO_PRESETS, VideoShotIndex, ClipCandidateSchema, type ClipCandidate, type EditSuggestions, type HdOutputGroup, type HdTarget, type Job, type SocialPlacement, type TikTokHdMode } from "@agent-office/shared";
 import { z } from "zod";
 import type { Hub } from "./core.ts";
 import { contentDrafts, editSuggestions, events, jobs, runs, settings, uploads } from "./db/schema.ts";
@@ -196,12 +196,22 @@ export class Studio {
   }
 
   /** "Video HD": remux or re-encode a finished video for one or more targets (no AI). Returns created jobs. */
-  videoHd(uploadId: string, targets: HdTarget[], mode: TikTokHdMode, ws = "owner"): Job[] {
+  videoHd(uploadId: string, targets: (HdTarget | HdOutputGroup)[], mode: TikTokHdMode, ws = "owner"): Job[] {
     const up = this.hub.publisher.upload(uploadId);
     if (!up || up.workspace_id !== ws || !up.content_type.startsWith("video/")) throw new HttpError(404, "video not found");
     const agent = this.#editor(null, ws, "video_hd");
-    const unique = [...new Set(targets)];
-    return unique.map((target) => {
+    const byTarget = new Map<HdTarget, SocialPlacement[]>();
+    for (const item of targets) {
+      const target = typeof item === "string" ? item : item.target;
+      const covers = typeof item === "string" ? [] : item.covers;
+      const existing = byTarget.get(target);
+      if (existing) {
+        for (const c of covers) if (!existing.includes(c)) existing.push(c);
+      } else {
+        byTarget.set(target, [...covers]);
+      }
+    }
+    return [...byTarget.entries()].map(([target, covers]) => {
       const label = HD_TARGETS[target].label;
       return this.hub.createJob(
         {
@@ -214,6 +224,7 @@ export class Studio {
             attachments: [{ id: up.id, name: up.name, content_type: up.content_type }],
             source_upload_id: up.id,
             target,
+            ...(covers.length ? { covers } : {}),
             mode,
           },
           trigger: "manual",
@@ -251,7 +262,7 @@ export class Studio {
       .limit(60)
       .all();
     return rows.map((j) => {
-      const input = j.input as { source_upload_id?: string; target?: HdTarget; mode?: string; attachments?: { name: string }[] };
+      const input = j.input as { source_upload_id?: string; target?: HdTarget; covers?: SocialPlacement[]; mode?: string; attachments?: { name: string }[] };
       const runIds = this.hub.db.select({ id: runs.id }).from(runs).where(eq(runs.job_id, j.id)).all().map((r) => r.id);
       const evs = runIds.length
         ? this.hub.db
@@ -263,16 +274,22 @@ export class Studio {
         : [];
       const text = evs.map((e) => (e.type === "agent.message" ? String((e.payload as { text?: string }).text ?? "") : "")).join("");
       const failed = evs.filter((e) => e.type === "run.failed").map((e) => String((e.payload as { error?: string }).error ?? "")).pop() ?? null;
-      const result = this.#resultOf(j.id);
-      const made = result ? this.hub.publisher.upload(result) : null;
+      const resultIds = this.#resultsOf(j.id);
+      const results = resultIds
+        .map((rid) => this.hub.publisher.upload(rid))
+        .filter((u): u is NonNullable<typeof u> => !!u)
+        .map((u) => ({ id: u.id, name: u.name, size: u.size }));
+      const made = results[0] ?? null;
       return {
         job_id: j.id,
         status: j.status,
         created_at: j.created_at,
         target: input.target ?? ("tiktok" as HdTarget),
+        covers: input.covers ?? [],
         mode: input.mode ?? "auto",
         source: { id: input.source_upload_id ?? null, name: input.attachments?.[0]?.name ?? "" },
-        result: made ? { id: made.id, name: made.name, size: made.size } : null,
+        result: made,
+        results,
         note: text.trim(),
         error: j.status === "failed" ? failed : j.status === "cancelled" ? this.#cancelReason(j.id) : null,
       };
@@ -300,6 +317,13 @@ export class Studio {
     const runIds = this.hub.db.select({ id: runs.id }).from(runs).where(eq(runs.job_id, jobId)).all().map((r) => r.id);
     if (!runIds.length) return null;
     return this.hub.db.select({ id: uploads.id }).from(uploads).where(inArray(uploads.run_id, runIds)).orderBy(desc(uploads.created_at)).get()?.id ?? null;
+  }
+
+  /** All videos a render job made (oldest first, so Story parts stay in order 1..N). */
+  #resultsOf(jobId: string): string[] {
+    const runIds = this.hub.db.select({ id: runs.id }).from(runs).where(eq(runs.job_id, jobId)).all().map((r) => r.id);
+    if (!runIds.length) return [];
+    return this.hub.db.select({ id: uploads.id }).from(uploads).where(inArray(uploads.run_id, runIds)).orderBy(uploads.created_at, uploads.id).all().map((u) => u.id);
   }
 
   /** A video_render run finished: point the draft at the new video. */

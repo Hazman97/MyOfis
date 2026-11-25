@@ -2,7 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { AUDIO_TYPES, DOC_TYPES, MEDIA_TYPES, VIDEO_TYPES, freshFetch, redactString, type AgentEvent } from "@agent-office/shared";
+import { AUDIO_TYPES, DOC_TYPES, MEDIA_TYPES, VIDEO_TYPES, freshFetch, groupDraftSets, redactString, type AgentEvent } from "@agent-office/shared";
 import type { Hub } from "./core.ts";
 import { agents, approvals, contentDrafts, projects, settings } from "./db/schema.ts";
 import type { Integrations } from "./integrations.ts";
@@ -168,16 +168,16 @@ export class TelegramBot {
   }
 
   /**
-   * `a:<approval id>:<y|n>:<sig>` (an approval) or `d:<draft id>:<y|n>:<sig>` (a draft) → decision,
-   * or null when malformed or forged.
+   * `a:<approval id>:<y|n>:<sig>` (an approval), `d:<draft id>:<y|n>:<sig>` (a draft),
+   * or `s:<set id>:<y|n>:<sig>` (a post set) → decision, or null when malformed or forged.
    */
-  parseCallback(data: string): { kind: "approval" | "draft"; id: string; yes: boolean } | null {
-    const m = data.match(/^([ad]):([A-Za-z0-9_-]{8,40}):([yn]):([A-Za-z0-9_-]{12})$/);
+  parseCallback(data: string): { kind: "approval" | "draft" | "set"; id: string; yes: boolean } | null {
+    const m = data.match(/^([ads]):([A-Za-z0-9_-]{3,40}):([yn]):([A-Za-z0-9_-]{12})$/);
     if (!m) return null;
-    const [, k, id, d, sig] = m as unknown as [string, "a" | "d", string, "y" | "n", string];
-    const subject = k === "a" ? id : `d:${id}`;
+    const [, k, id, d, sig] = m as unknown as [string, "a" | "d" | "s", string, "y" | "n", string];
+    const subject = k === "a" ? id : `${k}:${id}`;
     if (!this.#verify(subject, d, sig)) return null;
-    return { kind: k === "a" ? "approval" : "draft", id, yes: d === "y" };
+    return { kind: k === "a" ? "approval" : k === "d" ? "draft" : "set", id, yes: d === "y" };
   }
 
   callbackData(approvalId: string, d: "y" | "n"): string {
@@ -186,6 +186,10 @@ export class TelegramBot {
 
   draftCallbackData(draftId: string, d: "y" | "n"): string {
     return `d:${draftId}:${d}:${this.#sign(`d:${draftId}`, d)}`;
+  }
+
+  setCallbackData(setId: string, d: "y" | "n"): string {
+    return `s:${setId}:${d}:${this.#sign(`s:${setId}`, d)}`;
   }
 
   // ---------------------------------------------------------------- outgoing
@@ -255,8 +259,15 @@ export class TelegramBot {
           const out = this.hub.store.state.runs[e.payload.run_id]?.output?.trim();
           await this.notify(`${agentName()}: ${out || "(no answer)"}`);
         }
-        for (const id of drafts.slice(0, DRAFT_CARDS_PER_RUN)) await this.#sendDraftCard(id, agentName());
-        if (drafts.length > DRAFT_CARDS_PER_RUN) await this.notify(`📝 …and ${drafts.length - DRAFT_CARDS_PER_RUN} more drafts in Agent Office → Drafts.`);
+        const rows = drafts
+          .map((id) => this.hub.db.select().from(contentDrafts).where(eq(contentDrafts.id, id)).get())
+          .filter((r): r is NonNullable<typeof r> => !!r && r.status === "draft");
+        const groups = groupDraftSets(rows);
+        for (const g of groups.slice(0, DRAFT_CARDS_PER_RUN)) {
+          if (g.set_id) await this.#sendSetCard(g.set_id, g.drafts, agentName());
+          else await this.#sendDraftCard(g.drafts[0]!.id, agentName());
+        }
+        if (groups.length > DRAFT_CARDS_PER_RUN) await this.notify(`📝 …and ${groups.length - DRAFT_CARDS_PER_RUN} more draft(s)/set(s) in Agent Office → Drafts.`);
         if (job && REPORT_JOB_TYPES.has(job.type)) {
           const out = this.hub.store.state.runs[e.payload.run_id]?.output?.trim();
           if (out) await this.notify(`📋 ${agentName()}: ${job.title}\n\n${out}`);
@@ -272,6 +283,34 @@ export class TelegramBot {
       default:
         return;
     }
+  }
+
+  /** One post set card with Lulus semua / Tolak (HMAC-signed like draft buttons). */
+  async #sendSetCard(setId: string, items: (typeof contentDrafts.$inferSelect)[], agentName: string): Promise<void> {
+    if (!items.length) return;
+    const project = this.hub.db.select({ name: projects.name }).from(projects).where(eq(projects.id, items[0]!.project_id)).get();
+    const lines = items.map((d) => {
+      const place = d.meta?.placement ? ` (${d.meta.placement})` : "";
+      const preview = d.body.replace(/\s+/g, " ").slice(0, 90);
+      return `• ${d.platform}${place}: ${d.title} — ${preview}${d.body.length > 90 ? "…" : ""}`;
+    });
+    const text = [
+      `📦 ${agentName} menyediakan set pos (${items.length} draf) untuk ${project?.name ?? "projek"}`,
+      "",
+      ...lines,
+      "",
+      "Semak butiran penuh atau jadualkan di Agent Office → Drafts.",
+    ].join("\n");
+    await this.notify(text, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "✅ Lulus semua", callback_data: this.setCallbackData(setId, "y") },
+            { text: "❌ Tolak", callback_data: this.setCallbackData(setId, "n") },
+          ],
+        ],
+      },
+    });
   }
 
   /** One draft with Approve / Reject. Approving a website post publishes it. */
@@ -371,6 +410,7 @@ export class TelegramBot {
       return;
     }
     if (parsed.kind === "draft") return this.#decideDraft(token, cq.id, cq.message, parsed.id, parsed.yes);
+    if (parsed.kind === "set") return this.#decideSet(token, cq.id, cq.message, parsed.id, parsed.yes);
     let reply: string;
     try {
       ownApproval(this.hub.db, parsed.id, OWNER_WORKSPACE);
@@ -384,6 +424,26 @@ export class TelegramBot {
     if (cq.message) {
       const action = this.hub.db.select({ action: approvals.action }).from(approvals).where(eq(approvals.id, parsed.id)).get()?.action ?? "";
       await this.#call(token, "editMessageText", { chat_id: cq.message.chat.id, message_id: cq.message.message_id, text: clip(`${reply} (Telegram)\n\n${action}`) }).catch(() => {});
+    }
+  }
+
+  async #decideSet(token: string, callbackId: string, message: { message_id: number; chat: { id: number } } | undefined, setId: string, yes: boolean): Promise<void> {
+    let reply: string;
+    try {
+      const res = await this.hub.decideDraftSet(setId, OWNER_WORKSPACE, { decision: yes ? "approve" : "reject" });
+      if (!yes) reply = `❌ Set ditolak (${res.decided_count} draf)`;
+      else {
+        const published = res.drafts.filter((d) => d.status === "published").length;
+        const failed = res.drafts.filter((d) => !!d.publish_error).length;
+        reply = `✅ Lulus semua (${res.decided_count} draf${published ? `, ${published} disiarkan` : ""}${failed ? `, ${failed} gagal` : ""})`;
+      }
+    } catch (err) {
+      reply = `Not changed: ${(err as Error).message}`;
+    }
+    await this.#call(token, "answerCallbackQuery", { callback_query_id: callbackId, text: reply.slice(0, 190) }).catch(() => {});
+    if (message) {
+      await this.#call(token, "editMessageReplyMarkup", { chat_id: message.chat.id, message_id: message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      await this.#call(token, "sendMessage", { chat_id: message.chat.id, text: reply, reply_to_message_id: message.message_id }).catch(() => {});
     }
   }
 

@@ -10,6 +10,7 @@ import {
   chooseClips,
   type ClipEntry,
   buildEditArgs,
+  buildHdArgs,
   captionsAss,
   evaluateReview,
   isHdPrepared,
@@ -615,5 +616,47 @@ describe("Task 024 & Task 026: overlays, per-boundary transitions, letterbox cro
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Task 039: buildHdArgs for vertical, story, feed_4x5, square", () => {
+  const landProbe = { duration: 75, width: 1920, height: 1080, fps: 30, has_audio: true, video_codec: "h264", audio_codec: "aac", pix_fmt: "yuv420p", size_bytes: 20 * 1024 ** 2, mbps: 8 };
+  const feedProbe = { duration: 15, width: 800, height: 1000, fps: 30, has_audio: true, video_codec: "h264", audio_codec: "aac", pix_fmt: "yuv420p", size_bytes: 5 * 1024 ** 2, mbps: 8 };
+
+  test("vertical, story (with segment), feed_4x5, and square produce expected scale/crop/blur and bitrate caps", () => {
+    const vert = buildHdArgs("in.mp4", "out-v.mp4", landProbe, "vertical", "auto", "x264");
+    expect(vert.plan.mode).toBe("reencode");
+    expect(vert.plan.fit).toBe("blur");
+    const fcVert = vert.args[vert.args.indexOf("-filter_complex") + 1]!;
+    expect(fcVert).toContain("1080");
+    expect(fcVert).toContain("1920");
+    expect(fcVert).toContain("boxblur");
+    expect(vert.args[vert.args.indexOf("-maxrate") + 1]).toBe("16M");
+
+    const st = buildHdArgs("in.mp4", "out-s1.mp4", landProbe, "story", "auto", "x264", { start: 0, end: 57 });
+    expect(st.plan.mode).toBe("reencode");
+    expect(st.args.join(" ")).toMatch(/(-t|-to)\s+57\b/);
+    const fcSt = st.args[st.args.indexOf("-filter_complex") + 1]!;
+    expect(fcSt).toContain("1080");
+    expect(fcSt).toContain("1920");
+    expect(st.args[st.args.indexOf("-maxrate") + 1]).toBe("16M");
+
+    const f45Crop = buildHdArgs("in.mp4", "out-f45.mp4", feedProbe, "feed_4x5", "auto", "x264");
+    expect(f45Crop.plan.fit).toBe("crop");
+    const fc45Crop = f45Crop.args[f45Crop.args.indexOf("-filter_complex") + 1]!;
+    expect(fc45Crop).toContain("crop=1080:1350");
+    expect(f45Crop.args[f45Crop.args.indexOf("-maxrate") + 1]).toBe("12M");
+
+    const f45Blur = buildHdArgs("in.mp4", "out-f45b.mp4", landProbe, "feed_4x5", "auto", "x264");
+    expect(f45Blur.plan.fit).toBe("blur");
+    const fc45Blur = f45Blur.args[f45Blur.args.indexOf("-filter_complex") + 1]!;
+    expect(fc45Blur).toContain("boxblur");
+    expect(fc45Blur).toContain("1350");
+
+    const sq = buildHdArgs("in.mp4", "out-sq.mp4", landProbe, "square", "auto", "x264");
+    expect(sq.plan.fit).toBe("blur");
+    const fcSq = sq.args[sq.args.indexOf("-filter_complex") + 1]!;
+    expect(fcSq).toContain("1080");
+    expect(sq.args[sq.args.indexOf("-maxrate") + 1]).toBe("12M");
   });
 });

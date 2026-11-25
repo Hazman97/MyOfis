@@ -27,8 +27,8 @@ export interface RunContext {
   fetchUpload(id: string): Promise<Uint8Array>;
   /** Save an attached file (a video) to `dest`, streamed. */
   downloadUpload(id: string, dest: string): Promise<void>;
-  /** Send a finished video to the hub in parts; returns the new upload. */
-  uploadVideo(path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }>;
+  /** Send a finished video or rendered image to the hub in parts; returns the new upload. */
+  uploadVideo(path: string, name: string, render?: RenderInfo, contentType?: string): Promise<{ id: string; size: number }>;
   /** Project documents and log (Project Assistant), answered by the hub. */
   projectData(action: string, params: Record<string, unknown>): Promise<unknown>;
   videoData(action: string, params: Record<string, unknown>): Promise<unknown>;

@@ -1,6 +1,14 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { PublicHdSettingsInput, PublicHdSettingsSchema, type PublicHdSettings } from "@agent-office/shared";
+import {
+  ImageGenSettingsInput,
+  ImageGenSettingsSchema,
+  PublicHdSettingsInput,
+  PublicHdSettingsSchema,
+  TIMEZONE,
+  type ImageGenSettings,
+  type PublicHdSettings,
+} from "@agent-office/shared";
 import type { Secrets } from "./crypto.ts";
 import { keyHint } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
@@ -326,6 +334,48 @@ export function publicHdSettings(db: Db) {
       const next = PublicHdSettingsSchema.parse({ ...get(), ...patch });
       db.insert(settings).values({ key: PUBLIC_HD_KEY, value: next }).onConflictDoUpdate({ target: settings.key, set: { value: next } }).run();
       return next;
+    },
+  };
+}
+
+// ---------------------------------------------------------------- Local AI Images (ComfyUI, Task 041)
+
+const IMAGE_GEN_KEY = "image_gen";
+const klDate = (now: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(now);
+
+export function imageGenSettings(db: Db) {
+  const get = (): ImageGenSettings => {
+    const row = db.select().from(settings).where(eq(settings.key, IMAGE_GEN_KEY)).get();
+    const parsed = ImageGenSettingsSchema.safeParse(row?.value);
+    return parsed.success ? parsed.data : ImageGenSettingsSchema.parse({});
+  };
+
+  const countKey = (now = new Date()) => `image_gen.count.${klDate(now)}`;
+  const todayCount = (now = new Date()): number => {
+    const row = db.select().from(settings).where(eq(settings.key, countKey(now))).get();
+    return typeof row?.value === "number" ? row.value : 0;
+  };
+
+  return {
+    get,
+    set(input: unknown): ImageGenSettings {
+      const patch = ImageGenSettingsInput.parse(input);
+      const next = ImageGenSettingsSchema.parse({ ...get(), ...patch });
+      db.insert(settings).values({ key: IMAGE_GEN_KEY, value: next }).onConflictDoUpdate({ target: settings.key, set: { value: next } }).run();
+      return next;
+    },
+    todayCount,
+    consume(count: number, now = new Date()): { ok: true; used: number; max_per_day: number } | { ok: false; error: string } {
+      const cfg = get();
+      if (cfg.paused) return { ok: false, error: "Gambar AI dijeda oleh pemilik" };
+      const used = todayCount(now);
+      if (used + count > cfg.max_per_day) {
+        return { ok: false, error: `Had harian gambar AI (${cfg.max_per_day}/hari) telah dicapai` };
+      }
+      const next = used + count;
+      const k = countKey(now);
+      db.insert(settings).values({ key: k, value: next }).onConflictDoUpdate({ target: settings.key, set: { value: next } }).run();
+      return { ok: true, used: next, max_per_day: cfg.max_per_day };
     },
   };
 }

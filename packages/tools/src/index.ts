@@ -16,6 +16,9 @@ import { motionRenderTool } from "./motion.ts";
 import { clipFindTool, clipRenderTool, clipScoreTool } from "./clipFactory.ts";
 import { analyzeTrackBeats, montagePlanTool, musicBeatsTool } from "./beats.ts";
 import { explainerRenderTool } from "./explainer.ts";
+import { designRenderTool, embedBrandFontsCss, renderHtmlToPng } from "./design.ts";
+import { ComfyManager, comfyInstalled, comfyManager, comfyPaths, imageGenerateTool, stopComfy } from "./comfy.ts";
+import { withGpuLock } from "./gpuLock.ts";
 import type { ToolDef } from "./types.ts";
 
 export * from "./types.ts";
@@ -34,6 +37,7 @@ export {
   captionsAss,
   chooseClipFit,
   clipLengths,
+  detectStoryCutPoints,
   emojiFontName,
   evaluateReview,
   ffmpegBin,
@@ -65,6 +69,9 @@ export { explainerRenderTool } from "./explainer.ts";
 export { buildHyperframesArgs, hyperframesBinary, motionEnv, motionRenderTool } from "./motion.ts";
 export { chooseClips, clipKey, musicTracks, readIndex, scanFolder, type ClipEntry } from "./clips.ts";
 export { analyzeTrackBeats, montagePlanTool, musicBeatsTool } from "./beats.ts";
+export { designRenderTool, embedBrandFontsCss, renderHtmlToPng } from "./design.ts";
+export { ComfyManager, comfyInstalled, comfyManager, comfyPaths, imageGenerateTool, stopComfy } from "./comfy.ts";
+export { withGpuLock } from "./gpuLock.ts";
 
 /** Every tool an agent can be granted, by name. Agents list the names they may use in `agents.tools`. */
 export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
@@ -96,6 +103,8 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = Object.fromEntries(
     musicBeatsTool,
     montagePlanTool,
     explainerRenderTool,
+    designRenderTool,
+    imageGenerateTool,
   ].map((t) => [t.name, t as unknown as ToolDef]),
 );
 

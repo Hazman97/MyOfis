@@ -4,12 +4,19 @@ import type {
   BeatAnalysis,
   ContentDraft,
   DocHit,
+  DesignSizeId,
+  DesignTemplateId,
   DraftDecision,
+  DraftKind,
   EditPlan,
   EditSuggestions,
   HdTarget,
+  ImageGenSettings,
+  ImageGenSizeId,
   LogEntry,
+  Platform,
   PublicHdSettings,
+  SocialPlacement,
   ProjectDoc,
   FeatureNote,
   FeatureNoteInput,
@@ -268,10 +275,11 @@ export interface SkillAssignments {
   agents: { id: string; slug: string; name: string; sprite: string; enabled: boolean; skills: "all" | string[]; reads_skills: boolean }[];
 }
 
-/** Settings → Social accounts: a Zernio API key and the TikTok accounts it manages. */
+/** Settings → Social accounts: a Zernio API key and all supported social accounts it manages. */
+export type ZernioPlatform = "tiktok" | "instagram" | "facebook" | "threads" | "youtube";
 export interface ZernioAccount {
   id: string;
-  platform: "tiktok";
+  platform: ZernioPlatform;
   username: string;
   display_name: string;
   followers: number | null;
@@ -286,9 +294,10 @@ export interface ZernioConnection {
   accounts: ZernioAccount[];
   checked_at: string;
 }
-/** An account a draft, agent or schedule can post to (enabled TikTok accounts). */
+/** An enabled Zernio account a draft, agent, project, or schedule can post to. */
 export interface SocialTarget {
   id: string;
+  platform: ZernioPlatform;
   label: string;
   username: string;
   connection: string;
@@ -315,9 +324,11 @@ export interface VideoHdItem {
   created_by?: "owner" | "assistant";
   created_at: string;
   target: HdTarget;
+  covers?: SocialPlacement[];
   mode: "auto" | "remux" | "reencode";
   source: { id: string | null; name: string };
   result: { id: string; name: string; size: number } | null;
+  results?: { id: string; name: string; size: number }[];
   /** What was done and why (the runner's message). */
   note: string;
   error: string | null;
@@ -438,6 +449,7 @@ export const api = {
   cancelJob: (id: string) => request<{ ok: true }>(`/jobs/${id}/cancel`, { method: "POST" }),
 
   events: (since: number, limit = 5000) => request<{ events: AgentEvent[] }>(`/events?since=${since}&limit=${limit}`),
+  runs: (jobId?: string) => request<{ runs: Run[] }>(`/runs${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ""}`),
   run: (id: string) => request<{ run: Run; events: AgentEvent[] }>(`/runs/${id}`),
   cancelRun: (id: string) => request<{ ok: true }>(`/runs/${id}/cancel`, { method: "POST" }),
 
@@ -463,7 +475,14 @@ export const api = {
   renderVideo: (id: string, plan: EditPlan, draftId: string | null) => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/render`, { body: { plan, draft_id: draftId } }),
   videoHdList: () => request<{ items: VideoHdItem[] }>("/video-hd"),
   tiktokHdList: () => request<{ items: TikTokHdItem[] }>("/tiktok-hd"),
-  socialAccounts: () => request<{ connections: ZernioConnection[]; tiktok: SocialTarget[] }>("/social-accounts"),
+  socialAccounts: () => request<{ connections: ZernioConnection[]; targets: SocialTarget[]; tiktok: SocialTarget[] }>("/social-accounts"),
+  projectSocialAccounts: (projectId: string) => request<{ accounts: Partial<Record<ZernioPlatform, string>> }>(`/projects/${projectId}/social-accounts`),
+  saveProjectSocialAccounts: (projectId: string, accounts: Partial<Record<ZernioPlatform, string | null>>) =>
+    request<{ accounts: Partial<Record<ZernioPlatform, string>> }>(`/projects/${projectId}/social-accounts`, { method: "PUT", body: { accounts } }),
+  decideDraftSet: (setId: string, body: { decision: "approve" | "reject"; publish_at?: string | null; feedback?: string }) =>
+    request<{ drafts: ContentDraft[]; decided_count: number }>(`/drafts/sets/${encodeURIComponent(setId)}/decide`, { body }),
+  scheduleDraftSet: (setId: string, publish_at: string | null) =>
+    request<{ drafts: ContentDraft[] }>(`/drafts/sets/${encodeURIComponent(setId)}/schedule`, { body: { publish_at } }),
   addZernio: (label: string, api_key: string) => request<{ connection: ZernioConnection }>("/social-accounts/zernio", { body: { label, api_key } }),
   refreshZernio: (id: string) => request<{ connection: ZernioConnection }>(`/social-accounts/${id}/refresh`, { method: "POST" }),
   patchZernio: (id: string, body: { label?: string; accounts?: Record<string, { label?: string; enabled?: boolean }> }) =>
@@ -472,8 +491,14 @@ export const api = {
   setDraftAccount: (id: string, account: string | null) => request<{ draft: ContentDraft }>(`/drafts/${id}/account`, { method: "PATCH", body: { account } }),
   storage: (wait = false) => request<{ items: StoragePlace[]; measured_at: string | null; measuring?: boolean }>(`/storage${wait ? "?wait=1" : ""}`),
   openStorage: (key: string) => request<{ opened: string }>("/storage/open", { body: { key } }),
-  videoHd: (id: string, targets: HdTarget[], mode: "auto" | "remux" | "reencode" = "auto") =>
-    request<{ jobs: Job[] }>(`/videos/${encodeURIComponent(id)}/hd`, { body: { targets, mode } }),
+  videoHd: (
+    id: string,
+    targetsOrOpts: HdTarget[] | { targets?: HdTarget[]; placements?: SocialPlacement[] },
+    mode: "auto" | "remux" | "reencode" = "auto",
+  ) =>
+    request<{ jobs: Job[] }>(`/videos/${encodeURIComponent(id)}/hd`, {
+      body: Array.isArray(targetsOrOpts) ? { targets: targetsOrOpts, mode } : { ...targetsOrOpts, mode },
+    }),
   tiktokHd: (id: string, mode: "auto" | "remux" | "reencode" = "auto") => request<{ job: Job }>(`/videos/${encodeURIComponent(id)}/tiktok-hd`, { body: { mode } }),
   setDraftVideo: (draftId: string, uploadId: string) => request<{ draft: ContentDraft }>(`/drafts/${draftId}/video`, { method: "PATCH", body: { upload_id: uploadId } }),
 
@@ -488,6 +513,16 @@ export const api = {
     request<{ public_hd: PublicHdSettings; stats: { today_count: number; active_count: number; storage_bytes: number; turnstile_configured: boolean; recent_logs: { id: number; ip_hash: string; size: number; created_at: number; result: string; detail: string | null }[] } }>("/settings/integrations/public-hd", { method: "PUT", body }),
   clearPublicHd: () =>
     request<{ deleted_jobs: number; stats: { today_count: number; active_count: number; storage_bytes: number; turnstile_configured: boolean; recent_logs: { id: number; ip_hash: string; size: number; created_at: number; result: string; detail: string | null }[] } }>("/settings/integrations/public-hd/clear", { method: "POST" }),
+  imageGen: () =>
+    request<{ image_gen: ImageGenSettings; today_count: number; comfy_status: "ready" | "paused" | "not_installed" }>("/settings/integrations/image-gen"),
+  saveImageGen: (body: Partial<ImageGenSettings>) =>
+    request<{ image_gen: ImageGenSettings; today_count: number; comfy_status: "ready" | "paused" | "not_installed" }>("/settings/integrations/image-gen", { method: "PUT", body }),
+  designRender: (body: { project_id?: string | null; template: DesignTemplateId; size: DesignSizeId; fields: Record<string, unknown>; photos?: string[] }) =>
+    request<{ job: Job }>("/design/render", { body }),
+  designGenerate: (body: { project_id?: string | null; prompt: string; size: ImageGenSizeId; count?: number; seed?: number; style_hint?: string }) =>
+    request<{ job: Job }>("/design/generate", { body }),
+  designSaveDraft: (body: { project_id: string; platform: Platform; kind: DraftKind; title: string; body: string; images: string[] }) =>
+    request<{ draft: ContentDraft }>("/design/save-draft", { body }),
   saveWebSearch: (body: { provider: WebSearchProvider; searxng_url?: string; key_provider?: "tavily" | "brave"; api_key?: string }) =>
     request<{ web_search: WebSearchSettings }>("/settings/integrations/web-search", { method: "PUT", body }),
   testWebSearch: () =>
@@ -538,6 +573,7 @@ export const api = {
   testPublishSettings: (projectId: string) => request<{ publish: PublishSettings }>(`/projects/${projectId}/publish/test`, { method: "POST" }),
   /** Move or cancel (null) the time an approved draft goes out. */
   scheduleDraft: (id: string, publish_at: string | null) => request<{ draft: ContentDraft }>(`/drafts/${id}/schedule`, { body: { publish_at } }),
+  swapDraftSchedule: (a: string, b: string) => request<{ a: ContentDraft; b: ContentDraft }>("/drafts/swap-schedule", { body: { a, b } }),
   publishDraft: (id: string) => request<{ draft: ContentDraft }>(`/drafts/${id}/publish`, { method: "POST" }),
   updatePublished: (id: string, body: { title?: string; body?: string; meta?: Partial<WebPost> }) => request<{ draft: ContentDraft }>(`/drafts/${id}/update-published`, { body }),
   takeDownPost: (id: string) => request<{ draft: ContentDraft }>(`/drafts/${id}/take-down`, { method: "POST" }),

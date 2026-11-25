@@ -156,9 +156,9 @@ describe("Social accounts: many TikTok accounts, chosen per agent, per schedule 
     await env.pairRunner();
     await env.api("/api/projects", { body: { slug: "sp", name: "SmashPoint" } });
 
-    // two connections, one account each; the owner names one
+    // two connections, one TikTok account each (+ IG account on KEY); the owner names one
     const c1 = (await env.api("/api/social-accounts/zernio", { body: { label: "Main", api_key: KEY } })).body.connection;
-    expect(c1.accounts).toMatchObject([{ id: "acc_1", username: "healing.my", label: "Healing MY", enabled: true }]);
+    expect(c1.accounts.find((a: { id: string }) => a.id === "acc_1")).toMatchObject({ id: "acc_1", platform: "tiktok", username: "healing.my", label: "Healing MY", enabled: true });
     expect(JSON.stringify(c1)).not.toContain(KEY);
     const c2 = (await env.api("/api/social-accounts/zernio", { body: { label: "Second", api_key: KEY2 } })).body.connection;
     await env.api(`/api/social-accounts/${c1.id}`, { method: "PATCH", body: { accounts: { acc_1: { label: "Healing" } } } });

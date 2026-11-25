@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SocialPlacement } from "./video.ts";
 
 /**
  * Phase 4: project briefs, the feature log and content drafts (spec §8.4, §9).
@@ -10,6 +11,83 @@ export type Platform = z.infer<typeof Platform>;
 
 export const ContentLanguage = z.enum(["manglish", "bahasa_melayu", "english"]);
 export type ContentLanguage = z.infer<typeof ContentLanguage>;
+
+export const BRAND_FONT_IDS = [
+  "poppins",
+  "montserrat",
+  "playfair-display",
+  "dm-serif-display",
+  "inter",
+  "nunito",
+  "bebas-neue",
+] as const;
+export const BrandFont = z.enum(BRAND_FONT_IDS);
+export type BrandFont = z.infer<typeof BrandFont>;
+
+export const BRAND_FONTS: Record<BrandFont, { label: string; cssFamily: string; weights: number[] }> = {
+  poppins: { label: "Poppins", cssFamily: "Poppins", weights: [400, 700] },
+  montserrat: { label: "Montserrat", cssFamily: "Montserrat", weights: [400, 700] },
+  "playfair-display": { label: "Playfair Display", cssFamily: "Playfair Display", weights: [400, 700] },
+  "dm-serif-display": { label: "DM Serif Display", cssFamily: "DM Serif Display", weights: [400] },
+  inter: { label: "Inter", cssFamily: "Inter", weights: [400, 700] },
+  nunito: { label: "Nunito", cssFamily: "Nunito", weights: [400, 700] },
+  "bebas-neue": { label: "Bebas Neue", cssFamily: "Bebas Neue", weights: [400] },
+};
+
+export const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "must be a 6-digit hex colour like #111827");
+
+export const BrandStyle = z.enum(["minimal", "bold", "soft", "playful"]);
+export type BrandStyle = z.infer<typeof BrandStyle>;
+
+export const BrandHighlight = z.object({
+  label: z.string().trim().min(1).max(30),
+  icon: z.string().trim().min(1).max(40),
+});
+export type BrandHighlight = z.infer<typeof BrandHighlight>;
+
+export const BrandColors = z.object({
+  primary: HexColor.default("#059669"),
+  secondary: HexColor.default("#0F172A"),
+  accent: HexColor.default("#F59E0B"),
+  background: HexColor.default("#FFFFFF"),
+  text: HexColor.default("#111827"),
+});
+
+export const BrandFonts = z.object({
+  heading: BrandFont.default("poppins"),
+  body: BrandFont.default("inter"),
+});
+
+export const BrandKit = z.object({
+  colors: BrandColors.prefault({}),
+  fonts: BrandFonts.prefault({}),
+  logo_upload_id: z.string().max(64).nullable().default(null),
+  style: BrandStyle.default("minimal"),
+  handle: z.string().trim().max(60).default(""),
+  highlights: z.array(BrandHighlight).max(12).default([]),
+});
+export type BrandKit = z.infer<typeof BrandKit>;
+export type BrandKitInput = z.input<typeof BrandKit>;
+
+export const DEFAULT_BRAND_KIT: BrandKit = BrandKit.parse({});
+
+/** WCAG 2.1 contrast ratio between two 6-digit hex colours (1..21). Pure. */
+export function contrastRatio(hexA: string, hexB: string): number {
+  const lum = (hex: string) => {
+    const clean = hex.replace(/^#/, "");
+    if (!/^[0-9a-fA-F]{6}$/.test(clean)) return 0;
+    const ch = [0, 2, 4].map((i) => {
+      const v = parseInt(clean.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * ch[0]! + 0.7152 * ch[1]! + 0.0722 * ch[2]!;
+  };
+  const l1 = lum(hexA);
+  const l2 = lum(hexB);
+  const hi = Math.max(l1, l2);
+  const lo = Math.min(l1, l2);
+  return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+}
 
 const text = (max: number) => z.string().max(max).default("");
 const list = (max: number, itemMax: number) => z.array(z.string().trim().min(1).max(itemMax)).max(max).default([]);
@@ -34,6 +112,8 @@ export const ProjectBrief = z.object({
   good_examples: list(20, 4000),
   /** Style guide written by Marketing from the examples (approved by the owner in the drafts inbox). */
   style_notes: text(6000),
+  /** Optional Brand Kit (colours, bundled fonts, logo, style, handle, highlights). */
+  brand: BrandKit.optional(),
 });
 export type ProjectBrief = z.infer<typeof ProjectBrief>;
 export type ProjectBriefInput = z.input<typeof ProjectBrief>;
@@ -87,6 +167,24 @@ export const WebPostFactItem = z.object({
   verified: z.boolean().default(true),
 });
 
+/** Placement of a social draft (039 SocialPlacement + ig_carousel for multi-image carousels). */
+export const DraftPlacement = z.enum([
+  "tiktok",
+  "ig_reels",
+  "ig_story",
+  "ig_feed",
+  "ig_carousel",
+  "fb_reels",
+  "fb_story",
+  "fb_feed",
+  "yt_shorts",
+  "threads",
+  "whatsapp",
+  "whatsapp_status",
+]);
+export type DraftPlacement = z.infer<typeof DraftPlacement>;
+export { SocialPlacement };
+
 export const WebPost = z.object({
   /** One of the site's post types (from its publish endpoint), e.g. "news", "tournament", "vlog". */
   post_type: z.string().trim().min(1).max(40),
@@ -100,8 +198,20 @@ export const WebPost = z.object({
   cover_upload_id: z.string().max(64).nullable().default(null),
   /** A finished video (Editor's render or the owner's own clip) to post with a caption. */
   video_upload_id: z.string().max(64).nullable().default(null),
-  /** Which social account it posts to (TikTok: a Zernio account id); null = the default one. */
+  /** Which social account it posts to (Zernio account id); null = the default one. */
   social_account: z.string().max(100).nullable().default(null),
+  /** Carousel / multi-image upload ids in display order (≤ 10). */
+  images: z.array(z.string().max(64)).max(10).default([]),
+  /** Placement (feed / carousel / reels / story / shorts / threads / tiktok). */
+  placement: DraftPlacement.optional(),
+  /** Groups drafts belonging to one multi-platform post set. */
+  set_id: z.string().max(64).nullable().optional(),
+  /** Optional video duration in seconds (for placementCheck on Stories/Shorts). */
+  video_duration_s: z.number().nonnegative().max(36_000).optional(),
+  /** Optional video aspect ratio class (for placementCheck on Reels/Shorts). */
+  video_aspect: z.enum(["vertical", "square", "landscape"]).optional(),
+  /** Optional proposed publish time (ISO) suggested by content_week before approval. */
+  proposed_publish_at: z.string().max(40).nullable().optional(),
   /** Optional verified fact sheet attached by explainer_render via save_draft. */
   fact_sheet: z.array(WebPostFactItem).max(20).optional(),
   /** True when the video script was pasted without fact-sheet verification. */
@@ -121,6 +231,10 @@ export const WebPostEdit = z.object({
   cover_upload_id: z.string().max(64).nullable().optional(),
   video_upload_id: z.string().max(64).nullable().optional(),
   social_account: z.string().max(100).nullable().optional(),
+  images: z.array(z.string().max(64)).max(10).optional(),
+  placement: DraftPlacement.optional(),
+  set_id: z.string().max(64).nullable().optional(),
+  proposed_publish_at: z.string().max(40).nullable().optional(),
 });
 export type WebPostEdit = z.infer<typeof WebPostEdit>;
 

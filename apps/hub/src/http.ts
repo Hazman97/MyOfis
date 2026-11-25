@@ -13,6 +13,8 @@ import {
   MAX_SKILL_CHARS,
   MEMORY_LIMITS,
   DraftDecision,
+  isZernioPlatform,
+  placementCheck,
   EXAMPLE_BRIEF,
   FeatureNoteInput,
   JobInput,
@@ -33,7 +35,17 @@ import {
   WebPostEdit,
   HdTarget,
   HD_TARGETS,
+  PLACEMENT_TARGET,
+  SOCIAL_PLACEMENTS,
+  SocialPlacement,
+  hdOutputsFor,
   TikTokHdMode,
+  DesignTemplateId,
+  DesignSizeId,
+  ImageGenSizeId,
+  Platform,
+  DraftKind,
+  WebPost,
   ExternalActivityInput,
   freshFetch,
 } from "@agent-office/shared";
@@ -47,7 +59,7 @@ import { assertValidCron, type Scheduler } from "./scheduler.ts";
 import { browserWorker, installScript, pairingCodeIsLive, requestBaseUrl, runnerBundle } from "./installer.ts";
 import { searchWeb } from "./websearch.ts";
 import { fileResponse } from "./uploads.ts";
-import { publicHdSettings } from "./integrations.ts";
+import { imageGenSettings, publicHdSettings } from "./integrations.ts";
 import { PublicHdError } from "./publicHd.ts";
 import { renderPublicHdHtml } from "./publicHdPage.ts";
 import { checkConnection, listModels, scanModels, testModel } from "./modelCheck.ts";
@@ -189,11 +201,13 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
 
   // ------------------------------------------------------------ public Video HD (no login, isolated storage)
   const pubHd = publicHdSettings(db);
+  const imgGen = imageGenSettings(db);
   const publicHdPartQuery = z.object({
     name: z.string().max(200).default("video.mp4"),
     total: z.coerce.number().int().positive(),
     offset: z.coerce.number().int().min(0),
-    targets: z.string().min(1).max(100),
+    targets: z.string().max(200).optional(),
+    placements: z.string().max(300).optional(),
     mode: TikTokHdMode.default("auto"),
   });
 
@@ -202,6 +216,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({
       enabled: s.enabled,
       targets: HD_TARGETS,
+      placements: SOCIAL_PLACEMENTS,
+      placement_target: PLACEMENT_TARGET,
       limits: s,
       turnstile_site_key: config.publicHdTurnstile.siteKey,
     });
@@ -210,12 +226,30 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   app.put("/api/public/hd/parts/:key", async (c) => {
     const key = c.req.param("key");
     const q = publicHdPartQuery.parse(c.req.query());
-    const targets = q.targets
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .map((t) => HdTarget.parse(t));
-    if (!targets.length || targets.length > 3) throw new HttpError(400, "invalid targets");
+    const maxFiles = pubHd.get().max_files;
+    let targets: HdTarget[] = [];
+    let coversByTarget: Partial<Record<HdTarget, SocialPlacement[]>> | undefined;
+    if (q.placements?.trim()) {
+      const parsed = q.placements
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => SocialPlacement.parse(p));
+      const groups = hdOutputsFor(parsed);
+      targets = groups.map((g) => g.target);
+      coversByTarget = Object.fromEntries(groups.map((g) => [g.target, g.covers]));
+    } else if (q.targets?.trim()) {
+      targets = [
+        ...new Set(
+          q.targets
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .map((t) => HdTarget.parse(t)),
+        ),
+      ];
+    }
+    if (!targets.length || targets.length > maxFiles) throw new HttpError(400, `invalid targets (1..${maxFiles} files)`);
     const bytes = await partBytes(c);
     // a body sent without content-length is only measured after reading
     if (bytes.byteLength > UPLOAD_PART_BYTES) throw new HttpError(400, "part too large");
@@ -229,7 +263,8 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         total: q.total,
         offset: q.offset,
         bytes,
-        targets: [...new Set(targets)],
+        targets,
+        coversByTarget,
         mode: q.mode,
         ip,
         turnstileToken,
@@ -254,9 +289,17 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   });
 
   app.get("/api/public/hd/jobs/:id/file/:target", (c) => {
-    const target = HdTarget.safeParse(c.req.param("target"));
-    if (!target.success) return c.json({ error: "not found" }, 404);
-    const found = hub.publicHd.resultFilePath(c.req.param("id"), target.data);
+    const rawTarget = c.req.param("target");
+    const isStoryPart = /^story_([1-9]\d?)$/.test(rawTarget);
+    let keyOrTarget: string;
+    if (isStoryPart) {
+      keyOrTarget = rawTarget;
+    } else {
+      const parsedTarget = HdTarget.safeParse(rawTarget);
+      if (!parsedTarget.success) return c.json({ error: "not found" }, 404);
+      keyOrTarget = parsedTarget.data;
+    }
+    const found = hub.publicHd.resultFilePath(c.req.param("id"), keyOrTarget);
     if (!found) return c.json({ error: "not found" }, 404);
     // Inline by default so the page's <video> can play it; ?download=1 saves it as a file.
     const disposition = c.req.query("download") === "1" ? "attachment" : "inline";
@@ -487,7 +530,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     const runner = token ? db.select().from(runners).where(eq(runners.token_hash, hashToken(token))).get() : undefined;
     if (!runner) throw new HttpError(401, "unauthorized");
-    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions", "index_get", "index_put", "clips_get", "clips_put", "beats"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
+    const body = z.object({ run_id: z.string(), action: z.enum(["transcript_get", "transcript_put", "suggestions", "index_get", "index_put", "clips_get", "clips_put", "beats", "image_gen_check"]), params: z.record(z.string(), z.unknown()).default({}) }).parse(await c.req.json());
     const run = getRun(db, body.run_id);
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tools = getAgent(db, run.agent_id)?.tools ?? [];
@@ -500,6 +543,7 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
       clips_get: ["clip_find", "clip_score", "video_edit"],
       clips_put: ["clip_find", "clip_score"],
       beats: ["music_beats", "montage_plan"],
+      image_gen_check: ["image_generate"],
     }[body.action];
     if (!need.some((t) => tools.includes(t))) throw new HttpError(403, `this agent may not use ${need.join(" / ")}`);
     const job = getJob(db, run.job_id);
@@ -538,6 +582,10 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
         }
         return c.json({ data: { beats: hub.studio.beats(track, ws) } });
       }
+      case "image_gen_check": {
+        const count = z.coerce.number().int().min(1).max(4).default(1).parse(body.params.count);
+        return c.json({ data: imgGen.consume(count) });
+      }
     }
   });
 
@@ -551,11 +599,16 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     const run = getRun(db, q.run_id ?? "");
     if (!run || run.runner_id !== runner.id || run.status !== "running") throw new HttpError(404, "run not found");
     const tools = getAgent(db, run.agent_id)?.tools ?? [];
-    if (!(q.attach ? tools.includes("clip_library") || tools.includes("motion_render") : tools.includes("video_edit") || tools.includes("video_tiktok_hd") || tools.includes("video_hd") || tools.includes("motion_render"))) throw new HttpError(403, "this agent may not upload videos");
     const type = (c.req.header("content-type") ?? "").split(";")[0]!.trim();
+    const isImage = type === "image/png" || type === "image/jpeg" || type === "image/webp";
+    if (isImage) {
+      if (!tools.includes("design_render") && !tools.includes("image_generate")) throw new HttpError(403, "this agent may not upload rendered images");
+    } else if (!(q.attach ? tools.includes("clip_library") || tools.includes("motion_render") : tools.includes("video_edit") || tools.includes("video_tiktok_hd") || tools.includes("video_hd") || tools.includes("motion_render"))) {
+      throw new HttpError(403, "this agent may not upload videos");
+    }
     const ws = getJob(db, run.job_id)?.workspace_id ?? OWNER_WORKSPACE;
     // a library clip is the owner's own video (no run_id); a render belongs to the run that made it
-    const r = hub.uploadParts.put(`run:${run.id}`, c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c), q.attach ? null : run.id, ws);
+    const r = hub.uploadParts.put(`run:${run.id}`, c.req.param("key"), { name: q.name, content_type: type, total: q.total, offset: q.offset }, await partBytes(c), q.attach ? null : run.id, ws, isImage);
     const attachment = r.upload && q.attach ? attachToJob(run.job_id, r.upload) : undefined;
     return c.json({ received: r.received, total: r.total, ...(r.upload ? { upload: publicUpload(r.upload) } : {}), ...(attachment ? { attachment } : {}) }, r.upload ? 201 : 200);
   });
@@ -831,6 +884,120 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   api.put("/settings/integrations/public-hd", async (c) => c.json({ public_hd: pubHd.set(await c.req.json()), stats: hub.publicHd.stats() }));
   api.post("/settings/integrations/public-hd/clear", (c) => c.json({ ...hub.publicHd.clearAll(), stats: hub.publicHd.stats() }));
 
+  const comfyStatus = () => {
+    const online = db.select().from(runners).all().filter((r) => r.status === "online");
+    const hasComfy = online.some((r) => Array.isArray((r.capabilities as { programs?: string[] } | null)?.programs) && (r.capabilities as { programs?: string[] }).programs!.includes("comfyui"));
+    if (!hasComfy) return "not_installed" as const;
+    return imgGen.get().paused ? ("paused" as const) : ("ready" as const);
+  };
+  api.get("/settings/integrations/image-gen", (c) => c.json({ image_gen: imgGen.get(), today_count: imgGen.todayCount(), comfy_status: comfyStatus() }));
+  api.put("/settings/integrations/image-gen", async (c) => c.json({ image_gen: imgGen.set(await c.req.json()), today_count: imgGen.todayCount(), comfy_status: comfyStatus() }));
+
+  // Design Studio direct jobs (0 tokens) & draft save
+  api.post("/design/render", async (c) => {
+    const ws = W(c);
+    const body = z
+      .object({
+        project_id: z.string().max(64).nullable().optional(),
+        template: DesignTemplateId,
+        size: DesignSizeId.default("post_4x5"),
+        fields: z.record(z.string(), z.unknown()).default({}),
+        photos: z.array(z.string().max(64)).max(4).optional(),
+      })
+      .parse(await c.req.json());
+    if (body.project_id) ownProject(db, body.project_id, ws);
+    for (const pid of body.photos ?? []) ownUpload(db, pid, ws);
+    const agent = visibleAgents(db, ws).find((a) => a.enabled && a.tools.includes("design_render"));
+    if (!agent) throw new HttpError(409, "no enabled agent has the design_render tool (turn on Editor)");
+    const job = hub.createJob(
+      {
+        agent_id: agent.id,
+        project_id: body.project_id ?? null,
+        type: "design_render",
+        title: `Design: ${body.template} (${body.size})`,
+        input: {
+          text: `Render ${body.template} (${body.size})`,
+          params: { template: body.template, size: body.size, fields: body.fields, photos: body.photos },
+          attachments: (body.photos ?? []).map((id) => {
+            const u = hub.publisher.upload(id)!;
+            return { id: u.id, name: u.name, content_type: u.content_type };
+          }),
+        },
+        trigger: "manual",
+      },
+      ws,
+    );
+    return c.json({ job }, 201);
+  });
+
+  api.post("/design/generate", ownerOnly, async (c) => {
+    const ws = W(c);
+    const cfg = imgGen.get();
+    if (cfg.paused) throw new HttpError(409, "Gambar AI dijeda oleh pemilik");
+    const body = z
+      .object({
+        project_id: z.string().max(64).nullable().optional(),
+        prompt: z.string().trim().min(3).max(1000),
+        size: ImageGenSizeId.default("post_4x5"),
+        count: z.number().int().min(1).max(4).default(1),
+        seed: z.number().int().min(0).max(2_147_483_647).optional(),
+        style_hint: z.string().trim().max(200).optional(),
+      })
+      .parse(await c.req.json());
+    if (body.project_id) ownProject(db, body.project_id, ws);
+    const agent = visibleAgents(db, ws).find((a) => a.enabled && a.tools.includes("image_generate"));
+    if (!agent) throw new HttpError(409, "no enabled agent has the image_generate tool (turn on Editor)");
+    const job = hub.createJob(
+      {
+        agent_id: agent.id,
+        project_id: body.project_id ?? null,
+        type: "image_generate",
+        title: `AI Image: ${body.prompt.slice(0, 80)}`,
+        input: {
+          text: body.prompt,
+          params: { prompt: body.prompt, size: body.size, count: body.count, seed: body.seed, style_hint: body.style_hint },
+        },
+        trigger: "manual",
+      },
+      ws,
+    );
+    return c.json({ job }, 201);
+  });
+
+  api.post("/design/save-draft", async (c) => {
+    const ws = W(c);
+    const body = z
+      .object({
+        project_id: z.string().min(1).max(64),
+        platform: Platform.default("instagram"),
+        kind: DraftKind.default("caption"),
+        title: z.string().trim().min(1).max(200),
+        body: z.string().min(1).max(20_000),
+        images: z.array(z.string().max(64)).min(1).max(10),
+      })
+      .parse(await c.req.json());
+    ownProject(db, body.project_id, ws);
+    for (const id of body.images) ownUpload(db, id, ws);
+    const agent = visibleAgents(db, ws).find((a) => a.enabled) ?? visibleAgents(db, ws)[0];
+    if (!agent) throw new HttpError(409, "no agent available");
+    const meta = WebPost.parse({ post_type: "social", cover_upload_id: body.images[0]!, images: body.images });
+    const row = hub.store.transact((tx, emit) =>
+      hub.content.insertDraft(tx, emit, {
+        project_id: body.project_id,
+        agent_id: agent.id,
+        run_id: "",
+        platform: body.platform,
+        kind: body.kind,
+        title: body.title,
+        body: body.body,
+        self_check: { facts_match_brief: true, only_released_features: true, no_overclaims: true, tone_and_language_match: true, notes: "Created in Design Studio" },
+        feature_id: null,
+        meta,
+      }),
+    );
+    return c.json({ draft: hub.content.draft(row.id) }, 201);
+  });
+
   // members (owner only): invite by email, disable, share agents with a daily limit
   api.get("/members", (c) => c.json({ members: members.list() }));
   api.post("/members", async (c) => c.json({ member: members.invite(await c.req.json()) }, 201));
@@ -1093,6 +1260,29 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     ownProject(db, c.req.param("id"), W(c));
     await next();
   });
+  api.post("/drafts/swap-schedule", async (c) => {
+    const { a, b } = z.object({ a: z.string().min(1).max(64), b: z.string().min(1).max(64) }).parse(await c.req.json());
+    return c.json(hub.content.swapDraftSchedule(a, b, W(c)));
+  });
+  api.post("/drafts/sets/:setId/decide", async (c) => {
+    const body = z
+      .object({
+        decision: z.enum(["approve", "reject"]),
+        publish_at: z.string().datetime({ offset: true }).nullable().optional(),
+        feedback: z.string().max(2000).optional(),
+      })
+      .parse(await c.req.json());
+    const res = await hub.decideDraftSet(c.req.param("setId"), W(c), body);
+    return c.json({
+      drafts: res.drafts.map((d) => ({ ...d, can_publish: hub.canPublish(d), placement_problems: placementCheck(d) })),
+      decided_count: res.decided_count,
+    });
+  });
+  api.post("/drafts/sets/:setId/schedule", async (c) => {
+    const { publish_at } = z.object({ publish_at: z.string().datetime({ offset: true }).nullable() }).parse(await c.req.json());
+    const drafts = hub.scheduleDraftSet(c.req.param("setId"), W(c), publish_at);
+    return c.json({ drafts: drafts.map((d) => ({ ...d, can_publish: hub.canPublish(d), placement_problems: placementCheck(d) })) });
+  });
   // and everything under /drafts/:id/ is the caller's own draft
   api.use("/drafts/:id/*", async (c, next) => {
     ownDraft(db, c.req.param("id"), W(c));
@@ -1152,23 +1342,38 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     return c.json({ feature: hub.addFeature(p.id, { title: note.title, user_facing_note: note.user_facing_note, source_pr_url: note.source_pr_url ?? null }) }, 201);
   });
 
+  api.get("/projects/:id/social-accounts", (c) => c.json({ accounts: hub.social.projectAccounts(c.req.param("id")) }));
+  api.put("/projects/:id/social-accounts", async (c) =>
+    c.json({ accounts: hub.social.setProjectAccounts(c.req.param("id"), await c.req.json()) }),
+  );
+
   // content drafts: approved by their owner; website / social posts go out on approval
   api.get("/drafts", (c) => {
     const status = c.req.query("status");
     const drafts = hub.content.listDrafts({ status: status === "pending" || status === "decided" ? status : undefined, project_id: c.req.query("project_id") || undefined, workspace_id: W(c) });
     // the web shows "Schedule…" / "posts when approved" only where a post can really go
-    return c.json({ drafts: drafts.map((d) => ({ ...d, can_publish: hub.canPublish(d) })) });
+    return c.json({ drafts: drafts.map((d) => ({ ...d, can_publish: hub.canPublish(d), placement_problems: placementCheck(d) })) });
   });
-  // which TikTok account a draft goes to (Settings → Social accounts)
+  // which social account a draft goes to (Settings → Social accounts)
   api.patch("/drafts/:id/account", async (c) => {
     const body = z.object({ account: z.string().max(100).nullable() }).parse(await c.req.json());
-    if (body.account && !hub.social.tiktokTargets(W(c)).some((t) => t.id === body.account)) throw new HttpError(400, "that account is not connected (or is switched off) in Settings → Social accounts");
+    const existing = hub.content.draft(c.req.param("id"));
+    const plat = existing && isZernioPlatform(existing.platform) ? existing.platform : undefined;
+    if (body.account && !hub.social.socialTargets(W(c), plat).some((t) => t.id === body.account)) {
+      throw new HttpError(400, "that account is not connected (or is switched off) in Settings → Social accounts");
+    }
     const d = hub.content.setDraftAccount(c.req.param("id"), body.account, W(c));
-    return c.json({ draft: { ...d, can_publish: hub.canPublish(d) } });
+    return c.json({ draft: { ...d, can_publish: hub.canPublish(d), placement_problems: placementCheck(d) } });
   });
 
-  // Settings → Social accounts: Zernio connections and their TikTok accounts (per room)
-  api.get("/social-accounts", (c) => c.json({ connections: hub.social.zernioConnections(W(c)), tiktok: hub.social.tiktokTargets(W(c)) }));
+  // Settings → Social accounts: Zernio connections and their accounts across all platforms (per room)
+  api.get("/social-accounts", (c) =>
+    c.json({
+      connections: hub.social.zernioConnections(W(c)),
+      targets: hub.social.socialTargets(W(c)),
+      tiktok: hub.social.tiktokTargets(W(c)),
+    }),
+  );
   api.post("/social-accounts/zernio", async (c) => c.json({ connection: await hub.social.addZernio(W(c), await c.req.json()) }, 201));
   api.post("/social-accounts/:id/refresh", async (c) => c.json({ connection: await hub.social.refreshZernio(W(c), c.req.param("id")) }));
   api.patch("/social-accounts/:id", async (c) => c.json({ connection: hub.social.patchZernio(W(c), c.req.param("id"), await c.req.json()) }));
@@ -1296,8 +1501,15 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
   // Video HD (TikTok HD + WhatsApp HD + WhatsApp Status): remux or re-encode a finished video, no AI
   api.get("/video-hd", (c) => c.json({ items: hub.studio.videoHdList(W(c)) }));
   api.post("/videos/:id/hd", async (c) => {
-    const body = z.object({ targets: z.array(HdTarget).min(1).max(3).default(["tiktok"]), mode: TikTokHdMode.default("auto") }).parse(await c.req.json().catch(() => ({})));
-    return c.json({ jobs: hub.studio.videoHd(c.req.param("id"), body.targets, body.mode, W(c)) }, 201);
+    const body = z
+      .object({
+        targets: z.array(HdTarget).min(1).max(7).optional(),
+        placements: z.array(SocialPlacement).min(1).max(11).optional(),
+        mode: TikTokHdMode.default("auto"),
+      })
+      .parse(await c.req.json().catch(() => ({})));
+    const items = body.placements?.length ? hdOutputsFor(body.placements) : (body.targets ?? ["tiktok"]);
+    return c.json({ jobs: hub.studio.videoHd(c.req.param("id"), items, body.mode, W(c)) }, 201);
   });
   // Legacy TikTok HD aliases
   api.get("/tiktok-hd", (c) => c.json({ items: hub.studio.tiktokHdList(W(c)) }));

@@ -18,7 +18,7 @@ import {
 import { aiSdkRuntime } from "./runtimes/aiSdk.ts";
 import { mockRuntime } from "./runtimes/mock.ts";
 import { directRuntime } from "./runtimes/direct.ts";
-import { TOOL_REGISTRY, hyperframesBinary, openchatcutToken, whisperBinary, type ApprovalRequest, type ConsultAnswer } from "@agent-office/tools";
+import { TOOL_REGISTRY, comfyInstalled, hyperframesBinary, openchatcutToken, stopComfy, whisperBinary, type ApprovalRequest, type ConsultAnswer } from "@agent-office/tools";
 import { RunError, type AgentRuntime } from "./runtimes/types.ts";
 import { resolveOpenCode } from "./opencode/binary.ts";
 import { opencodeRuntime } from "./opencode/runtime.ts";
@@ -111,6 +111,7 @@ export class RunnerClient {
     if (this.#reconnect) clearTimeout(this.#reconnect);
     if (this.#heartbeat) clearInterval(this.#heartbeat);
     for (const r of this.#runs.values()) r.abort.abort(new Error("runner stopping"));
+    void stopComfy();
     this.#ws?.close(1000, "runner stopping");
     this.#ws = null;
   }
@@ -350,9 +351,9 @@ export class RunnerClient {
     throw new Error(`video download failed: ${last?.message ?? "unknown error"}`);
   }
 
-  /** Send a finished video to the hub in parts (Cloudflare refuses bodies over 100 MB). */
-  async #uploadVideo(runId: string, path: string, name: string, render?: RenderInfo): Promise<{ id: string; size: number }> {
-    const body = await this.#putParts(runId, path, name, "video/mp4", {});
+  /** Send a finished video or rendered image to the hub in parts (Cloudflare refuses bodies over 100 MB). */
+  async #uploadVideo(runId: string, path: string, name: string, render?: RenderInfo, contentType = "video/mp4"): Promise<{ id: string; size: number }> {
+    const body = await this.#putParts(runId, path, name, contentType, {});
     // how it was made, for the studio; a failure here only loses the "edit again" data
     if (render) await this.#saveRender(runId, body.upload.id, render).catch((err) => this.#log(`render info not saved: ${(err as Error).message}`));
     return { id: body.upload.id, size: body.upload.size };
@@ -540,7 +541,7 @@ export class RunnerClient {
         tts: (text: string, voice?: string) => this.#tts(a.run_id, workspace, text, voice),
         fetchUpload: (id) => this.#fetchUpload(a.run_id, id),
         downloadUpload: (id, dest) => this.#downloadUpload(a.run_id, id, dest),
-        uploadVideo: (path, name, render) => this.#uploadVideo(a.run_id, path, name, render),
+        uploadVideo: (path, name, render, contentType) => this.#uploadVideo(a.run_id, path, name, render, contentType),
         projectData: (action, params) => this.#projectData(a.run_id, action, params),
         videoData: (action, params) => this.#videoData(a.run_id, action, params),
         clipAttach: (path, name, type, uploadId) => this.#clipAttach(a.run_id, path, name, type, uploadId),
@@ -568,9 +569,9 @@ export class RunnerClient {
 }
 
 /** Programs agents may want on this machine; reported once per connection. */
-const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "whisper", "hyperframes", "openchatcut", "opencode", "openscad", "blender", "pandoc", "soffice", "gh"];
+const PROGRAMS = ["git", "node", "npx", "python", "ffmpeg", "whisper", "hyperframes", "openchatcut", "opencode", "openscad", "blender", "pandoc", "soffice", "gh", "comfyui"];
 // whisper.cpp is found by its own path (WHISPER_CPP) or C:\whisper, rarely on PATH
-export const detectPrograms = (): string[] => PROGRAMS.filter((p) => (p === "whisper" ? !!whisperBinary() : p === "hyperframes" ? !!hyperframesBinary() : p === "openchatcut" ? !!openchatcutToken() : Bun.which(p)));
+export const detectPrograms = (): string[] => PROGRAMS.filter((p) => (p === "whisper" ? !!whisperBinary() : p === "hyperframes" ? !!hyperframesBinary() : p === "openchatcut" ? !!openchatcutToken() : p === "comfyui" ? comfyInstalled() : Bun.which(p)));
 
 /** A download that sends no data for this long is treated as dead. */
 export const STALL_MS = 60_000;

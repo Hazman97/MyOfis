@@ -29,6 +29,8 @@ const TOOL_PROGRAMS: Record<string, string> = {
   git_diff: "git",
   git_push: "git",
   browser_check: "node",
+  design_render: "node",
+  image_generate: "comfyui",
 };
 
 /** The tools a job runs: a Video Studio job only its one tool, otherwise every tool of the agent. */

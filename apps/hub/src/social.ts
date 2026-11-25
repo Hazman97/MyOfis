@@ -1,6 +1,14 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { freshFetch } from "@agent-office/shared";
+import {
+  ZERNIO_PLATFORMS,
+  buildZernioPostBody,
+  freshFetch,
+  isZernioPlatform,
+  type WebPost,
+  type ZernioMediaItem,
+  type ZernioPlatform,
+} from "@agent-office/shared";
 import { keyHint, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
 import { contentDrafts, projects, settings } from "./db/schema.ts";
@@ -10,16 +18,18 @@ import { toDraft } from "./content.ts";
 import type { Publisher } from "./publisher.ts";
 
 /**
- * Posting approved captions to the project's social accounts (owner request). Per project:
- * - Facebook Page: Page id + Page access token (encrypted). Photo post or text post.
- * - Instagram (Business/Creator account linked to that Page): uses the same Page token. Instagram
- *   only takes a photo by public URL, so the photo goes to the website's storage first.
- * - Threads: its own user token (Threads API). Text post, or photo by public URL.
- * - TikTok: through Zernio (zernio.com, formerly getlate.dev), where the owner connects the TikTok
- *   account; we keep its API key and which account to post to. Video posts only.
+ * Posting approved captions/media to social accounts.
+ * - Zernio (zernio.com): generic posting for TikTok, Instagram (feed/carousel/Reels/Story),
+ *   Facebook (feed/Reels/Story), Threads, and YouTube Shorts via POST /v1/posts.
+ * - Direct Meta fallback: Facebook Page, Instagram Business/Creator, and Threads for single
+ *   photo/text posts when no Zernio account is routed.
  * Tokens never reach the browser or runners.
  */
-export type SocialPlatform = "facebook" | "instagram" | "threads" | "tiktok";
+export type SocialPlatform = ZernioPlatform;
+
+export const ProjectSocialAccountsInput = z.object({
+  accounts: z.record(z.enum(ZERNIO_PLATFORMS), z.string().max(100).nullable()),
+});
 
 export const FacebookSettingsInput = z.object({
   page_id: z.string().regex(/^\d{5,30}$/).or(z.literal("")),
@@ -45,7 +55,7 @@ export const ZernioConnectionPatch = z.object({
 });
 export interface ZernioAccount {
   id: string;
-  platform: "tiktok";
+  platform: ZernioPlatform;
   username: string;
   display_name: string;
   followers: number | null;
@@ -72,6 +82,7 @@ export interface ZernioConnectionPublic {
 /** An account a draft, an agent or a schedule can post to. */
 export interface SocialTarget {
   id: string;
+  platform: ZernioPlatform;
   label: string;
   username: string;
   connection: string;
@@ -134,17 +145,20 @@ interface StoredTikTok {
   display_name: string | null;
   accounts: TikTokAccount[];
 }
-/** A TikTok post whose link is not known yet (TikTok gives the video id a few minutes later). */
-interface PendingTikTok {
+/** A Zernio post whose public URL is not known yet (arrives a few minutes later). */
+interface PendingZernioPost {
   draft_id: string;
   project_id: string;
   post_id: string;
+  platform?: ZernioPlatform;
   since: string;
   /** The Social accounts connection that posted it (null = the project's older setting). */
   workspace_id?: string;
   conn_id?: string | null;
 }
 const TIKTOK_PENDING = "tiktok.pending.";
+const ZERNIO_PENDING = "zernio.pending.";
+const PROJECT_ACCOUNTS_PREFIX = "social.project_accounts.";
 const TIKTOK_RESOLVE_MS = 30 * 60_000;
 
 interface StoredThreads {
@@ -357,12 +371,24 @@ export class Social {
     return { status: res.status, body: body as T };
   }
 
-  async #tiktokAccounts(apiKey: string): Promise<TikTokAccount[]> {
+  async #zernioAccounts(apiKey: string, platform?: ZernioPlatform): Promise<(TikTokAccount & { platform: ZernioPlatform })[]> {
     type Acc = { _id: string; platform: string; username?: string; displayName?: string; followersCount?: number; needsReconnection?: boolean; isActive?: boolean };
-    const { body } = await this.#zernio<{ accounts?: Acc[] }>(apiKey, "/accounts?platform=tiktok&limit=100");
+    const query = platform ? `/accounts?platform=${encodeURIComponent(platform)}&limit=100` : "/accounts?limit=100";
+    const { body } = await this.#zernio<{ accounts?: Acc[] }>(apiKey, query);
     return (body.accounts ?? [])
-      .filter((a) => a.platform === "tiktok")
-      .map((a) => ({ id: a._id, username: a.username ?? "", display_name: a.displayName ?? a.username ?? "", followers: a.followersCount ?? null, needs_reconnection: !!a.needsReconnection || a.isActive === false }));
+      .filter((a): a is Acc & { platform: ZernioPlatform } => isZernioPlatform(a.platform) && (!platform || a.platform === platform))
+      .map((a) => ({
+        id: a._id,
+        platform: a.platform,
+        username: a.username ?? "",
+        display_name: a.displayName ?? a.username ?? "",
+        followers: a.followersCount ?? null,
+        needs_reconnection: !!a.needsReconnection || a.isActive === false,
+      }));
+  }
+
+  async #tiktokAccounts(apiKey: string): Promise<TikTokAccount[]> {
+    return (await this.#zernioAccounts(apiKey, "tiktok")).map(({ platform: _p, ...rest }) => rest);
   }
 
   #tt(projectId: string): { apiKey: string; accountId: string } | null {
@@ -370,12 +396,11 @@ export class Social {
     return s?.key_enc && s.account_id ? { apiKey: this.secrets.decrypt(s.key_enc), accountId: s.account_id } : null;
   }
 
-  // ---------------------------------------------------------------- Social accounts (Zernio, many)
+  // ---------------------------------------------------------------- Social accounts (Zernio, all platforms)
   //
-  // Owner request 2026-10-20: connect Zernio once (or several keys) and use any of its TikTok
-  // accounts. An agent has a default account, a schedule can pick another, and the owner can change
-  // it on the draft. Stored per room in settings `zernio.connections.<workspace>`. The older
-  // per-project TikTok setting still works as a fallback.
+  // Connect Zernio once (or several keys) and use any of its accounts across TikTok, Instagram,
+  // Facebook, Threads and YouTube. Stored per room in settings `zernio.connections.<workspace>`.
+  // Older per-project direct Meta / TikTok settings still work as fallbacks.
 
   #conns(ws: string): StoredZernio[] {
     const row = this.db.select().from(settings).where(eq(settings.key, `zernio.connections.${ws}`)).get();
@@ -393,20 +418,62 @@ export class Social {
     return this.#conns(ws).map(this.#publicConn);
   }
 
-  /** The TikTok accounts agents and drafts can post to (enabled ones), for pickers. */
-  tiktokTargets(ws: string): SocialTarget[] {
+  /** Enabled Zernio accounts in this room (filtered by platform when given), for pickers. */
+  socialTargets(ws: string, platform?: ZernioPlatform): SocialTarget[] {
     return this.#conns(ws).flatMap((c) =>
       c.accounts
-        .filter((a) => a.enabled && a.platform === "tiktok")
-        .map((a) => ({ id: a.id, label: a.label || a.display_name || a.username, username: a.username, connection: c.label, needs_reconnection: a.needs_reconnection })),
+        .filter((a) => a.enabled && (!platform || a.platform === platform))
+        .map((a) => ({
+          id: a.id,
+          platform: a.platform,
+          label: a.label || a.display_name || a.username,
+          username: a.username,
+          connection: c.label,
+          needs_reconnection: a.needs_reconnection,
+        })),
     );
   }
 
-  /** Connect a Zernio API key: its TikTok accounts are listed at once (all on, named after the account). */
+  /** Backwards-compatible wrapper for TikTok pickers. */
+  tiktokTargets(ws: string): SocialTarget[] {
+    return this.socialTargets(ws, "tiktok");
+  }
+
+  /** Per-project chosen Zernio account per platform (Settings → Social accounts / Project). */
+  projectAccounts(projectId: string): Partial<Record<ZernioPlatform, string>> {
+    this.#project(projectId);
+    const row = this.db.select().from(settings).where(eq(settings.key, `${PROJECT_ACCOUNTS_PREFIX}${projectId}`)).get();
+    return (row?.value as Partial<Record<ZernioPlatform, string>> | undefined) ?? {};
+  }
+
+  setProjectAccounts(projectId: string, input: z.input<typeof ProjectSocialAccountsInput>): Partial<Record<ZernioPlatform, string>> {
+    const { accounts } = ProjectSocialAccountsInput.parse(input);
+    this.#project(projectId);
+    const ws = this.#wsOf(projectId);
+    const conns = this.#conns(ws);
+    const all = new Map(conns.flatMap((c) => c.accounts.map((a) => [a.id, a] as const)));
+    const next: Partial<Record<ZernioPlatform, string>> = { ...this.projectAccounts(projectId) };
+    for (const [plat, accId] of Object.entries(accounts) as [ZernioPlatform, string | null][]) {
+      if (!accId) {
+        delete next[plat];
+        continue;
+      }
+      const found = all.get(accId);
+      if (!found || found.platform !== plat) {
+        throw new HttpError(400, `account ${accId} is not a connected ${plat} account in this room`);
+      }
+      next[plat] = accId;
+    }
+    const k = `${PROJECT_ACCOUNTS_PREFIX}${projectId}`;
+    this.db.insert(settings).values({ key: k, value: next }).onConflictDoUpdate({ target: settings.key, set: { value: next } }).run();
+    return next;
+  }
+
+  /** Connect a Zernio API key: all supported platform accounts are listed at once (all on). */
   async addZernio(ws: string, input: z.input<typeof ZernioConnectInput>): Promise<ZernioConnectionPublic> {
     const data = ZernioConnectInput.parse(input);
     const conns = this.#conns(ws);
-    const found = await this.#tiktokAccounts(data.api_key);
+    const found = await this.#zernioAccounts(data.api_key);
     // an account already listed under another key stays there (one account, one key)
     const taken = new Set(conns.flatMap((c) => c.accounts.map((a) => a.id)));
     const conn: StoredZernio = {
@@ -414,7 +481,7 @@ export class Social {
       label: data.label,
       key_enc: this.secrets.encrypt(data.api_key),
       key_hint: keyHint(data.api_key),
-      accounts: found.filter((a) => !taken.has(a.id)).map((a) => ({ ...a, platform: "tiktok", label: a.display_name || a.username, enabled: true })),
+      accounts: found.filter((a) => !taken.has(a.id)).map((a) => ({ ...a, label: a.display_name || a.username, enabled: true })),
       checked_at: new Date().toISOString(),
     };
     this.#saveConns(ws, [...conns, conn]);
@@ -426,9 +493,9 @@ export class Social {
     const conns = this.#conns(ws);
     const c = conns.find((x) => x.id === id);
     if (!c) throw new HttpError(404, "connection not found");
-    const found = await this.#tiktokAccounts(this.secrets.decrypt(c.key_enc));
+    const found = await this.#zernioAccounts(this.secrets.decrypt(c.key_enc));
     const old = new Map(c.accounts.map((a) => [a.id, a]));
-    c.accounts = found.map((a) => ({ ...a, platform: "tiktok", label: old.get(a.id)?.label ?? (a.display_name || a.username), enabled: old.get(a.id)?.enabled ?? true }));
+    c.accounts = found.map((a) => ({ ...a, label: old.get(a.id)?.label ?? (a.display_name || a.username), enabled: old.get(a.id)?.enabled ?? true }));
     c.checked_at = new Date().toISOString();
     this.#saveConns(ws, conns);
     return this.#publicConn(c);
@@ -457,22 +524,84 @@ export class Social {
   }
 
   /**
-   * Where a TikTok draft goes: the account on the draft, else the only enabled TikTok account of
-   * the room, else the project's older single setting. null = nowhere (approving only saves it).
+   * Routing rule for Zernio accounts:
+   * 1. Draft's explicit `meta.social_account` (if switched off/removed -> null, never swapped);
+   * 2. Project's chosen account for this platform (if switched off/removed -> null, never swapped);
+   * 3. The only enabled Zernio account of this platform in the room;
+   * 4. For TikTok, the legacy per-project TikTok setting;
+   * 5. Otherwise null (caller may fall back to legacy direct Meta for single photo/text).
    */
-  #tiktokTarget(ws: string, accountId: string | null, projectId: string): { apiKey: string; accountId: string; connId: string | null } | null {
+  #socialTarget(
+    ws: string,
+    platform: ZernioPlatform,
+    accountId: string | null,
+    projectId: string,
+  ): { apiKey: string; accountId: string; connId: string | null } | null {
     const conns = this.#conns(ws);
-    const usable = conns.flatMap((c) => c.accounts.filter((a) => a.enabled && a.platform === "tiktok").map((a) => ({ c, a })));
-    const pick = accountId ? usable.find((x) => x.a.id === accountId) : usable.length === 1 ? usable[0] : undefined;
-    if (pick) return { apiKey: this.secrets.decrypt(pick.c.key_enc), accountId: pick.a.id, connId: pick.c.id };
-    if (accountId && usable.length) return null; // an account that was switched off or removed: never post elsewhere
-    const legacy = this.#tt(projectId);
-    return legacy ? { ...legacy, connId: null } : null;
+    const allForPlatform = conns.flatMap((c) => c.accounts.filter((a) => a.platform === platform).map((a) => ({ c, a })));
+    const usable = allForPlatform.filter((x) => x.a.enabled);
+
+    if (accountId) {
+      const pick = usable.find((x) => x.a.id === accountId);
+      if (pick) return { apiKey: this.secrets.decrypt(pick.c.key_enc), accountId: pick.a.id, connId: pick.c.id };
+      // Account was explicitly chosen on the draft, and is switched off or removed: NEVER swap for another!
+      if (allForPlatform.some((x) => x.a.id === accountId) || usable.length > 0) return null;
+      if (platform === "tiktok") {
+        const legacy = this.#tt(projectId);
+        if (legacy && legacy.accountId === accountId) return { ...legacy, connId: null };
+      }
+      return null;
+    }
+
+    const projAcc = this.projectAccounts(projectId)[platform];
+    if (projAcc) {
+      const pick = usable.find((x) => x.a.id === projAcc);
+      if (pick) return { apiKey: this.secrets.decrypt(pick.c.key_enc), accountId: pick.a.id, connId: pick.c.id };
+      // Project explicitly pinned a switched-off/removed account: never swap
+      return null;
+    }
+
+    if (usable.length === 1) {
+      const pick = usable[0]!;
+      return { apiKey: this.secrets.decrypt(pick.c.key_enc), accountId: pick.a.id, connId: pick.c.id };
+    }
+
+    if (platform === "tiktok") {
+      const legacy = this.#tt(projectId);
+      return legacy ? { ...legacy, connId: null } : null;
+    }
+    return null;
   }
 
-  /** Whether approving this TikTok draft posts it somewhere. */
+  /** Whether legacy direct Meta connection can handle this draft (single photo or text only). */
+  #canUseLegacyMeta(draft: { project_id: string; platform: string; meta?: Partial<WebPost> | null }): boolean {
+    const meta = draft.meta ?? null;
+    if (meta?.social_account) return false;
+    if (meta?.video_upload_id) return false;
+    const p = meta?.placement;
+    if (p && p !== "fb_feed" && p !== "ig_feed" && p !== "threads") return false;
+    if ((meta?.images?.length ?? 0) > 1) return false;
+    if (draft.platform === "facebook") return !!this.#fb(draft.project_id);
+    if (draft.platform === "instagram") {
+      const ig = this.#read<StoredIg>("instagram", draft.project_id);
+      return !!(ig?.enabled && ig.ig_user_id && this.#fb(draft.project_id));
+    }
+    if (draft.platform === "threads") return !!this.#threads(draft.project_id);
+    return false;
+  }
+
+  /** Whether approving this social draft posts it somewhere (Zernio or legacy direct Meta). */
+  canPost(draft: { project_id: string; platform: string; meta?: Partial<WebPost> | null }): boolean {
+    if (!isZernioPlatform(draft.platform)) return false;
+    const ws = this.#wsOf(draft.project_id);
+    const target = this.#socialTarget(ws, draft.platform, draft.meta?.social_account ?? null, draft.project_id);
+    if (target) return true;
+    return this.#canUseLegacyMeta(draft);
+  }
+
+  /** Backwards-compatible wrapper for TikTok drafts. */
   canPostTikTok(draft: { project_id: string; meta?: { social_account?: string | null } | null }): boolean {
-    return !!this.#tiktokTarget(this.#wsOf(draft.project_id), draft.meta?.social_account ?? null, draft.project_id);
+    return this.canPost({ ...draft, platform: "tiktok" });
   }
 
   #wsOf(projectId: string): string {
@@ -544,16 +673,17 @@ export class Social {
         }
       }
     }
-    // Settings → Social accounts: every Zernio connection of every room
+    // Settings → Social accounts: every Zernio connection of every room (all platforms)
     for (const row of this.db.select().from(settings).all().filter((r) => r.key.startsWith("zernio.connections."))) {
       const ws = row.key.slice("zernio.connections.".length);
       for (const c of row.value as StoredZernio[]) {
         try {
-          const found = await this.#tiktokAccounts(this.secrets.decrypt(c.key_enc));
+          const found = await this.#zernioAccounts(this.secrets.decrypt(c.key_enc));
           for (const a of c.accounts.filter((x) => x.enabled)) {
-            const now = found.find((f) => f.id === a.id);
-            if (!now) problems.push(`TikTok "${a.label}" (@${a.username}) is no longer in Zernio connection "${c.label}". Connect it again in Zernio, then press Refresh in Settings → Social accounts.`);
-            else if (now.needs_reconnection) problems.push(`TikTok "${a.label}" (@${a.username}) needs reconnecting in Zernio, so its posts will fail until you do.`);
+            const nowAcc = found.find((f) => f.id === a.id);
+            const platLabel = a.platform[0]!.toUpperCase() + a.platform.slice(1);
+            if (!nowAcc) problems.push(`${platLabel} "${a.label}" (@${a.username}) is no longer in Zernio connection "${c.label}". Connect it again in Zernio, then press Refresh in Settings → Social accounts.`);
+            else if (nowAcc.needs_reconnection) problems.push(`${platLabel} "${a.label}" (@${a.username}) needs reconnecting in Zernio, so its posts will fail until you do.`);
           }
         } catch (err) {
           problems.push(`Could not reach Zernio for connection "${c.label}"${ws !== "owner" ? ` (room ${ws})` : ""}: ${(err as Error).message}`);
@@ -566,19 +696,22 @@ export class Social {
   // ---------------------------------------------------------------- what is connected
 
   configured(platform: string, projectId: string): boolean {
+    if (!isZernioPlatform(platform)) return false;
+    const ws = this.#wsOf(projectId);
+    if (this.socialTargets(ws, platform).length > 0) return true;
     if (platform === "facebook") return !!this.#fb(projectId);
     if (platform === "instagram") {
       const ig = this.#read<StoredIg>("instagram", projectId);
       return !!(ig?.enabled && ig.ig_user_id && this.#fb(projectId));
     }
     if (platform === "threads") return !!this.#threads(projectId);
-    if (platform === "tiktok") return !!this.#tt(projectId) || this.tiktokTargets(this.#wsOf(projectId)).length > 0;
+    if (platform === "tiktok") return !!this.#tt(projectId);
     return false;
   }
 
   /** Which platforms approving a caption posts to, for this project (agents see this list). */
   connected(projectId: string): SocialPlatform[] {
-    return (["facebook", "instagram", "threads", "tiktok"] as const).filter((p) => this.configured(p, projectId));
+    return ZERNIO_PLATFORMS.filter((p) => this.configured(p, projectId));
   }
 
   // ---------------------------------------------------------------- posting
@@ -609,15 +742,27 @@ export class Social {
     );
   }
 
-  /** Post one approved caption to its platform. */
+  /** Post one approved draft to its platform (Zernio first, legacy Meta fallback for single photo/text). */
   async post(draftId: string) {
     const row = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, draftId)).get();
     if (!row) throw new HttpError(404, "draft not found");
-    if (row.platform === "facebook") return this.postToFacebook(draftId);
-    if (row.platform === "instagram") return this.postToInstagram(draftId);
-    if (row.platform === "threads") return this.postToThreads(draftId);
-    if (row.platform === "tiktok") return this.postToTikTok(draftId);
-    throw new HttpError(400, `${row.platform} is not connected for posting`);
+    if (!isZernioPlatform(row.platform)) throw new HttpError(400, `${row.platform} is not connected for posting`);
+    if (row.platform === "tiktok" || row.platform === "youtube") return this.postViaZernio(draftId);
+
+    const ws = row.workspace_id ?? "owner";
+    const account = (row.meta as Partial<WebPost> | null)?.social_account ?? null;
+    const zTarget = this.#socialTarget(ws, row.platform, account, row.project_id);
+    if (zTarget) return this.postViaZernio(draftId);
+    if (account) {
+      // Explicitly selected Zernio account is switched off/removed: never silently fall back or swap
+      return this.postViaZernio(draftId);
+    }
+    if (this.#canUseLegacyMeta({ project_id: row.project_id, platform: row.platform, meta: row.meta })) {
+      if (row.platform === "facebook") return this.postToFacebook(draftId);
+      if (row.platform === "instagram") return this.postToInstagram(draftId);
+      if (row.platform === "threads") return this.postToThreads(draftId);
+    }
+    return this.postViaZernio(draftId);
   }
 
   async postToFacebook(draftId: string) {
@@ -680,70 +825,129 @@ export class Social {
     }
   }
 
-  /** TikTok via Zernio: presign → upload the video → create the post (publish now). The link comes later. */
-  async postToTikTok(draftId: string) {
-    const row = this.#draft(draftId, "tiktok");
+  async #uploadToZernio(apiKey: string, uploadId: string): Promise<ZernioMediaItem> {
+    const f = this.publisher.uploadFile(uploadId);
+    if (!f) throw new Error(`media upload ${uploadId} not found`);
+    const size = Bun.file(f.file).size;
+    const isVideo = f.row.content_type.startsWith("video/");
+    const fallbackName = isVideo ? "video.mp4" : "image.png";
+    const { body: pre } = await this.#zernio<{ uploadUrl: string; publicUrl: string }>(apiKey, "/media/presign", {
+      method: "POST",
+      body: { filename: f.row.name.replace(/[^\w.\- ]+/g, "_") || fallbackName, contentType: f.row.content_type, size },
+    });
+    const put = await freshFetch(pre.uploadUrl, {
+      method: "PUT",
+      timeoutMs: 30 * 60_000,
+      headers: { "content-type": f.row.content_type },
+      body: Bun.file(f.file),
+    });
+    if (!put.ok) throw new Error(`media upload to Zernio failed (HTTP ${put.status})`);
+    return { type: isVideo ? "video" : "image", url: pre.publicUrl };
+  }
+
+  /**
+   * Generic Zernio posting (TikTok, Instagram, Facebook, Threads, YouTube Shorts):
+   * presign -> PUT (preserving carousel order) -> POST /v1/posts publishNow.
+   * HTTP 207 = failed; missing platformPostUrl is queued for resolvePendingLinks().
+   */
+  async postViaZernio(draftId: string) {
+    const peek = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, draftId)).get();
+    if (!peek) throw new HttpError(404, "draft not found");
+    if (!isZernioPlatform(peek.platform)) throw new HttpError(400, `${peek.platform} is not supported by Zernio`);
+    const platform = peek.platform;
+    const row = this.#draft(draftId, platform);
+    const platLabel = platform[0]!.toUpperCase() + platform.slice(1);
     try {
       const ws = row.workspace_id ?? "owner";
-      const account = (row.meta as { social_account?: string | null } | null)?.social_account ?? null;
-      const cfg = this.#tiktokTarget(ws, account, row.project_id);
-      if (!cfg)
+      const meta = (row.meta as Partial<WebPost> | null) ?? null;
+      const account = meta?.social_account ?? null;
+      const cfg = this.#socialTarget(ws, platform, account, row.project_id);
+      if (!cfg) {
         throw new Error(
           account
-            ? "the TikTok account on this draft is switched off or no longer connected: pick another one on the draft, or turn it on in Settings → Social accounts"
-            : "no TikTok account to post to: connect Zernio in Settings → Social accounts (and pick the account on the draft when there are several)",
+            ? `the ${platLabel} account on this draft is switched off or no longer connected: pick another one on the draft, or turn it on in Settings → Social accounts`
+            : `no ${platLabel} account to post to: connect Zernio in Settings → Social accounts (and pick the account on the draft or project when there are several)`,
         );
-      const videoId = (row.meta as { video_upload_id?: string } | null)?.video_upload_id;
-      const f = videoId ? this.publisher.uploadFile(videoId) : null;
-      if (!f) throw new Error("TikTok posts need a video: this draft has none");
-      const size = Bun.file(f.file).size;
-      const { body: pre } = await this.#zernio<{ uploadUrl: string; publicUrl: string }>(cfg.apiKey, "/media/presign", {
-        method: "POST",
-        body: { filename: f.row.name.replace(/[^\w.\- ]+/g, "_") || "video.mp4", contentType: f.row.content_type, size },
-      });
-      const put = await freshFetch(pre.uploadUrl, { method: "PUT", timeoutMs: 30 * 60_000, headers: { "content-type": f.row.content_type }, body: Bun.file(f.file) });
-      if (!put.ok) throw new Error(`video upload to Zernio failed (HTTP ${put.status})`);
-      // privacy: public when TikTok allows it for this creator, else the first level it offers
-      const info = await this.#zernio<{ privacyLevels?: { value: string }[] }>(cfg.apiKey, `/accounts/${encodeURIComponent(cfg.accountId)}/tiktok/creator-info`).catch(() => null);
-      const levels = info?.body.privacyLevels?.map((l) => l.value) ?? [];
-      const privacy = !levels.length || levels.includes("PUBLIC_TO_EVERYONE") ? "PUBLIC_TO_EVERYONE" : levels[0]!;
+      }
+
+      const mediaItems: ZernioMediaItem[] = [];
+      if (meta?.video_upload_id) {
+        mediaItems.push(await this.#uploadToZernio(cfg.apiKey, meta.video_upload_id));
+      } else if (meta?.images?.length) {
+        // Keep exact display order for carousels
+        for (const imgId of meta.images) {
+          mediaItems.push(await this.#uploadToZernio(cfg.apiKey, imgId));
+        }
+      } else if (meta?.cover_upload_id) {
+        mediaItems.push(await this.#uploadToZernio(cfg.apiKey, meta.cover_upload_id));
+      }
+
+      if ((platform === "tiktok" || platform === "youtube") && !mediaItems.some((m) => m.type === "video")) {
+        throw new Error(`${platLabel} posts need a video: this draft has none`);
+      }
+      if (platform === "instagram" && mediaItems.length === 0) {
+        throw new Error("Instagram posts need at least one image or video");
+      }
+
+      let tiktokPrivacy: string | undefined;
+      if (platform === "tiktok") {
+        const info = await this.#zernio<{ privacyLevels?: { value: string }[] }>(
+          cfg.apiKey,
+          `/accounts/${encodeURIComponent(cfg.accountId)}/tiktok/creator-info`,
+        ).catch(() => null);
+        const levels = info?.body.privacyLevels?.map((l) => l.value) ?? [];
+        tiktokPrivacy = !levels.length || levels.includes("PUBLIC_TO_EVERYONE") ? "PUBLIC_TO_EVERYONE" : levels[0]!;
+      }
+
+      const payload = buildZernioPostBody(
+        { platform, title: row.title, body: row.body, meta },
+        { accountId: cfg.accountId, mediaItems, tiktokPrivacy },
+      );
+
       type PostOut = { post?: { _id?: string; status?: string; platforms?: { status?: string; platformPostUrl?: string | null; errorMessage?: string }[] } };
-      const { status, body } = await this.#zernio<PostOut>(cfg.apiKey, "/posts", {
-        method: "POST",
-        body: {
-          content: row.body.slice(0, 2200),
-          mediaItems: [{ type: "video", url: pre.publicUrl }],
-          platforms: [{ platform: "tiktok", accountId: cfg.accountId }],
-          publishNow: true,
-          tiktokSettings: {
-            privacy_level: privacy,
-            allow_comment: true,
-            allow_duet: true,
-            allow_stitch: true,
-            content_preview_confirmed: true,
-            express_consent_given: true,
-            video_cover_timestamp_ms: 1000,
-          },
-        },
-      });
+      const { status, body } = await this.#zernio<PostOut>(cfg.apiKey, "/posts", { method: "POST", body: payload });
       const plat = body.post?.platforms?.[0];
       // 207 = Zernio accepted the request but the post failed
-      if (status === 207 || body.post?.status === "failed" || plat?.status === "failed") throw new Error(plat?.errorMessage ?? "TikTok refused the post");
+      if (status === 207 || body.post?.status === "failed" || plat?.status === "failed") {
+        throw new Error(plat?.errorMessage ?? `${platLabel} refused the post`);
+      }
       if (body.post?._id && !plat?.platformPostUrl) {
-        const pending: PendingTikTok = { draft_id: draftId, project_id: row.project_id, post_id: body.post._id, since: new Date().toISOString(), workspace_id: ws, conn_id: cfg.connId };
-        this.db.insert(settings).values({ key: `${TIKTOK_PENDING}${draftId}`, value: pending }).onConflictDoUpdate({ target: settings.key, set: { value: pending } }).run();
+        const pending: PendingZernioPost = {
+          draft_id: draftId,
+          project_id: row.project_id,
+          post_id: body.post._id,
+          platform,
+          since: new Date().toISOString(),
+          workspace_id: ws,
+          conn_id: cfg.connId,
+        };
+        this.db
+          .insert(settings)
+          .values({ key: `${ZERNIO_PENDING}${draftId}`, value: pending })
+          .onConflictDoUpdate({ target: settings.key, set: { value: pending } })
+          .run();
       }
       return this.#finish(draftId, row.agent_id, plat?.platformPostUrl ?? "posted", null);
     } catch (err) {
-      return this.#finish(draftId, row.agent_id, null, `TikTok: ${(err as Error).message}`);
+      return this.#finish(draftId, row.agent_id, null, `${platLabel}: ${(err as Error).message}`);
     }
   }
 
-  /** Fill in TikTok links that were not known at posting time (run every minute; gives up after 30 min). */
-  async resolveTikTokLinks(now = new Date()): Promise<{ draft_id: string; url: string }[]> {
+  /** Backwards-compatible wrapper for TikTok posting. */
+  async postToTikTok(draftId: string) {
+    return this.postViaZernio(draftId);
+  }
+
+  /** Fill in Zernio post links that were not known at posting time (run every minute; gives up after 30 min). */
+  async resolvePendingLinks(now = new Date()): Promise<{ draft_id: string; url: string }[]> {
     const done: { draft_id: string; url: string }[] = [];
-    for (const row of this.db.select().from(settings).all().filter((r) => r.key.startsWith(TIKTOK_PENDING))) {
-      const p = row.value as PendingTikTok;
+    const pendingRows = this.db
+      .select()
+      .from(settings)
+      .all()
+      .filter((r) => r.key.startsWith(ZERNIO_PENDING) || r.key.startsWith(TIKTOK_PENDING));
+    for (const row of pendingRows) {
+      const p = row.value as PendingZernioPost;
       const drop = () => this.db.delete(settings).where(eq(settings.key, row.key)).run();
       if (now.getTime() - Date.parse(p.since) > TIKTOK_RESOLVE_MS) {
         drop();
@@ -755,17 +959,21 @@ export class Social {
         drop();
         continue;
       }
+      const platLabel = p.platform ? p.platform[0]!.toUpperCase() + p.platform.slice(1) : "TikTok";
       try {
-        const { body } = await this.#zernio<{ post?: { platforms?: { platformPostUrl?: string | null; status?: string; errorMessage?: string }[] } }>(cfg.apiKey, `/posts/${encodeURIComponent(p.post_id)}`);
+        const { body } = await this.#zernio<{ post?: { platforms?: { platformPostUrl?: string | null; status?: string; errorMessage?: string }[] } }>(
+          cfg.apiKey,
+          `/posts/${encodeURIComponent(p.post_id)}`,
+        );
         const plat = body.post?.platforms?.[0];
         // either way open draft lists reload (draft.updated), so a failed post stops looking live
         const changed = (set: Partial<typeof contentDrafts.$inferInsert>) =>
           this.store.transact((tx, emit) => {
-            const row = tx.update(contentDrafts).set(set).where(eq(contentDrafts.id, p.draft_id)).returning().get();
-            if (row) emit({ type: "draft.updated", payload: { draft_id: p.draft_id, video_upload_id: null } }, { agent_id: row.agent_id });
+            const updatedRow = tx.update(contentDrafts).set(set).where(eq(contentDrafts.id, p.draft_id)).returning().get();
+            if (updatedRow) emit({ type: "draft.updated", payload: { draft_id: p.draft_id, video_upload_id: null } }, { agent_id: updatedRow.agent_id });
           });
         if (plat?.status === "failed") {
-          changed({ status: "approved", published_url: null, publish_error: `TikTok: ${plat.errorMessage ?? "the post failed"}`.slice(0, 500) });
+          changed({ status: "approved", published_url: null, publish_error: `${platLabel}: ${plat.errorMessage ?? "the post failed"}`.slice(0, 500) });
           drop();
         } else if (plat?.platformPostUrl) {
           changed({ published_url: plat.platformPostUrl });
@@ -777,6 +985,11 @@ export class Social {
       }
     }
     return done;
+  }
+
+  /** Backwards-compatible wrapper for resolving delayed Zernio links. */
+  async resolveTikTokLinks(now = new Date()): Promise<{ draft_id: string; url: string }[]> {
+    return this.resolvePendingLinks(now);
   }
 
   async postToThreads(draftId: string) {

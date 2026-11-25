@@ -10,8 +10,21 @@ A public, no-login Video HD page (`TikTok HD`, `WhatsApp HD`, `WhatsApp Status`)
 - **Result files (`GET /api/public/hd/jobs/:id/file/:target`):** served `inline` with Range support (outputs are `+faststart`), so the page's player streams and seeks without a download. `?download=1` answers `attachment` with a clean file name. Both carry `x-robots-tag: noindex`.
 - **Retention & logs:** inputs are deleted immediately after processing (or failure); outputs expire after `retention_hours` (default 24 h); access logs (`ip_hash` via HMAC-SHA256 with `SECRETS_KEY`, size, timestamp, result) are kept 30 days.
 
+## Platforms
+
+Platforms that share the same output format produce **one file** labeled with `covers` (single source of truth: `PLACEMENT_TARGET` in `packages/shared/src/video.ts`).
+
+| Platform placement | Output target | Size | Notes |
+|---|---|---|---|
+| TikTok, IG Reels, FB Reels, YouTube Shorts, Threads | `vertical` (`tiktok` alias) | 1080×1920 | 30/60 fps, H.264/HEVC, ≤ 30 Mbit/s, AAC 192k |
+| IG Story, FB Story | `story` | 1080×1920 | ≤ 25 Mbit/s; clips > 60 s are split into ≤ 60 s parts (`story_1.mp4`, `story_2.mp4`…), preferring silence cut points within 5 s of the limit |
+| IG Feed, FB Feed | `feed_4x5` | 1080×1350 | Crop when close to 4:5, else blur-fill; ≤ 25 Mbit/s |
+| Square (optional direct target) | `square` | 1080×1080 | Crop when close to 1:1, else blur-fill; ≤ 25 Mbit/s |
+| WhatsApp HD | `whatsapp` | Keep aspect (≤ 1280) | 30 fps, H.264, ≤ 2.5 Mbit/s, AAC 128k |
+| WhatsApp Status | `whatsapp_status` | 720×1280 | 30 fps, H.264, ≤ 2.5 Mbit/s, AAC 128k (soft > 60 s warning) |
+
 ## What a visitor sees
-1. Pick a video, tick one or more targets (TikTok HD, WhatsApp HD, WhatsApp Status) and a mode (Auto / Keep / Re-encode).
+1. Pick a video, tick one or more platforms (grouped by TikTok · Instagram · Facebook · YouTube · Threads · WhatsApp, or **Semua platform**) and a mode (Auto / Keep / Re-encode). The plan line shows how many distinct files will be made (up to `max_files`, default 4).
 2. An upload progress bar, then the queue position while the PC works on it.
 3. One row per target with its size, resolution and any warnings, plus two buttons:
    - **▶ Tengok** opens a player under the row (made only when tapped, so nothing streams before that); **✕ Tutup** closes it.

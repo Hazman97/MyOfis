@@ -6,6 +6,7 @@
 //            diff: { ratio, changed, baseline_existed } | null, error? }
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
@@ -41,6 +42,24 @@ async function main() {
   const started = Date.now();
   const browser = await chromium.launch();
   try {
+    // Offline HTML-to-PNG render mode (Task 040 design_render)
+    if (req.html_path) {
+      const width = Number(req.width) || 1080;
+      const height = Number(req.height) || 1350;
+      const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+      const page = await context.newPage();
+      await page.route("**/*", (route) => {
+        const u = route.request().url();
+        if (u.startsWith("file:") || u.startsWith("data:")) return route.continue();
+        return route.abort();
+      });
+      await page.goto(pathToFileURL(req.html_path).href, { waitUntil: "load", timeout: req.timeout_ms ?? 30000 });
+      await page.evaluate(() => (document.fonts ? document.fonts.ready : Promise.resolve()));
+      mkdirSync(dirname(req.out), { recursive: true });
+      await page.screenshot({ path: req.out, type: "png", fullPage: false });
+      return { ok: true, out: req.out, width, height, load_ms: Date.now() - started };
+    }
+
     const context = await browser.newContext({ viewport: req.viewport ?? { width: 1280, height: 800 } });
     const page = await context.newPage();
     page.on("console", (m) => m.type() === "error" && consoleErrors.length < MAX_ITEMS && consoleErrors.push(m.text().slice(0, 300)));

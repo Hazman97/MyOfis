@@ -1,25 +1,54 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
-import { AlertTriangle, LoaderCircle, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
+import { computed, onMounted, reactive, ref } from "vue";
+import { AlertTriangle, Check, LoaderCircle, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
+import type { Project } from "@agent-office/shared";
 import ConfirmButton from "../components/ConfirmButton.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SettingsTabs from "../components/SettingsTabs.vue";
-import { api, type ZernioConnection } from "../api/http.ts";
+import { api, type SocialTarget, type ZernioConnection, type ZernioPlatform } from "../api/http.ts";
 import { fmtDateTime } from "../format.ts";
 
 /**
- * Settings → Social accounts (owner request 2026-10-20): connect Zernio once (or several keys) and
- * use every TikTok account it manages. Name the accounts, switch them on/off; agents, schedules and
- * drafts then pick one. Keys stay on the hub (encrypted).
+ * Settings → Social accounts (Task 042): connect Zernio once (or several keys) and
+ * manage accounts across TikTok, Instagram, Facebook, Threads, and YouTube.
+ * Also lets each project pick which connected account it posts to per platform.
  */
+const PLATFORMS: { id: ZernioPlatform; label: string }[] = [
+  { id: "tiktok", label: "TikTok" },
+  { id: "instagram", label: "Instagram" },
+  { id: "facebook", label: "Facebook" },
+  { id: "threads", label: "Threads" },
+  { id: "youtube", label: "YouTube" },
+];
+const PLAT_LABEL = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.label])) as Record<ZernioPlatform, string>;
+
 const connections = ref<ZernioConnection[]>([]);
+const targets = ref<SocialTarget[]>([]);
+const projects = ref<Project[]>([]);
+const projectMap = reactive<Record<string, Partial<Record<ZernioPlatform, string>>>>({});
+const savedProj = ref<string | null>(null);
 const error = ref("");
 const busy = ref<string | null>(null);
 const form = reactive({ label: "", api_key: "" });
 const adding = ref(false);
 
+const targetsByPlatform = computed(() => {
+  const m: Record<ZernioPlatform, SocialTarget[]> = { tiktok: [], instagram: [], facebook: [], threads: [], youtube: [] };
+  for (const t of targets.value) m[t.platform]?.push(t);
+  return m;
+});
+
 async function load() {
-  connections.value = (await api.socialAccounts()).connections;
+  const [sa, pr] = await Promise.all([api.socialAccounts(), api.projects()]);
+  connections.value = sa.connections;
+  targets.value = sa.targets ?? sa.tiktok ?? [];
+  projects.value = pr.projects;
+  await Promise.all(
+    pr.projects.map(async (p) => {
+      const r = await api.projectSocialAccounts(p.id).catch(() => ({ accounts: {} }));
+      projectMap[p.id] = { ...r.accounts };
+    }),
+  );
 }
 onMounted(() => load().catch((e) => (error.value = (e as Error).message)));
 
@@ -47,6 +76,25 @@ const refresh = (c: ZernioConnection) => run(`refresh:${c.id}`, () => api.refres
 const remove = (c: ZernioConnection) => run(`remove:${c.id}`, () => api.removeZernio(c.id));
 const rename = (c: ZernioConnection, accId: string, label: string) => run(`acc:${accId}`, () => api.patchZernio(c.id, { accounts: { [accId]: { label: label.trim() } } }));
 const toggle = (c: ZernioConnection, accId: string, enabled: boolean) => run(`acc:${accId}`, () => api.patchZernio(c.id, { accounts: { [accId]: { enabled } } }));
+
+async function saveProject(projectId: string) {
+  busy.value = `proj:${projectId}`;
+  error.value = "";
+  try {
+    const raw = projectMap[projectId] ?? {};
+    const payload: Partial<Record<ZernioPlatform, string | null>> = {};
+    for (const p of PLATFORMS) payload[p.id] = raw[p.id] || null;
+    await api.saveProjectSocialAccounts(projectId, payload);
+    savedProj.value = projectId;
+    setTimeout(() => {
+      if (savedProj.value === projectId) savedProj.value = null;
+    }, 2000);
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = null;
+  }
+}
 </script>
 
 <template>
@@ -59,8 +107,9 @@ const toggle = (c: ZernioConnection, accId: string, enabled: boolean) => run(`ac
         <div>
           <h2 class="text-base font-semibold text-fg">Social accounts</h2>
           <p class="text-xs text-muted mt-0.5 leading-relaxed">
-            TikTok accounts your agents post to, through <a href="https://zernio.com" target="_blank" rel="noopener" class="text-accent hover:underline">Zernio</a>.
-            Connect TikTok accounts in Zernio first, then paste its key here.
+            TikTok, Instagram, Facebook, Threads, and YouTube accounts managed through
+            <a href="https://zernio.com" target="_blank" rel="noopener" class="text-accent hover:underline">Zernio</a>.
+            Connect your accounts in Zernio first, then paste the API key here.
           </p>
         </div>
         <button v-if="!adding" class="btn btn-primary btn-sm min-h-10 self-start sm:self-auto gap-1.5" @click="adding = true">
@@ -106,9 +155,7 @@ const toggle = (c: ZernioConnection, accId: string, enabled: boolean) => run(`ac
                 <span class="font-semibold text-sm text-fg truncate">{{ c.label }}</span>
                 <span class="chip chip-sm font-mono text-[10px] text-muted">key {{ c.key_hint }}</span>
               </div>
-              <div class="mt-0.5 text-xs text-muted">
-                Checked {{ fmtDateTime(c.checked_at) }}
-              </div>
+              <div class="mt-0.5 text-xs text-muted">Checked {{ fmtDateTime(c.checked_at) }}</div>
             </div>
             <div class="flex items-center gap-2">
               <button
@@ -136,6 +183,7 @@ const toggle = (c: ZernioConnection, accId: string, enabled: boolean) => run(`ac
             >
               <div class="min-w-0 flex-1 space-y-1.5">
                 <div class="flex flex-wrap items-center gap-2">
+                  <span class="chip chip-sm text-[11px] font-semibold">{{ PLAT_LABEL[a.platform] ?? a.platform }}</span>
                   <input
                     :value="a.label"
                     class="input h-9 text-sm font-medium w-full sm:max-w-xs"
@@ -148,7 +196,7 @@ const toggle = (c: ZernioConnection, accId: string, enabled: boolean) => run(`ac
                   </span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
-                  <span class="font-medium text-fg">TikTok @{{ a.username }}</span>
+                  <span class="font-medium text-fg">{{ PLAT_LABEL[a.platform] ?? a.platform }} @{{ a.username }}</span>
                   <span v-if="a.followers !== null" class="text-faint">·</span>
                   <span v-if="a.followers !== null">{{ a.followers.toLocaleString() }} followers</span>
                 </div>
@@ -170,20 +218,65 @@ const toggle = (c: ZernioConnection, accId: string, enabled: boolean) => run(`ac
               </div>
             </li>
             <li v-if="!c.accounts.length" class="p-6 text-center text-xs text-muted">
-              No TikTok accounts in this Zernio workspace yet. Connect one in Zernio, then press Refresh.
+              No supported social accounts in this Zernio workspace yet. Connect them in Zernio, then press Refresh.
             </li>
           </ul>
         </section>
       </div>
 
-      <!-- Empty State explaining Zernio in two lines -->
+      <!-- Empty State -->
       <div v-else-if="!adding" class="card border-dashed p-8 text-center space-y-2">
         <div class="font-semibold text-fg text-sm">No social accounts connected yet</div>
         <p class="text-xs text-muted max-w-md mx-auto leading-relaxed">
-          Connect Zernio once to manage all your TikTok accounts in one place.<br class="hidden sm:inline" />
-          Agents, schedules, and drafts can then post directly to your selected accounts.
+          Connect Zernio once to manage your TikTok, Instagram, Facebook, Threads, and YouTube accounts in one place.<br class="hidden sm:inline" />
+          Agents, schedules, projects, and drafts can then post directly to your selected accounts.
         </p>
       </div>
+
+      <!-- Per-project default accounts -->
+      <section v-if="projects.length && targets.length" class="card p-5 space-y-4">
+        <div>
+          <h3 class="text-sm font-semibold text-fg">Akaun lalai mengikut projek</h3>
+          <p class="text-xs text-muted mt-0.5">
+            Pilih akaun Zernio bagi setiap platform untuk setiap projek. Jika dibiarkan lalai, sistem menggunakan satu-satunya akaun aktif platform tersebut (atau sambungan Meta lama untuk foto/teks tunggal).
+          </p>
+        </div>
+
+        <div class="space-y-4 divide-y divide-line">
+          <div v-for="p in projects" :key="p.id" class="pt-4 first:pt-0 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-semibold text-sm text-fg">{{ p.name }}</span>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary min-h-9 gap-1.5"
+                :disabled="busy === `proj:${p.id}`"
+                @click="saveProject(p.id)"
+              >
+                <LoaderCircle v-if="busy === `proj:${p.id}`" :size="13" class="animate-spin" />
+                <Check v-else-if="savedProj === p.id" :size="13" />
+                {{ savedProj === p.id ? "Disimpan" : "Simpan projek" }}
+              </button>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div v-for="plat in PLATFORMS" :key="plat.id">
+                <label class="label text-xs" :for="`pa-${p.id}-${plat.id}`">{{ plat.label }}</label>
+                <select
+                  :id="`pa-${p.id}-${plat.id}`"
+                  :value="projectMap[p.id]?.[plat.id] ?? ''"
+                  class="input h-9 text-xs"
+                  :disabled="!targetsByPlatform[plat.id].length"
+                  @change="projectMap[p.id] = { ...(projectMap[p.id] ?? {}), [plat.id]: ($event.target as HTMLSelectElement).value || undefined }"
+                >
+                  <option value="">{{ targetsByPlatform[plat.id].length === 1 ? `Lalai (${targetsByPlatform[plat.id][0]!.label})` : "Tiada pilihan / lalai" }}</option>
+                  <option v-for="t in targetsByPlatform[plat.id]" :key="t.id" :value="t.id">
+                    {{ t.label }} (@{{ t.username }})
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </template>

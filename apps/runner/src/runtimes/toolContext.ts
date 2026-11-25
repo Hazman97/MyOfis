@@ -41,7 +41,7 @@ export function makeToolContext(ctx: RunContext): ToolContext {
     },
     describeImages: (paths, prompt) => describeImages(ctx, paths, prompt),
     downloadAttachment: (id, dest) => ctx.downloadUpload(id, dest),
-    uploadVideo: (path, name, render) => ctx.uploadVideo(path, name, render),
+    uploadVideo: (path, name, render, contentType) => ctx.uploadVideo(path, name, render, contentType),
     renders: [],
     projectData: (action, params) => ctx.projectData(action, params),
     videoData: (action, params) => ctx.videoData(action, params),

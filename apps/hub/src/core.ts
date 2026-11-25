@@ -323,9 +323,7 @@ Error: ${r.error}` : ""}` });
   /** Whether approving this draft sends it somewhere (its website, or a connected social account). */
   canPublish(draft: ContentDraft): boolean {
     if (draft.kind === "web_post") return true;
-    // TikTok: the draft's own account (or the only one / the project's older setting)
-    if (draft.platform === "tiktok") return this.social.canPostTikTok(draft);
-    return this.social.configured(draft.platform, draft.project_id);
+    return this.social.canPost(draft);
   }
 
   async afterApprove(draft: ContentDraft): Promise<ContentDraft> {
@@ -333,8 +331,62 @@ Error: ${r.error}` : ""}` });
     // scheduled for later: publishDue() sends it then
     if (draft.publish_at) return draft;
     if (draft.kind === "web_post") return this.publisher.publish(draft.id);
-    if (this.social.configured(draft.platform, draft.project_id)) return this.social.post(draft.id);
+    if (this.social.canPost(draft)) return this.social.post(draft.id);
     return draft;
+  }
+
+  /**
+   * Idempotently approve or reject every pending draft belonging to `setId` in `workspaceId`.
+   * Re-running on an already approved/published set never double-posts.
+   */
+  async decideDraftSet(
+    setId: string,
+    workspaceId: string,
+    input: { decision: "approve" | "reject"; publish_at?: string | null; feedback?: string },
+  ): Promise<{ drafts: ContentDraft[]; decided_count: number }> {
+    const all = this.content.listDrafts({ workspace_id: workspaceId, limit: 500 }).filter((d) => d.meta?.set_id === setId);
+    if (!all.length) throw new HttpError(404, "draft set not found");
+    const out: ContentDraft[] = [];
+    let decidedCount = 0;
+    for (const d of all) {
+      if (d.status !== "draft") {
+        // Already decided or published: never double-post on retry
+        out.push(d);
+        continue;
+      }
+      const decided = this.content.decideDraft(d.id, {
+        decision: input.decision,
+        feedback: input.feedback,
+        publish_at: input.decision === "approve" && input.publish_at && this.canPublish(d) ? input.publish_at : undefined,
+      });
+      decidedCount++;
+      if (decided.status !== "rejected" && !decided.publish_at && this.canPublish(decided)) {
+        out.push(await this.afterApprove(decided));
+      } else {
+        out.push(decided);
+      }
+    }
+    return { drafts: out, decided_count: decidedCount };
+  }
+
+  /** Schedule (or clear schedule on) every draft in a set in `workspaceId`. */
+  scheduleDraftSet(setId: string, workspaceId: string, publishAt: string | null): ContentDraft[] {
+    const all = this.content.listDrafts({ workspace_id: workspaceId, limit: 500 }).filter((d) => d.meta?.set_id === setId);
+    if (!all.length) throw new HttpError(404, "draft set not found");
+    const out: ContentDraft[] = [];
+    for (const d of all) {
+      if (d.status === "published" || d.status === "rejected") {
+        out.push(d);
+        continue;
+      }
+      if (publishAt && !this.canPublish(d)) {
+        out.push(d);
+        continue;
+      }
+      const target = d.status === "draft" ? this.content.decideDraft(d.id, { decision: "approve", publish_at: publishAt ?? undefined }) : this.content.scheduleDraft(d.id, publishAt);
+      out.push(target);
+    }
+    return out;
   }
 
   /** Send the scheduled drafts whose time has come. Returns what happened, for the owner's Telegram. */
@@ -830,10 +882,21 @@ Error: ${r.error}` : ""}` });
     const count = this.db.select({ n: sql<number>`count(*)` }).from(contentDrafts).where(eq(contentDrafts.run_id, run.id)).get()?.n ?? 0;
     const project = this.db.select({ id: projects.id }).from(projects).where(eq(projects.id, msg.project_id)).get();
     const refusal = !project ? "unknown project" : count >= MAX_DRAFTS_PER_RUN ? `this run already saved ${MAX_DRAFTS_PER_RUN} drafts` : null;
-    // a video must be one this run rendered or one the owner sent with the job
+    // a video or rendered image must be one this run rendered or one the owner sent with the job
+    const jobAttachments = (Array.isArray(job?.input.attachments) ? job.input.attachments : []) as { id?: unknown }[];
+    const attachedIds = new Set(jobAttachments.map((a) => (typeof a.id === "string" ? a.id : "")).filter(Boolean));
     const video = msg.meta?.video_upload_id ? this.publisher.upload(msg.meta.video_upload_id) : null;
-    const attached = Array.isArray(job?.input.attachments) && (job.input.attachments as { id?: unknown }[]).some((a) => a.id === video?.id);
-    const videoOk = !!video && (video.run_id === run.id || attached);
+    const videoOk = !!video && (video.run_id === run.id || attachedIds.has(video.id));
+    const safeImages = (msg.meta?.images ?? []).filter((imgId) => {
+      const up = this.publisher.upload(imgId);
+      return !!up && (up.run_id === run.id || attachedIds.has(up.id));
+    });
+    const safeCover = msg.meta?.cover_upload_id
+      ? (() => {
+          const up = this.publisher.upload(msg.meta.cover_upload_id);
+          return up && (up.run_id === run.id || attachedIds.has(up.id)) ? up.id : null;
+        })()
+      : (safeImages[0] ?? null);
     // which TikTok account it goes to: the schedule's / job's choice, else the agent's default
     const agentRow = getAgent(this.db, run.agent_id);
     const account =
@@ -857,7 +920,7 @@ Error: ${r.error}` : ""}` });
         title: fixEscapedNewlines(msg.title),
         body: fixEscapedNewlines(msg.body),
         self_check: msg.self_check,
-        meta: withAccount(msg.meta ? { ...msg.meta, excerpt: fixEscapedNewlines(msg.meta.excerpt), video_upload_id: videoOk ? video!.id : null } : null),
+        meta: withAccount(msg.meta ? { ...msg.meta, excerpt: fixEscapedNewlines(msg.meta.excerpt), cover_upload_id: safeCover, video_upload_id: videoOk ? video!.id : null, images: safeImages } : null),
         feature_id: featureId,
       });
     });

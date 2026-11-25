@@ -301,6 +301,25 @@ export class Content {
     return toDraft(r);
   }
 
+  /** Swap `publish_at` between two scheduled drafts in the same project and workspace (Grid Planner drag-swap). */
+  swapDraftSchedule(aId: string, bId: string, workspaceId = "owner"): { a: ContentDraft; b: ContentDraft } {
+    if (aId === bId) throw new HttpError(400, "cannot swap a draft with itself");
+    const rowA = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, aId)).get();
+    const rowB = this.db.select().from(contentDrafts).where(eq(contentDrafts.id, bId)).get();
+    if (!rowA || !rowB || rowA.workspace_id !== workspaceId || rowB.workspace_id !== workspaceId) {
+      throw new HttpError(404, "draft not found");
+    }
+    if (rowA.project_id !== rowB.project_id) throw new HttpError(400, "both drafts must belong to the same project");
+    const isScheduled = (r: DraftRow) => !!r.publish_at && (r.status === "approved" || r.status === "edited");
+    if (!isScheduled(rowA) || !isScheduled(rowB)) throw new HttpError(400, "both drafts must be scheduled");
+    const [a, b] = this.store.transact((tx) => {
+      const updatedA = tx.update(contentDrafts).set({ publish_at: rowB.publish_at }).where(eq(contentDrafts.id, rowA.id)).returning().get()!;
+      const updatedB = tx.update(contentDrafts).set({ publish_at: rowA.publish_at }).where(eq(contentDrafts.id, rowB.id)).returning().get()!;
+      return [updatedA, updatedB] as const;
+    });
+    return { a: toDraft(a), b: toDraft(b) };
+  }
+
   /** Scheduled drafts whose time has come (any room). */
   dueScheduled(now = new Date()): { id: string; workspace_id: string }[] {
     return this.db

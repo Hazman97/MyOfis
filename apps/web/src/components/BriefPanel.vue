@@ -1,8 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { ExternalLink, Image, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-vue-next";
-import { Platform, type ContentLanguage, type FeatureNote, type Project, type ProjectBriefInput } from "@agent-office/shared";
+import { AlertTriangle, ExternalLink, Image, LoaderCircle, Plus, Sparkles, Trash2, Upload } from "lucide-vue-next";
+import {
+  BRAND_FONTS,
+  BRAND_FONT_IDS,
+  DEFAULT_BRAND_KIT,
+  DESIGN_ICONS,
+  DESIGN_ICON_NAMES,
+  Platform,
+  contrastRatio,
+  type BrandHighlight,
+  type BrandKit,
+  type BrandStyle,
+  type ContentLanguage,
+  type FeatureNote,
+  type Project,
+  type ProjectBriefInput,
+} from "@agent-office/shared";
 import SidePanel from "./SidePanel.vue";
 import PublishSettings from "./PublishSettings.vue";
 import ProjectDocs from "./ProjectDocs.vue";
@@ -15,10 +30,10 @@ import { isOwner } from "../me.ts";
 import { fmtDateTime } from "../format.ts";
 
 /** Brief editor (projects/<slug>/brief.yaml) and the project's feature log. */
-const props = defineProps<{ project: Project; tab?: "brief" | "features" }>();
+const props = defineProps<{ project: Project; tab?: "brief" | "brand" | "features" }>();
 const emit = defineEmits<{ close: [] }>();
 
-const tab = ref<"brief" | "features" | "website" | "docs" | "log">(props.tab ?? "brief");
+const tab = ref<"brief" | "brand" | "features" | "website" | "docs" | "log">(props.tab ?? "brief");
 const loaded = ref(false);
 const exists = ref(false);
 const path = ref("");
@@ -58,7 +73,40 @@ const form = reactive({
   do_not: "",
   good_examples: [] as string[],
   style_notes: "",
+  brand: {
+    colors: { ...DEFAULT_BRAND_KIT.colors },
+    fonts: { ...DEFAULT_BRAND_KIT.fonts },
+    logo_upload_id: null as string | null,
+    style: DEFAULT_BRAND_KIT.style as BrandStyle,
+    handle: "",
+    highlights: [] as BrandHighlight[],
+  } as BrandKit,
 });
+const brandLogoBusy = ref(false);
+const brandContrast = computed(() => contrastRatio(form.brand.colors.text, form.brand.colors.background));
+const BRAND_STYLES: BrandStyle[] = ["minimal", "bold", "soft", "playful"];
+
+async function uploadBrandLogo(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  brandLogoBusy.value = true;
+  error.value = "";
+  try {
+    const up = await api.uploadImage(file);
+    form.brand.logo_upload_id = up.id;
+  } catch (err) {
+    error.value = (err as Error).message;
+  } finally {
+    brandLogoBusy.value = false;
+  }
+}
+
+function addHighlight() {
+  if (form.brand.highlights.length >= 12) return;
+  form.brand.highlights.push({ label: "Info", icon: "info" });
+}
 
 const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -78,6 +126,14 @@ function fill(b: ProjectBriefInput) {
     do_not: (b.do_not ?? []).join("\n"),
     good_examples: [...(b.good_examples ?? [])],
     style_notes: b.style_notes ?? "",
+    brand: {
+      colors: { ...DEFAULT_BRAND_KIT.colors, ...(b.brand?.colors ?? {}) },
+      fonts: { ...DEFAULT_BRAND_KIT.fonts, ...(b.brand?.fonts ?? {}) },
+      logo_upload_id: b.brand?.logo_upload_id ?? null,
+      style: (b.brand?.style ?? DEFAULT_BRAND_KIT.style) as BrandStyle,
+      handle: b.brand?.handle ?? "",
+      highlights: (b.brand?.highlights ?? []).map((h) => ({ ...h })),
+    },
   });
 }
 
@@ -126,6 +182,14 @@ async function save() {
       do_not: lines(form.do_not),
       good_examples: form.good_examples.map((e) => e.trim()).filter(Boolean),
       style_notes: form.style_notes.trim(),
+      brand: {
+        colors: { ...form.brand.colors },
+        fonts: { ...form.brand.fonts },
+        logo_upload_id: form.brand.logo_upload_id,
+        style: form.brand.style,
+        handle: form.brand.handle.trim(),
+        highlights: form.brand.highlights.filter((h) => h.label.trim()).map((h) => ({ label: h.label.trim(), icon: h.icon })),
+      },
     });
     exists.value = true;
     saved.value = true;
@@ -172,6 +236,15 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
         @click="tab = 'brief'"
       >
         Brief
+      </button>
+      <button
+        role="tab"
+        class="flex-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 text-center"
+        :class="tab === 'brand' ? 'bg-accent text-accent-ink shadow-sm' : 'text-muted hover:text-fg hover:bg-surface-2'"
+        :aria-selected="tab === 'brand'"
+        @click="tab = 'brand'"
+      >
+        Brand
       </button>
       <button
         role="tab"
@@ -382,13 +455,125 @@ const briefIsEmpty = computed(() => !form.one_liner && !form.target && !form.pri
       </ol>
     </div>
 
-    <template v-if="tab === 'brief'" #footer>
+    <!-- Brand Kit Tab (Task 040) -->
+    <form v-if="tab === 'brand'" id="brand-form" class="space-y-5" @submit.prevent="save">
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label class="label" for="bk-handle">Handle</label>
+          <input id="bk-handle" v-model="form.brand.handle" class="input text-sm" maxlength="60" placeholder="@namajenama" />
+        </div>
+        <div>
+          <label class="label" for="bk-style">Style</label>
+          <select id="bk-style" v-model="form.brand.style" class="input text-sm">
+            <option v-for="s in BRAND_STYLES" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Colours -->
+      <div class="space-y-2.5">
+        <span class="label">Colours (hex)</span>
+        <div class="grid gap-2.5 sm:grid-cols-5">
+          <div v-for="k in (['primary', 'secondary', 'accent', 'background', 'text'] as const)" :key="k" class="space-y-1">
+            <label :for="`bk-c-${k}`" class="block text-[11px] font-medium capitalize text-muted">{{ k }}</label>
+            <div class="flex items-center gap-1.5">
+              <input :id="`bk-c-${k}`" v-model="form.brand.colors[k]" type="color" class="h-9 w-9 cursor-pointer rounded border border-line bg-transparent p-0.5" />
+              <input v-model="form.brand.colors[k]" class="input h-9 px-2 text-xs font-mono" maxlength="7" />
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="brandContrast < 4.5"
+          class="flex items-start gap-2 rounded-lg border border-signal/40 bg-signal-soft p-2.5 text-xs text-fg"
+          role="alert"
+        >
+          <AlertTriangle :size="14" class="mt-0.5 shrink-0 text-signal" />
+          <span>Kontras teks pada latar belakang rendah ({{ brandContrast }}:1, bawah WCAG AA 4.5:1). Pilih warna teks lebih gelap atau latar lebih cerah.</span>
+        </div>
+      </div>
+
+      <!-- Fonts + Live Sample -->
+      <div class="space-y-2.5">
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label class="label" for="bk-fh">Heading font</label>
+            <select id="bk-fh" v-model="form.brand.fonts.heading" class="input text-sm">
+              <option v-for="f in BRAND_FONT_IDS" :key="f" :value="f">{{ BRAND_FONTS[f].label }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="label" for="bk-fb">Body font</label>
+            <select id="bk-fb" v-model="form.brand.fonts.body" class="input text-sm">
+              <option v-for="f in BRAND_FONT_IDS" :key="f" :value="f">{{ BRAND_FONTS[f].label }}</option>
+            </select>
+          </div>
+        </div>
+        <div
+          class="rounded-xl border border-line p-4 space-y-1.5"
+          :style="{ backgroundColor: form.brand.colors.background, color: form.brand.colors.text }"
+        >
+          <span class="inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold" :style="{ backgroundColor: form.brand.colors.accent, color: form.brand.colors.secondary }">
+            {{ form.brand.style.toUpperCase() }}
+          </span>
+          <div class="text-lg font-bold" :style="{ fontFamily: BRAND_FONTS[form.brand.fonts.heading].cssFamily }">
+            Contoh Tajuk {{ form.project || project.name }}
+          </div>
+          <p class="text-xs opacity-85" :style="{ fontFamily: BRAND_FONTS[form.brand.fonts.body].cssFamily }">
+            Teks isi menggunakan {{ BRAND_FONTS[form.brand.fonts.body].label }} · kontras {{ brandContrast }}:1
+          </p>
+        </div>
+      </div>
+
+      <!-- Logo -->
+      <div class="space-y-2">
+        <span class="label">Logo</span>
+        <div class="flex flex-wrap items-center gap-3">
+          <img v-if="form.brand.logo_upload_id" :src="api.uploadUrl(form.brand.logo_upload_id)" alt="Brand logo" class="h-12 w-12 rounded-lg border border-line object-contain bg-surface-2 p-1" />
+          <label class="btn btn-sm min-h-9 cursor-pointer gap-1.5">
+            <LoaderCircle v-if="brandLogoBusy" :size="14" class="animate-spin" />
+            <Upload v-else :size="14" />
+            <span>{{ form.brand.logo_upload_id ? "Tukar logo" : "Muat naik logo" }}</span>
+            <input type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="uploadBrandLogo" />
+          </label>
+          <button v-if="form.brand.logo_upload_id" type="button" class="btn btn-sm min-h-9 text-danger" @click="form.brand.logo_upload_id = null">Buang</button>
+        </div>
+      </div>
+
+      <!-- Highlights (<= 12) -->
+      <div class="space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="label mb-0!">Highlights ({{ form.brand.highlights.length }}/12)</span>
+          <button type="button" class="btn btn-sm min-h-8 gap-1" :disabled="form.brand.highlights.length >= 12" @click="addHighlight">
+            <Plus :size="13" /> Tambah
+          </button>
+        </div>
+        <div v-if="form.brand.highlights.length" class="space-y-2">
+          <div v-for="(h, idx) in form.brand.highlights" :key="idx" class="flex items-center gap-2">
+            <div
+              class="h-9 w-9 rounded-full border-2 flex items-center justify-center shrink-0"
+              :style="{ background: `linear-gradient(150deg, ${form.brand.colors.primary}, ${form.brand.colors.secondary})`, borderColor: form.brand.colors.accent }"
+            >
+              <svg class="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" v-html="DESIGN_ICONS[h.icon] ?? DESIGN_ICONS.star" />
+            </div>
+            <input v-model="h.label" class="input h-9 text-xs flex-1" maxlength="30" placeholder="Label (cth. Harga)" />
+            <select v-model="h.icon" class="input h-9 text-xs w-32">
+              <option v-for="ic in DESIGN_ICON_NAMES" :key="ic" :value="ic">{{ ic }}</option>
+            </select>
+            <button type="button" class="btn btn-sm h-9 text-danger" @click="form.brand.highlights.splice(idx, 1)">
+              <Trash2 :size="13" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <template v-if="tab === 'brief' || tab === 'brand'" #footer>
       <p v-if="error" class="min-w-0 flex-1 truncate text-xs text-danger" :title="error">{{ error }}</p>
       <p v-else-if="saved" class="min-w-0 flex-1 text-xs font-semibold text-accent">Saved.</p>
       <button type="button" class="btn ml-auto" @click="emit('close')">Close</button>
-      <button form="brief-form" class="btn btn-primary shadow-sm" :disabled="busy">
+      <button :form="tab === 'brand' ? 'brand-form' : 'brief-form'" class="btn btn-primary shadow-sm" :disabled="busy">
         <LoaderCircle v-if="busy" :size="14" class="motion-safe:animate-spin" />
-        Save brief
+        {{ tab === 'brand' ? 'Save brand' : 'Save brief' }}
       </button>
     </template>
   </SidePanel>

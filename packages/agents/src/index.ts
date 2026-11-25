@@ -17,6 +17,12 @@ import { cikguTechAgent, techExplainerBmSkill } from "./explainer.ts";
 import { marketingAgent, marketingSchedule } from "./marketing.ts";
 import { pakGuardAgent, pakGuardSchedule } from "./pakGuard.ts";
 import { testerAgent, testerSchedule } from "./tester.ts";
+import {
+  SOCIAL_CAPTIONS_MULTI_SKILL,
+  SOCIAL_MANAGER_PROMPT,
+  socialManagerAgent,
+  socialManagerSchedule,
+} from "./socialManager.ts";
 
 export { echoAgent, ECHO_SYSTEM_PROMPT } from "./echo.ts";
 export { pakGuardAgent, PAK_GUARD_PROMPT } from "./pakGuard.ts";
@@ -36,6 +42,12 @@ export { tiktokPosterAgent, TIKTOK_POSTER_PROMPT } from "./tiktokPoster.ts";
 export { notulisAgent, NOTULIS_PROMPT } from "./notulis.ts";
 export { clipFactoryAgent, CLIP_FACTORY_PROMPT, CLIP_FACTORY_PLAYBOOK_SKILL } from "./clipFactory.ts";
 export { cikguTechAgent, techExplainerBmSkill } from "./explainer.ts";
+export {
+  socialManagerAgent,
+  socialManagerSchedule,
+  SOCIAL_MANAGER_PROMPT,
+  SOCIAL_CAPTIONS_MULTI_SKILL,
+} from "./socialManager.ts";
 
 export interface BuiltinAgent {
   agent: AgentInput;
@@ -78,6 +90,7 @@ export const BUILTIN_SKILLS: { name: string; content: string }[] = [
   { name: "clip-factory-playbook", content: CLIP_FACTORY_PLAYBOOK_SKILL },
   { name: "tech-explainer-bm", content: techExplainerBmSkill.content },
   { name: "beat-montage-bm", content: BEAT_MONTAGE_BM_SKILL },
+  { name: "social-captions-multi", content: SOCIAL_CAPTIONS_MULTI_SKILL },
 ];
 
 /** Seeded on first boot by slug; never overwrites owner edits. */
@@ -100,4 +113,5 @@ export const BUILTIN_AGENTS: BuiltinAgent[] = [
   clipFactoryAgent,
   { agent: cikguTechAgent, needsLlm: true },
   { agent: notulisAgent, needsLlm: true },
+  { agent: socialManagerAgent, needsLlm: true, schedules: (id) => [socialManagerSchedule(id)] },
 ];

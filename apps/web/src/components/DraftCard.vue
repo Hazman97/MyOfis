@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import { CalendarClock, Check, Copy, ExternalLink, LoaderCircle, ShieldCheck, TriangleAlert, X } from "lucide-vue-next";
-import type { ContentDraft, WebPost } from "@agent-office/shared";
+import { placementCheck, type ContentDraft, type WebPost } from "@agent-office/shared";
 import AgentAvatar from "./AgentAvatar.vue";
 import ConfirmButton from "./ConfirmButton.vue";
 import StatusBadge from "./StatusBadge.vue";
@@ -118,6 +118,15 @@ const factSheet = computed(() => {
   const list = meta?.fact_sheet;
   return Array.isArray(list) ? (list as { claim: string; value: string; source_url?: string; verified?: boolean }[]) : [];
 });
+const placementProblems = computed(() =>
+  placementCheck({
+    platform: props.draft.platform,
+    kind: props.draft.kind,
+    title: title.value,
+    body: body.value,
+    meta: props.draft.meta,
+  }),
+);
 const eventLine = computed(() => {
   const m = props.draft.meta;
   return m ? [m.event_date, m.event_time, m.location].filter(Boolean).join(" · ") : "";
@@ -243,6 +252,14 @@ async function decide(decision: "approve" | "reject") {
       <span v-if="projectName" class="text-xs font-medium text-muted">· {{ projectName }}</span>
       <span class="ml-auto font-mono text-[11px] text-faint">{{ fmtDateTime(draft.created_at) }}</span>
     </header>
+    <div v-if="placementProblems.length" class="mx-4 mt-3 rounded-lg border border-signal/40 bg-signal-soft px-3 py-2 text-xs text-fg space-y-0.5" role="alert">
+      <div class="font-semibold text-signal flex items-center gap-1.5">
+        <TriangleAlert :size="13" /> Semakan placement ({{ draft.meta?.placement ?? draft.platform }})
+      </div>
+      <ul class="list-disc pl-4 space-y-0.5 text-muted">
+        <li v-for="(p, idx) in placementProblems" :key="idx">{{ p }}</li>
+      </ul>
+    </div>
     <div v-if="showAccount" class="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface-2/40 px-3 py-2 text-xs">
       <label :for="`da-${draft.id}`" class="font-medium text-muted flex items-center gap-1.5 shrink-0">
         <span class="size-1.5 rounded-full bg-accent" /> Posts to:
@@ -316,8 +333,16 @@ async function decide(decision: "approve" | "reject") {
         <button type="button" class="btn btn-sm" @click="openInOpenCut(draft.meta.video_upload_id, `${draft.title}.mp4`)">Edit in OpenCut</button>
       </div>
     </div>
-    <div v-else-if="!isWebPost && draft.meta?.cover_upload_id" class="px-4 pt-2.5">
-      <img :src="api.uploadUrl(draft.meta.cover_upload_id)" alt="Photo for this caption" class="max-h-52 w-auto max-w-full rounded-lg border border-line object-cover shadow-sm" />
+    <div v-else-if="!isWebPost && (draft.meta?.images?.length ?? 0) > 1" class="px-4 pt-2.5 space-y-1.5">
+      <div class="flex gap-2 overflow-x-auto snap-x snap-mandatory pb-1" aria-label="Carousel images">
+        <div v-for="(imgId, idx) in draft.meta!.images" :key="imgId + idx" class="relative shrink-0 snap-start">
+          <img :src="api.uploadUrl(imgId)" :alt="`Slide ${idx + 1}`" class="h-52 w-auto rounded-lg border border-line object-cover shadow-sm" />
+          <span class="absolute bottom-1.5 right-1.5 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-mono text-white">{{ idx + 1 }}/{{ draft.meta!.images.length }}</span>
+        </div>
+      </div>
+    </div>
+    <div v-else-if="!isWebPost && (draft.meta?.images?.[0] || draft.meta?.cover_upload_id)" class="px-4 pt-2.5">
+      <img :src="api.uploadUrl((draft.meta?.images?.[0] || draft.meta?.cover_upload_id)!)" alt="Photo for this caption" class="max-h-52 w-auto max-w-full rounded-lg border border-line object-cover shadow-sm" />
     </div>
     <!-- Fact Sheet (Task 029: Lembaran Fakta) -->
     <div v-if="factSheet.length || draft.meta?.unverified" class="mx-4 mt-3 rounded-lg border border-line bg-surface-2/40 p-3 text-xs">

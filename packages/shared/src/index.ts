@@ -22,3 +22,6 @@ export * from "./explainerIcons.ts";
 export * from "./motionExplainer.ts";
 export * from "./beats.ts";
 export * from "./montage.ts";
+export * from "./design.ts";
+export * from "./comfy.ts";
+export * from "./social.ts";

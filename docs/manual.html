@@ -2093,10 +2093,11 @@
 </section>
 
 <section id="video-hd">
-  <h2><span class="n">39</span><span>Video HD (TikTok HD · WhatsApp HD · WhatsApp Status)</span></h2>
-  <p class="lede">Satu halaman di menu <b>Work → Video HD</b> (<code>/video-hd</code>) untuk menyiapkan video akhir ke <b>TikTok HD</b> (1080×1920), <b>WhatsApp HD</b> (kekal nisbah sisi, sisi panjang ≤ 1280, ~2.5 Mbit/s), atau <b>WhatsApp Status</b> (720×1280). Tiada AI, tiada token — diproses terus di PC runner awak.</p>
+  <h2><span class="n">39</span><span>Video HD (Semua Platform — TikTok · IG · FB · Shorts · Threads · WhatsApp)</span></h2>
+  <p class="lede">Satu halaman di menu <b>Work → Video HD</b> (<code>/video-hd</code>) untuk menyiapkan video akhir ke semua platform media sosial sekaligus. Platform yang berkongsi format sama (contoh: TikTok, IG Reels, FB Reels, YouTube Shorts, Threads → 1080×1920) hanya menghasilkan <b>satu fail</b> yang dilabelkan dengan platform yang diliputinya. Tiada AI, tiada token — diproses terus di PC runner awak.</p>
   <ul>
-    <li><b>Pilih banyak sasaran serentak:</b> Tandakan satu atau lebih cip sasaran (TikTok HD, WhatsApp HD, WhatsApp Status) untuk muat naik yang sama.</li>
+    <li><b>Format keluaran:</b> <b>Menegak HD</b> (1080×1920 untuk TikTok, Reels, Shorts, Threads), <b>Story</b> (1080×1920 ≤ 25 Mbit/s; klip > 60 saat dipecah automatik kepada bahagian ≤ 60 saat), <b>Feed 4:5</b> (1080×1350), <b>WhatsApp HD</b> (kekal nisbah sisi ≤ 1280, ~2.5 Mbit/s), dan <b>WhatsApp Status</b> (720×1280).</li>
+    <li><b>Pilih banyak platform serentak:</b> Tandakan cip mengikut platform atau klik <b>Semua platform</b>. Baris pelan di atas butang muat naik tunjuk bilangan fail sebenar yang akan dibuat.</li>
     <li><b>Auto vs Keep as is:</b> Jika video sudah menepati spec sasaran, fail hanya disalin (remux) tanpa turun kualiti; jika tidak, ia di-encode sekali mengikut spec sasaran.</li>
     <li><b>Tip WhatsApp kualiti 100% asal:</b> WhatsApp sentiasa memampatkan video chat/Status; untuk kualiti asal tanpa kompressi, hantar fail asal sebagai <b>Document</b>.</li>
   </ul>
@@ -2104,10 +2105,30 @@
   <h3>Halaman awam untuk orang lain (<code>/video-hd/public</code>)</h3>
   <p>Sesiapa sahaja boleh guna Video HD tanpa login di <code>https://myofis.bijokdev.com/video-hd/public</code>. Kerja diproses di PC awak, tetapi semuanya berasingan daripada data awak: storan sendiri (<code>data/public-hd</code>), DB sendiri, dan tiada apa-apa muncul di pejabat, Board, Drafts atau Telegram (kecuali ringkasan harian).</p>
   <ul>
-    <li><b>Hidupkan:</b> Settings → Integrations → <b>Public Video HD</b> → Aktifkan. Bila dimatikan, halaman tulis "Ditutup sementara". Kad yang sama tunjuk had, kiraan hari ini, storan, dan butang <b>Padam semua sekarang</b>.</li>
-    <li><b>Pelawat:</b> pilih video → sasaran → mod → tunggu giliran. Setiap hasil ada butang <b>▶ Tengok</b> (main terus dalam halaman, boleh skip) dan <b>Muat Turun</b>.</li>
-    <li><b>Had (boleh ubah):</b> 500 MB, 10 minit, 3 video sejam / 6 sehari setiap IP, 30 sehari semua orang, giliran 5, storan 20 GB. Video dipadam selepas 24 jam.</li>
+    <li><b>Hidupkan:</b> Settings → Integrations → <b>Public Video HD</b> → Aktifkan. Bila dimatikan, halaman tulis "Ditutup sementara". Kad yang sama tunjuk had (termasuk <b>Files / job</b>, lalai 4), kiraan hari ini, storan, dan butang <b>Padam semua sekarang</b>.</li>
+    <li><b>Pelawat:</b> pilih video → platform → mod → tunggu giliran. Setiap hasil tunjuk cip platform yang diliputi (bahagian Story disenaraikan mengikut turutan), butang <b>▶ Tengok</b> (main terus dalam halaman) dan <b>Muat Turun</b>.</li>
+    <li><b>Had (boleh ubah):</b> 500 MB, 10 minit, 4 fail setiap muat naik, 3 video sejam / 6 sehari setiap IP, 30 sehari semua orang, giliran 5, storan 20 GB. Video dipadam selepas 24 jam.</li>
     <li><b>Cloudflare:</b> buat app Access <b>baru</b> jenis Bypass untuk dua laluan sahaja: <code>video-hd/public</code> dan <code>api/public/hd</code>. Jangan tambah dalam app MyOfis yang sedia ada. Langkah penuh: <code>docs/public-video-hd.md</code>.</li>
+  </ul>
+</section>
+
+<section id="brand-kit-planner">
+  <h2><span class="n">40</span><span>Brand Kit, Templat Grafik &amp; Grid Planner</span></h2>
+  <p class="lede">Tetapkan identiti visual satu jenama bagi setiap projek (warna, fon OFL terbina, logo, gaya, handle &amp; kulit Highlight) di <b>Projects → Brand</b>, jana grafik tepat ejaan melalui alat <code>design_render</code> (tanpa lukisan AI), dan susun suapan Instagram 3-lajur di <b>Work → Grid Planner</b> (<code>/planner</code>).</p>
+  <ul>
+    <li><b>Brand Kit (Projects → Brand):</b> pilih 5 warna heks dengan amaran kontras WCAG AA (&lt; 4.5:1), pilih fon tajuk &amp; isi daripada 7 keluarga OFL yang dibenamkan luar talian (tiada pautan luar), muat naik logo, dan senaraikan sehingga 12 Highlight (label + ikon SVG).</li>
+    <li><b>Templat Grafik (<code>design_render</code>):</b> 9 templat tulen — <code>quote</code>, <code>tip_carousel</code> (kulit + hingga 8 slaid + CTA), <code>list_top</code>, <code>before_after</code>, <code>promo</code>, <code>announcement</code>, <code>testimonial</code>, <code>story_frame</code> (zon selamat 250 px atas / 340 px bawah), dan <code>highlight_cover</code> (1080×1920). Saiz <code>post_4x5</code> (1080×1350), <code>square</code> (1080×1080), dan <code>story</code> (1080×1920).</li>
+    <li><b>Grid Planner (<code>/planner</code>):</b> pratonton profil ala telefon dengan barisan Highlight (klik mana-mana bulatan atau <b>Muat turun semua Highlight PNG</b> untuk dimuat naik dalam aplikasi Instagram), grid 3-lajur (Pending → Berjadual → Posted), seret-dan-lepas jubin berjadual untuk tukar masa siaran, serta lorong <b>Story minggu ini</b>.</li>
+  </ul>
+</section>
+
+<section id="design-studio-ai">
+  <h2><span class="n">41</span><span>Gambar AI Tempatan (ComfyUI) &amp; Design Studio</span></h2>
+  <p class="lede">Jana gambar dan latar belakang secara percuma pada GPU PC sendiri (<b>ComfyUI + Z-Image Turbo</b>) melalui alat <code>image_generate</code>, dan gubah grafik dengan pratonton langsung di <b>Work → Design Studio</b> (<code>/design</code>). Teks sentiasa datang dari templat Brand Kit supaya ejaan tepat.</p>
+  <ul>
+    <li><b>Atas permintaan sahaja:</b> ComfyUI hanya hidup bila ada permintaan gambar, kemudian memanggil <code>/free</code> dan berhenti sendiri selepas 5 minit terbiar.</li>
+    <li><b>Pelindung Game (Game Guard):</b> sebelum menjana gambar, runner menyemak <code>nvidia-smi</code>; jika proses lain guna &gt; 2500 MB VRAM atau &gt; 60% GPU, ia menunggu sehingga game selesai. Satu tugasan GPU sahaja berjalan pada satu masa (dikongsi bersama Whisper dan NVENC).</li>
+    <li><b>Suis Jeda dari telefon:</b> Settings → Integrations → <b>Local AI Images (ComfyUI)</b> untuk menjeda atau menetapkan had harian (lalai 60/hari). Rujukan penuh: <code>docs/ai-images.md</code>.</li>
   </ul>
 </section>
 
@@ -2794,6 +2815,17 @@
     <span class="see-also-label">Lihat juga:</span>
     <a href="#backup" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg> 29. Backup & restore</a> <a href="#runners" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg> 27. Runners & PC lain</a> <a href="#masalah" class="see-also-pill"><svg class="icon" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg> 34. Kalau ada masalah</a>
   </div>
+</section>
+<section id="pengurus-sosial">
+  <h2><span class="n">42</span><span>Pengurus Sosial &amp; Siaran Pelbagai Platform</span></h2>
+  <p>Ejen <b>Pengurus Sosial</b> (<code>pengurus-sosial</code>) merancang kandungan mingguan, membina grafik Brand Kit &amp; gambar AI, menulis kapsyen khusus bagi setiap platform, dan menghantarnya melalui <b>Zernio</b> selepas anda meluluskan.</p>
+  <ol class="steps">
+    <li>Sambungkan akaun TikTok, Instagram, Facebook, Threads, dan YouTube dalam Zernio, kemudian masukkan API key di <b>Settings &rarr; Social accounts</b>.</li>
+    <li>Pilih akaun lalai bagi setiap projek di bahagian <b>Akaun lalai mengikut projek</b>. Akaun yang dimatikan (off) tidak pernah ditukar kepada akaun lain.</li>
+    <li>Setiap draf disemak dengan <code>placementCheck</code> (Story = tepat 1 gambar atau 1 video &le; 60 s; Reels/Shorts = video menegak; Carousel = 2&ndash;10 gambar; YouTube Shorts = tajuk wajib; Threads &le; 500 aksara).</li>
+    <li>Draf dengan <code>set_id</code> yang sama dipaparkan sebagai <b>satu kad Set Pos</b> dalam <b>Drafts</b> (tab setiap platform, <b>Lulus semua</b>, jadual satu masa) dan satu kad di <b>Telegram</b>.</li>
+    <li>Jadual mingguan <b>Pelan Kandungan Mingguan</b> (Ahad 20:00 KL, <code>content_week</code>) dimatikan secara lalai — aktifkan apabila sedia. Untuk Instagram Highlights, muat turun kulit daripada <b>Grid Planner</b> dan tetapkan terus dalam aplikasi Instagram (tiada API).</li>
+  </ol>
 </section>
 <section id="masalah">
   <h2><span class="n">34</span><svg class="icon sec-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg><span>Kalau ada masalah</span></h2>

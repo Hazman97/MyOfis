@@ -5,7 +5,7 @@ import { z } from "zod";
  * faststart, which TikTok, Instagram, YouTube and Facebook all accept without complaint; the
  * bitrate cap is high enough that the platform's own re-encode starts from a clean picture.
  */
-export const VideoPresetId = z.enum(["tiktok_fhd", "reels", "youtube_shorts", "youtube_1080p", "square", "whatsapp_hd", "whatsapp_v"]);
+export const VideoPresetId = z.enum(["tiktok_fhd", "reels", "youtube_shorts", "youtube_1080p", "feed_4x5", "square", "whatsapp_hd", "whatsapp_v"]);
 export type VideoPresetId = z.infer<typeof VideoPresetId>;
 
 export interface VideoPreset {
@@ -26,6 +26,7 @@ export const VIDEO_PRESETS: Record<VideoPresetId, VideoPreset> = {
   reels: { label: "Instagram / Facebook Reels 1080×1920 (9:16)", width: 1080, height: 1920, max_seconds: 180, max_mbps: 12, audio_kbps: 192 },
   youtube_shorts: { label: "YouTube Shorts 1080×1920 (9:16)", width: 1080, height: 1920, max_seconds: 180, max_mbps: 16, audio_kbps: 192 },
   youtube_1080p: { label: "YouTube 1920×1080 (16:9)", width: 1920, height: 1080, max_seconds: 4 * 3600, max_mbps: 16, audio_kbps: 192 },
+  feed_4x5: { label: "Feed 4:5 1080×1350 (4:5)", width: 1080, height: 1350, max_seconds: 600, max_mbps: 12, audio_kbps: 192 },
   square: { label: "Square 1080×1080 (1:1)", width: 1080, height: 1080, max_seconds: 600, max_mbps: 12, audio_kbps: 192 },
   whatsapp_hd: { label: "WhatsApp HD (keep aspect ≤1280)", width: 1280, height: 1280, keep_aspect: true, max_seconds: 3600, max_mbps: 2.5, audio_kbps: 128 },
   whatsapp_v: { label: "WhatsApp Status 720×1280 (9:16)", width: 720, height: 1280, max_seconds: 600, max_mbps: 2.5, audio_kbps: 128 },
@@ -82,7 +83,7 @@ export function mediaTypeFromName(name: string): string | null {
  * Jobs the runner does without the AI (no provider, key or tokens): the one tool each may use.
  * video_render = the Video Studio's "Render again"; video_transcribe = its "Transcribe".
  */
-export const DIRECT_JOBS: Record<string, string> = { video_render: "video_edit", video_transcribe: "video_transcribe", tiktok_hd: "video_tiktok_hd", video_hd: "video_hd" };
+export const DIRECT_JOBS: Record<string, string> = { video_render: "video_edit", video_transcribe: "video_transcribe", tiktok_hd: "video_tiktok_hd", video_hd: "video_hd", design_render: "design_render", image_generate: "image_generate" };
 
 // ---------------------------------------------------------------- TikTok HD (owner request 2026-10-20, like zilemmethod.com)
 
@@ -120,7 +121,7 @@ export interface TikTokHdPlan {
   fit: "crop" | "blur";
 }
 
-export const HdTarget = z.enum(["tiktok", "whatsapp", "whatsapp_status"]);
+export const HdTarget = z.enum(["vertical", "story", "feed_4x5", "square", "tiktok", "whatsapp", "whatsapp_status"]);
 export type HdTarget = z.infer<typeof HdTarget>;
 
 export interface HdTargetSpec {
@@ -140,6 +141,11 @@ export const TIKTOK_MAX_SECONDS = 600;
 export const TIKTOK_HD_MAX_MB = 280;
 /** Above this, TikTok's re-encode throws most of it away anyway; re-encoding first keeps control. */
 export const TIKTOK_HD_MAX_MBPS = 30;
+/** IG/FB Story part length limit (seconds) and peak bitrate cap (Mbit/s). */
+export const STORY_MAX_SECONDS = 60;
+export const STORY_MAX_MBPS = 25;
+/** IG/FB/Threads feed video bitrate cap (Mbit/s). */
+export const FEED_MAX_MBPS = 25;
 
 /** WhatsApp HD re-encodes to at most 720p (long edge 1280); unverified third-party source (2026-11-18). */
 export const WA_MAX_EDGE = 1280;
@@ -151,6 +157,50 @@ export const WA_STATUS_MAX_SECONDS = 60;
 export const WA_MAX_MB = 64;
 
 export const HD_TARGETS: Record<HdTarget, HdTargetSpec> = {
+  vertical: {
+    label: "Menegak HD",
+    width: 1080,
+    height: 1920,
+    keep_aspect: false,
+    fps: "30|60",
+    max_mbps: TIKTOK_HD_MAX_MBPS,
+    audio_kbps: 192,
+    max_seconds: TIKTOK_MAX_SECONDS,
+    soft_max_mb: TIKTOK_HD_MAX_MB,
+  },
+  story: {
+    label: "Story",
+    width: 1080,
+    height: 1920,
+    keep_aspect: false,
+    fps: "30|60",
+    max_mbps: STORY_MAX_MBPS,
+    audio_kbps: 192,
+    max_seconds: STORY_MAX_SECONDS,
+    soft_max_mb: 100,
+  },
+  feed_4x5: {
+    label: "Feed 4:5",
+    width: 1080,
+    height: 1350,
+    keep_aspect: false,
+    fps: "30|60",
+    max_mbps: FEED_MAX_MBPS,
+    audio_kbps: 192,
+    max_seconds: TIKTOK_MAX_SECONDS,
+    soft_max_mb: TIKTOK_HD_MAX_MB,
+  },
+  square: {
+    label: "Segi Empat 1:1",
+    width: 1080,
+    height: 1080,
+    keep_aspect: false,
+    fps: "30|60",
+    max_mbps: FEED_MAX_MBPS,
+    audio_kbps: 192,
+    max_seconds: TIKTOK_MAX_SECONDS,
+    soft_max_mb: TIKTOK_HD_MAX_MB,
+  },
   tiktok: {
     label: "TikTok HD",
     width: 1080,
@@ -185,6 +235,120 @@ export const HD_TARGETS: Record<HdTarget, HdTargetSpec> = {
   },
 };
 
+export const SocialPlacement = z.enum([
+  "tiktok",
+  "ig_reels",
+  "ig_story",
+  "ig_feed",
+  "fb_reels",
+  "fb_story",
+  "fb_feed",
+  "yt_shorts",
+  "threads",
+  "whatsapp",
+  "whatsapp_status",
+]);
+export type SocialPlacement = z.infer<typeof SocialPlacement>;
+
+/** Single source of truth: which output format file serves each social placement. */
+export const PLACEMENT_TARGET: Record<SocialPlacement, HdTarget> = {
+  tiktok: "vertical",
+  ig_reels: "vertical",
+  fb_reels: "vertical",
+  yt_shorts: "vertical",
+  threads: "vertical",
+  ig_story: "story",
+  fb_story: "story",
+  ig_feed: "feed_4x5",
+  fb_feed: "feed_4x5",
+  whatsapp: "whatsapp",
+  whatsapp_status: "whatsapp_status",
+};
+
+export interface SocialPlacementInfo {
+  id: SocialPlacement;
+  platform: "TikTok" | "Instagram" | "Facebook" | "YouTube" | "Threads" | "WhatsApp";
+  label: string;
+  short: string;
+  target: HdTarget;
+}
+
+export const SOCIAL_PLACEMENTS: SocialPlacementInfo[] = [
+  { id: "tiktok", platform: "TikTok", label: "TikTok", short: "TikTok", target: PLACEMENT_TARGET.tiktok },
+  { id: "ig_reels", platform: "Instagram", label: "IG Reels", short: "Reels", target: PLACEMENT_TARGET.ig_reels },
+  { id: "ig_story", platform: "Instagram", label: "IG Story", short: "IG Story", target: PLACEMENT_TARGET.ig_story },
+  { id: "ig_feed", platform: "Instagram", label: "IG Feed 4:5", short: "IG Feed", target: PLACEMENT_TARGET.ig_feed },
+  { id: "fb_reels", platform: "Facebook", label: "FB Reels", short: "FB Reels", target: PLACEMENT_TARGET.fb_reels },
+  { id: "fb_story", platform: "Facebook", label: "FB Story", short: "FB Story", target: PLACEMENT_TARGET.fb_story },
+  { id: "fb_feed", platform: "Facebook", label: "FB Feed 4:5", short: "FB Feed", target: PLACEMENT_TARGET.fb_feed },
+  { id: "yt_shorts", platform: "YouTube", label: "YouTube Shorts", short: "Shorts", target: PLACEMENT_TARGET.yt_shorts },
+  { id: "threads", platform: "Threads", label: "Threads", short: "Threads", target: PLACEMENT_TARGET.threads },
+  { id: "whatsapp", platform: "WhatsApp", label: "WhatsApp HD", short: "WhatsApp HD", target: PLACEMENT_TARGET.whatsapp },
+  { id: "whatsapp_status", platform: "WhatsApp", label: "WhatsApp Status", short: "WA Status", target: PLACEMENT_TARGET.whatsapp_status },
+];
+
+export const PLACEMENT_INFO: Record<SocialPlacement, SocialPlacementInfo> = Object.fromEntries(
+  SOCIAL_PLACEMENTS.map((p) => [p.id, p]),
+) as Record<SocialPlacement, SocialPlacementInfo>;
+
+export interface HdOutputGroup {
+  target: HdTarget;
+  covers: SocialPlacement[];
+}
+
+/** Merge social placements into the minimal list of distinct output files to render. Pure. */
+export function hdOutputsFor(placements: SocialPlacement[]): HdOutputGroup[] {
+  const byTarget = new Map<HdTarget, SocialPlacement[]>();
+  const seen = new Set<SocialPlacement>();
+  for (const p of placements) {
+    if (seen.has(p)) continue;
+    seen.add(p);
+    const target = PLACEMENT_TARGET[p];
+    const list = byTarget.get(target);
+    if (list) list.push(p);
+    else byTarget.set(target, [p]);
+  }
+  return [...byTarget.entries()].map(([target, covers]) => ({ target, covers }));
+}
+
+/**
+ * Split a Story video longer than `maxPart` (60 s) into consecutive parts of ≤ `maxPart` seconds.
+ * When a cut point (scene change or silence) lies within `windowSec` (5 s) before the limit, cut there;
+ * otherwise cut right at `start + maxPart`. Pure.
+ */
+export function storyParts(
+  duration: number,
+  cutPoints: number[] = [],
+  maxPart = STORY_MAX_SECONDS,
+  windowSec = 5,
+): { start: number; end: number }[] {
+  const total = Math.round(duration * 1000) / 1000;
+  if (total <= 0) return [];
+  if (total <= maxPart) return [{ start: 0, end: total }];
+  const sorted = [...cutPoints].filter((c) => Number.isFinite(c) && c > 0 && c < total).sort((a, b) => a - b);
+  const parts: { start: number; end: number }[] = [];
+  let start = 0;
+  while (total - start > maxPart) {
+    const limit = start + maxPart;
+    const minCut = Math.max(start + 1, limit - windowSec);
+    let chosen: number | null = null;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const c = sorted[i]!;
+      if (c <= limit && c >= minCut) {
+        chosen = c;
+        break;
+      }
+    }
+    const end = Math.round((chosen ?? limit) * 1000) / 1000;
+    parts.push({ start, end });
+    start = end;
+  }
+  if (total - start > 0.05) {
+    parts.push({ start, end: total });
+  }
+  return parts;
+}
+
 export interface HdPlan extends TikTokHdPlan {
   /** Non-fatal warnings (e.g. Status > 60 s split notice, WhatsApp > 64 MB soft size notice). */
   warnings: string[];
@@ -194,22 +358,48 @@ const near = (a: number, b: number) => Math.abs(a - b) <= 0.5;
 
 export function hdPlan(p: TikTokHdFacts, target: HdTarget = "tiktok", mode: TikTokHdMode = "auto"): HdPlan {
   const warnings: string[] = [];
-  if (target === "tiktok") {
-    if (p.duration > TIKTOK_MAX_SECONDS) throw new Error(`the video is ${Math.round(p.duration)} s; TikTok takes at most ${TIKTOK_MAX_SECONDS} s`);
+  const spec = HD_TARGETS[target];
+  if (target === "tiktok" || target === "vertical") {
+    const who = target === "tiktok" ? "TikTok" : "Menegak HD";
+    if (p.duration > TIKTOK_MAX_SECONDS) throw new Error(`the video is ${Math.round(p.duration)} s; ${who} takes at most ${TIKTOK_MAX_SECONDS} s`);
     const fps: 30 | 60 = p.fps >= 45 ? 60 : 30;
     const ratio = p.width / p.height;
     // close to 9:16 → fill the frame (a sliver is cut); wide or square → whole picture on a blurred copy
     const fit = Math.abs(ratio - 9 / 16) < 0.04 ? "crop" : "blur";
     const reasons: string[] = [];
-    if (!(p.width === 1080 && p.height === 1920)) reasons.push(`size ${p.width}×${p.height}, TikTok plays 1080×1920`);
-    if (!near(p.fps, 30) && !near(p.fps, 60) && !near(p.fps, 29.97) && !near(p.fps, 59.94)) reasons.push(`${p.fps} fps, TikTok wants 30 or 60`);
+    if (!(p.width === 1080 && p.height === 1920)) reasons.push(`size ${p.width}×${p.height}, ${who} plays 1080×1920`);
+    if (!near(p.fps, 30) && !near(p.fps, 60) && !near(p.fps, 29.97) && !near(p.fps, 59.94)) reasons.push(`${p.fps} fps, ${who} wants 30 or 60`);
     if (p.vfr) reasons.push("variable frame rate (phone recording)");
-    if (!["h264", "hevc"].includes(p.video_codec)) reasons.push(`codec ${p.video_codec}, TikTok wants H.264 or HEVC`);
-    if (p.pix_fmt && p.pix_fmt !== "unknown" && p.pix_fmt !== "yuv420p" && p.pix_fmt !== "yuvj420p") reasons.push(`colour format ${p.pix_fmt} (10-bit/HDR), TikTok wants 8-bit`);
-    if (p.audio_codec && p.audio_codec !== "aac") reasons.push(`sound ${p.audio_codec}, TikTok wants AAC`);
+    if (!["h264", "hevc"].includes(p.video_codec)) reasons.push(`codec ${p.video_codec}, ${who} wants H.264 or HEVC`);
+    if (p.pix_fmt && p.pix_fmt !== "unknown" && p.pix_fmt !== "yuv420p" && p.pix_fmt !== "yuvj420p") reasons.push(`colour format ${p.pix_fmt} (10-bit/HDR), ${who} wants 8-bit`);
+    if (p.audio_codec && p.audio_codec !== "aac") reasons.push(`sound ${p.audio_codec}, ${who} wants AAC`);
     if (p.rotation) reasons.push(`rotated ${p.rotation}° by metadata`);
-    if ((p.mbps ?? 0) > TIKTOK_HD_MAX_MBPS) reasons.push(`${p.mbps} Mbit/s is more than TikTok keeps`);
-    if (p.size_bytes > TIKTOK_HD_MAX_MB * 1024 ** 2) reasons.push(`${Math.round(p.size_bytes / 1024 ** 2)} MB, TikTok compresses big files harder`);
+    if ((p.mbps ?? 0) > TIKTOK_HD_MAX_MBPS) reasons.push(`${p.mbps} Mbit/s is more than ${who} keeps`);
+    if (p.size_bytes > TIKTOK_HD_MAX_MB * 1024 ** 2) reasons.push(`${Math.round(p.size_bytes / 1024 ** 2)} MB, ${who} compresses big files harder`);
+    if (mode === "remux") return { mode: "remux", reasons: [], fps, fit, warnings };
+    if (mode === "reencode") return { mode: "reencode", reasons: reasons.length ? reasons : ["re-encode asked for"], fps, fit, warnings };
+    return { mode: reasons.length ? "reencode" : "remux", reasons, fps, fit, warnings };
+  }
+
+  if (target === "story" || target === "feed_4x5" || target === "square") {
+    const fps: 30 | 60 = p.fps >= 45 ? 60 : 30;
+    const ratio = p.width / p.height;
+    const targetRatio = spec.width / spec.height;
+    const tol = target === "story" ? 0.04 : 0.05;
+    const fit: "crop" | "blur" = Math.abs(ratio - targetRatio) < tol ? "crop" : "blur";
+    const reasons: string[] = [];
+    if (!(p.width === spec.width && p.height === spec.height)) reasons.push(`size ${p.width}×${p.height}, ${spec.label} plays ${spec.width}×${spec.height}`);
+    if (!near(p.fps, 30) && !near(p.fps, 60) && !near(p.fps, 29.97) && !near(p.fps, 59.94)) reasons.push(`${p.fps} fps, ${spec.label} wants 30 or 60`);
+    if (p.vfr) reasons.push("variable frame rate (phone recording)");
+    if (!["h264", "hevc"].includes(p.video_codec)) reasons.push(`codec ${p.video_codec}, ${spec.label} wants H.264 or HEVC`);
+    if (p.pix_fmt && p.pix_fmt !== "unknown" && p.pix_fmt !== "yuv420p" && p.pix_fmt !== "yuvj420p") reasons.push(`colour format ${p.pix_fmt} (10-bit/HDR), ${spec.label} wants 8-bit`);
+    if (p.audio_codec && p.audio_codec !== "aac") reasons.push(`sound ${p.audio_codec}, ${spec.label} wants AAC`);
+    if (p.rotation) reasons.push(`rotated ${p.rotation}° by metadata`);
+    if ((p.mbps ?? 0) > spec.max_mbps) reasons.push(`${p.mbps} Mbit/s is above ${spec.label} cap (${spec.max_mbps} Mbit/s)`);
+    if (target === "story" && p.duration > STORY_MAX_SECONDS) {
+      const parts = storyParts(p.duration).length;
+      warnings.push(`${Math.round(p.duration)} s melebihi ${STORY_MAX_SECONDS} s; dipecah kepada ${parts} bahagian`);
+    }
     if (mode === "remux") return { mode: "remux", reasons: [], fps, fit, warnings };
     if (mode === "reencode") return { mode: "reencode", reasons: reasons.length ? reasons : ["re-encode asked for"], fps, fit, warnings };
     return { mode: reasons.length ? "reencode" : "remux", reasons, fps, fit, warnings };
@@ -421,6 +611,7 @@ export const PublicHdSettingsSchema = z.object({
   per_ip_day: z.number().int().min(1).max(500).default(6),
   daily_total: z.number().int().min(1).max(5000).default(30),
   max_queue: z.number().int().min(1).max(50).default(5),
+  max_files: z.number().int().min(1).max(20).default(4),
   storage_cap_gb: z.number().min(1).max(500).default(20),
   retention_hours: z.number().int().min(1).max(168).default(24),
 });
@@ -430,6 +621,11 @@ export const PublicHdSettingsInput = PublicHdSettingsSchema.partial();
 
 export interface PublicHdTargetResult {
   target: HdTarget;
+  /** Distinct output file key (e.g. "vertical", "story_1", "story_2", "whatsapp"). */
+  key?: string;
+  covers?: SocialPlacement[];
+  part?: number;
+  parts?: number;
   mode: "remux" | "reencode";
   file: string;
   size_bytes: number;

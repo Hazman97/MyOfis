@@ -265,7 +265,7 @@ export function startHub(
   const publishTimer = setInterval(() => {
     if (publishing) return;
     publishing = true;
-    hub.social.resolveTikTokLinks().catch(() => {});
+    hub.social.resolvePendingLinks().catch(() => {});
     hub
       .publishDue()
       .then((done) =>

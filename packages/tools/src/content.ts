@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DraftKind, FeatureNoteInput, Platform, SelfCheck, WebPost, type ProjectContext } from "@agent-office/shared";
+import { DraftKind, DraftPlacement, FeatureNoteInput, Platform, SelfCheck, WebPost, placementCheck, type ProjectContext } from "@agent-office/shared";
 import { ToolDenied, defineTool, type ToolContext } from "./types.ts";
 
 /**
@@ -134,7 +134,11 @@ export const saveDraftTool = defineTool({
     body: z.string().min(1).max(20_000).describe("The full draft, ready to paste"),
     self_check: SelfCheck,
     cover_photo: z.number().int().min(1).max(10).optional().describe("A photo the owner sent (1 = first file) to post with this caption, e.g. on Facebook"),
+    images: z.array(z.string().max(64)).max(10).optional().describe("Image upload ids rendered by design_render (or attached), in carousel order"),
     video: z.string().max(64).optional().describe('A video to post with this caption: a video_id from video_edit, "last" (the newest video_edit render), or the id of a video the owner sent'),
+    placement: DraftPlacement.optional().describe("Social placement: tiktok, ig_feed, ig_carousel, ig_reels, ig_story, fb_feed, fb_reels, fb_story, threads, yt_shorts"),
+    set_id: z.string().max(64).optional().describe("Group ID shared across all platform drafts of one post idea"),
+    proposed_publish_at: z.string().max(40).optional().describe("Optional proposed publish ISO timestamp (e.g. from content_week)"),
   }),
   risk: () => "safe",
   describe: (i) => `save a ${i.platform} ${i.kind} draft: ${i.title}`,
@@ -160,14 +164,23 @@ export const saveDraftTool = defineTool({
       if (rv?.fact_sheet?.length) factSheet = rv.fact_sheet;
       if (rv?.unverified) unverified = true;
     }
-    if (cover || video) {
+    const images = i.images?.length ? i.images : [];
+    if (cover || video || images.length || i.placement || i.set_id || i.proposed_publish_at) {
       meta = WebPost.parse({
         post_type: "social",
-        cover_upload_id: cover,
+        cover_upload_id: cover ?? (images[0] ?? null),
         video_upload_id: video,
+        images,
+        ...(i.placement ? { placement: i.placement } : {}),
+        ...(i.set_id ? { set_id: i.set_id } : {}),
+        ...(i.proposed_publish_at ? { proposed_publish_at: i.proposed_publish_at } : {}),
         ...(factSheet ? { fact_sheet: factSheet } : {}),
         ...(unverified ? { unverified } : {}),
       });
+    }
+    const problems = placementCheck({ platform: i.platform, kind: i.kind, title: i.title, body: i.body, meta });
+    if (problems.length) {
+      throw new ToolDenied(`Draft tidak memenuhi syarat placement: ${problems.join(" ")}`);
     }
     const ack = await ctx.saveDraft({ project_id: p.id, platform: i.platform, kind: i.kind, title: i.title, body: i.body, self_check: i.self_check, ...(meta ? { meta } : {}) });
     if (ack && !ack.ok) throw new ToolDenied(`hub refused draft: ${ack.error || "unknown error"}`);

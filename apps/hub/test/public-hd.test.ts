@@ -325,6 +325,7 @@ describe("Task 038: Public Video HD (/video-hd/public)", () => {
         per_ip_day: 20,
         daily_total: 50,
         max_queue: 5,
+        max_files: 4,
         storage_cap_gb: 0.0001, // ~100 KB cap
         retention_hours: 24,
       }),
@@ -513,5 +514,73 @@ describe("Task 038: Public Video HD (/video-hd/public)", () => {
     });
     expect(r2.status).toBe(429);
   });
+
+  test("Task 039: placements merge, max_files limit, and 130s Story clip splits into 3 parts", async () => {
+    const { srv } = startIsolatedHub();
+    await fetch(`${srv.url}/api/settings/integrations/public-hd`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true, max_mb: 500, max_minutes: 10, max_files: 4 }),
+    });
+
+    // Config exposes placements & placement_target
+    const cfg = (await (await fetch(`${srv.url}/api/public/hd/config`)).json()) as any;
+    expect(Array.isArray(cfg.placements)).toBe(true);
+    expect(cfg.placement_target.ig_reels).toBe("vertical");
+    expect(cfg.limits.max_files).toBe(4);
+
+    // 5 distinct files exceeds max_files (4) -> 400
+    const tooMany = await fetch(
+      `${srv.url}/api/public/hd/parts/toomanyfiles1?${new URLSearchParams({
+        name: "a.mp4",
+        total: "100",
+        offset: "0",
+        placements: "tiktok,ig_story,ig_feed,whatsapp,whatsapp_status",
+      })}`,
+      { method: "PUT", headers: { "content-type": "application/octet-stream", "cf-connecting-ip": "198.51.100.70" }, body: new Uint8Array(100) },
+    );
+    expect(tooMany.status).toBe(400);
+
+    // 130s clip with ig_story + fb_story -> 1 target (story) -> 3 parts (story_1, story_2, story_3)
+    const tmp = mkdtempSync(join(tmpdir(), "pubhd-story130-"));
+    cleanups.push(() => rmSync(tmp, { recursive: true, force: true }));
+    const bytes = await makeTestVideo(join(tmp, "long-130s.mp4"), "640x360", 130);
+    const PART = 16 * 1024 * 1024;
+    let upJson: { id?: string } = {};
+    for (let offset = 0; offset < bytes.byteLength; offset += PART) {
+      const slice = bytes.subarray(offset, Math.min(bytes.byteLength, offset + PART));
+      const qs = new URLSearchParams({
+        name: "long-130s.mp4",
+        total: String(bytes.byteLength),
+        offset: String(offset),
+        placements: "ig_story,fb_story",
+        mode: "auto",
+      });
+      const up = await fetch(`${srv.url}/api/public/hd/parts/story130key1?${qs}`, {
+        method: "PUT",
+        headers: { "content-type": "application/octet-stream", "cf-connecting-ip": "198.51.100.71" },
+        body: slice,
+      });
+      expect(up.status).toBe(200);
+      upJson = (await up.json()) as { id?: string };
+    }
+    expect(typeof upJson.id).toBe("string");
+    await srv.hub.publicHd.waitIdle();
+
+    const job = (await (await fetch(`${srv.url}/api/public/hd/jobs/${upJson.id}`)).json()) as any;
+    expect(job.status).toBe("done");
+    expect(job.results.length).toBe(3);
+    expect(job.results.map((r: any) => r.key)).toEqual(["story_1", "story_2", "story_3"]);
+    expect(job.results[0].covers).toEqual(["ig_story", "fb_story"]);
+    expect(job.results[0].duration).toBeLessThanOrEqual(61);
+    expect(job.results[1].duration).toBeLessThanOrEqual(61);
+    expect(job.results[2].duration).toBeLessThanOrEqual(15);
+
+    for (const key of ["story_1", "story_2", "story_3"]) {
+      const dl = await fetch(`${srv.url}/api/public/hd/jobs/${upJson.id}/file/${key}`);
+      expect(dl.status).toBe(200);
+      expect((await dl.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+    }
+  }, 180_000);
 });
 
