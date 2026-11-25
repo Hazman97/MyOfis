@@ -25,4 +25,11 @@ Do not commit. (Template looks are handled separately in 043 — not here.)
 5. **Tests missing:** a real (non-fake) worker render test that is skipped only when Playwright/Node is unavailable;
    logo; editing `meta.images` on approve.
 
+6. **043 leftovers** (043 passed review otherwise):
+   - `quote` shows the project name twice (author line + footer) when the brief has no handle/logo: when the author
+     equals the footer text, drop it from the footer (keep the dot + accent line).
+   - `testimonial` with short text leaves a big empty band in the middle of the card: centre the quote block
+     vertically in the card or grow the font to fill (rule 1 of 043).
+   Show both in an updated after-contact-sheet.
+
 Proof: raw output of the new tests, `bun run typecheck`, full `bun test`, `bun run --cwd apps/web build` final lines.
