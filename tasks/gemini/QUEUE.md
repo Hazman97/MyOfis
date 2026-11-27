@@ -54,6 +54,12 @@ If an item depends on something that is not done, stop and say so in its report 
 
 **CHECKPOINT F** — stop.
 
+## Stage 7 — skills and motion videos
+22. `062-skill-packs-copywriting-motion.md`
+23. `061-motion-videos-remotion-remocn.md` (licence check first; stop if Remotion's licence does not fit)
+
+**CHECKPOINT G** — stop.
+
 ## Later (not queued yet)
 032 nit (very short looped clips over 80), older queue 028–036, offsite backup, watchdog/auto-update, health page,
 user management (room roles, Access sync, audit log), PWA + push.
