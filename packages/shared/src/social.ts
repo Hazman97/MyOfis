@@ -306,3 +306,99 @@ export function buildZernioPostBody(
 
   return body;
 }
+
+// ---------------------------------------------------------------- Task 047 pure helpers
+
+export const TIKTOK_MAX_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB
+export const TIKTOK_MIN_DURATION_S = 3;
+export const TIKTOK_MAX_DURATION_S = 600; // 10 min
+
+export interface LinkResultMessage {
+  kind: "success" | "error";
+  text: string;
+}
+
+const PLATFORM_LABELS: Record<string, string> = {
+  tiktok: "TikTok",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  threads: "Threads",
+  youtube: "YouTube",
+};
+
+/**
+ * Pure helper for Settings → Social accounts redirect query (`?linked=...` or `?link=failed&reason=...`).
+ * Never echoes raw query strings into the returned text.
+ */
+export function linkResultMessage(
+  query: { linked?: string | null; link?: string | null; reason?: string | null },
+  accounts: { id: string; platform: string; username?: string; display_name?: string; label?: string }[] = [],
+): LinkResultMessage | null {
+  const linked = (query.linked ?? "").trim();
+  if (linked) {
+    const acc = accounts.find((a) => a.id === linked);
+    if (acc) {
+      const plat = PLATFORM_LABELS[acc.platform] ?? acc.platform;
+      const handle = acc.username ? `@${acc.username.replace(/^@/, "")}` : acc.label || acc.display_name || "";
+      return { kind: "success", text: handle ? `${plat} ${handle} dah disambung` : `${plat} dah disambung` };
+    }
+    return { kind: "success", text: "Akaun sosial dah disambung" };
+  }
+  if (query.link === "failed") {
+    const reason = (query.reason ?? "").trim().toLowerCase();
+    const map: Record<string, string> = {
+      denied: "Sambungan dibatalkan — tiada kebenaran diberikan.",
+      expired: "Pautan sambungan dah tamat tempoh (15 minit). Cuba tekan Link semula.",
+      used: "Pautan sambungan ini dah digunakan. Cuba tekan Link semula.",
+      invalid: "Sesi sambungan tidak sah. Cuba tekan Link semula.",
+      forbidden: "Anda tiada akses ke ruang ini untuk menyambung akaun.",
+      missing_state: "Sesi sambungan tidak lengkap. Cuba tekan Link semula.",
+      failed: "Sambungan akaun gagal. Cuba lagi sebentar.",
+    };
+    return { kind: "error", text: map[reason] ?? map.failed! };
+  }
+  return null;
+}
+
+export interface CaptionCounterResult {
+  count: number;
+  max: number;
+  remaining: number;
+  over: boolean;
+}
+
+/** Pure caption length counter for Quick Post and draft forms. */
+export function captionCounter(text: string, max = CAPTION_MAX_CHARS.tiktok): CaptionCounterResult {
+  const count = (text ?? "").length;
+  const remaining = max - count;
+  return { count, max, remaining, over: count > max };
+}
+
+export interface TikTokOriginalFitInput {
+  codec?: string | null;
+  duration_s?: number | null;
+  size_bytes?: number | null;
+}
+
+/**
+ * Pure check for Quick Post "Hantar fail asal" (skip compression):
+ * TikTok requires H.264, 3 s – 10 min (600 s), and ≤ 4 GB.
+ */
+export function checkTikTokOriginalFit(info: TikTokOriginalFitInput): { ok: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const codec = (info.codec ?? "").trim().toLowerCase();
+  if (!codec || (codec !== "h264" && !codec.startsWith("avc"))) {
+    reasons.push(`Codec video mesti H.264 (fail ini: ${codec || "tidak diketahui"}).`);
+  }
+  if (info.duration_s === null || info.duration_s === undefined || !Number.isFinite(info.duration_s)) {
+    reasons.push("Durasi video tidak dapat dibaca.");
+  } else if (info.duration_s < TIKTOK_MIN_DURATION_S) {
+    reasons.push(`Video terlalu pendek (${info.duration_s.toFixed(1)} s; minimum ${TIKTOK_MIN_DURATION_S} s).`);
+  } else if (info.duration_s > TIKTOK_MAX_DURATION_S) {
+    reasons.push(`Video terlalu panjang (${Math.round(info.duration_s)} s; maksimum 10 minit).`);
+  }
+  if (info.size_bytes !== null && info.size_bytes !== undefined && info.size_bytes > TIKTOK_MAX_BYTES) {
+    reasons.push("Saiz fail melebihi had 4 GB TikTok.");
+  }
+  return { ok: reasons.length === 0, reasons };
+}

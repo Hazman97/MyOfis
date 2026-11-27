@@ -28,14 +28,19 @@ It runs when you ask (Chat or Telegram) and, if you switch it on, every day at 2
 
 ## Several TikTok accounts (Settings → Social accounts)
 
-1. Connect every TikTok account inside Zernio (one Zernio workspace can hold many; you can also use more than one Zernio key).
-2. In Agent Office open **Settings → Social accounts → Connect a Zernio key**: give it a name and paste the API key. Its TikTok accounts appear at once.
-3. Give each account a name you recognise ("Healing", "Kedai") and switch off any the agents must never post to.
-4. Choose where posts go:
-   - **Agents → (agent) → TikTok account**: the agent's default.
-   - **Schedules → (schedule) → Post to TikTok account**: overrides the default for that schedule (e.g. Misi 1K at 20:00 → "Healing", at 12:00 → "Quotes").
-   - **Drafts**: every TikTok draft shows "Posts to …"; change it before approving.
-5. A draft with no account posts to the only enabled account; with several and none chosen, pick one on the draft. An account that is switched off is never replaced by another one.
+### 3-step setup (directly from MyOfis)
+1. **Zernio key:** Open **Settings → Social accounts**, open [zernio.com/dashboard](https://zernio.com/dashboard) → Settings → API keys, paste the key, and press **Simpan & Uji kunci**. MyOfis automatically finds or creates a Zernio profile (`MyOfis – <room name>`).
+2. **Link akaun:** Press **Link TikTok** (or Instagram / Facebook / Threads / YouTube) right inside MyOfis, sign in on TikTok, and return to MyOfis with the account ready. (Requires a public non-loopback `PUBLIC_BASE_URL`.) When an account expires, press **Reconnect** on its row.
+3. **Pilih projek (or use Quick Post):** Map the account to a project under **Langkah 3 · Pilih akaun mengikut projek**, or open **Quick Post (`/post`)** to drop a video → auto-compress TikTok HD (0 tokens) → write/generate caption → Post now / Schedule / Save draft. You can also send a video to the Telegram bot with caption `/post` (or `/post @label`).
+
+- Give each account a name you recognise ("Healing", "Kedai") and switch off any the agents must never post to.
+- Choose where posts go:
+  - **Agents → (agent) → TikTok account**: the agent's default.
+  - **Schedules → (schedule) → Post to TikTok account**: overrides the default for that schedule (e.g. Misi 1K at 20:00 → "Healing", at 12:00 → "Quotes").
+  - **Drafts**: every TikTok draft shows "Posts to …"; change it before approving.
+- A draft with no account posts to the only enabled account; with several and none chosen, pick one on the draft. An account that is switched off is never replaced by another one.
+- **TikTok limits:** ~15 posts per 24 h via API (rolling cap); duplicates refused (`Duplicate content detected`). Video requirements for "Hantar fail asal": H.264, 3 s – 10 min, ≤ 4 GB (otherwise leave Compress ON).
+- **Zernio billing note:** Starting **2026-12-01**, Zernio moves pay-per-use add-ons (SMS, calls, X API) to a prepaid balance model (`docs.zernio.com/pricing/balance`); connected social accounts remain on the monthly plan.
 
 The older per-project TikTok card (Projects → TikTok) still works for drafts that have no account here.
 

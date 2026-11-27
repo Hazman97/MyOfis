@@ -23,7 +23,7 @@ runner `runtimes/vision.ts` (`describeImages`), `memoryContentProblem`, "Members
   `%LOCALAPPDATA%/MyOfis/whatsapp/<session>/`. Reconnect with backoff; logged out → event + Telegram to the owner.
 - Runner ↔ hub messages (sequenced like `run.draft`): `wa.qr` (QR string to show in the web page), `wa.status`,
   `wa.message` (only from **enabled groups** and **DMs from registered admins/members of a collection**; every other
-  chat is dropped in the worker and never reaches the hub or an AI), `wa.send` / `wa.react` / `wa.delete` / `wa.pin`
+  chat is dropped in the worker and never reaches the hub or an AI), `wa.send` / `wa.react` / `wa.pin`
   / `wa.edit` commands from the hub. Media from allowed chats: images and PDFs ≤ 10 MB saved as uploads in the
   collection's room.
 - Rate limits in the worker: ≤ 20 outgoing messages/hour per session, ≥ 3 s between messages, jitter; DMs only to

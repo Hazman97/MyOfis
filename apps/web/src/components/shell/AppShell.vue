@@ -21,6 +21,7 @@ import {
   Pause,
   Play,
   Plus,
+  Send,
   Server,
   Settings2,
   Sparkles,
@@ -113,7 +114,7 @@ const allGroups: { sign: string; items: NavItem[] }[] = [
       { to: "/skills", label: "Skills", icon: Sparkles, badge: "skills" },
     ],
   },
-  { sign: "Work", items: [{ to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/planner", label: "Grid Planner", icon: LayoutGrid }, { to: "/design", label: "Design Studio", icon: Palette }, { to: "/studio", label: "Video Studio", icon: Clapperboard }, { to: "/clip-factory", label: "Clip Factory", icon: Scissors }, { to: "/video-hd", label: "Video HD", icon: MonitorUp }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
+  { sign: "Work", items: [{ to: "/post", label: "Quick Post", icon: Send }, { to: "/drafts", label: "Drafts", icon: FilePenLine, badge: "drafts" }, { to: "/planner", label: "Grid Planner", icon: LayoutGrid }, { to: "/design", label: "Design Studio", icon: Palette }, { to: "/studio", label: "Video Studio", icon: Clapperboard }, { to: "/clip-factory", label: "Clip Factory", icon: Scissors }, { to: "/video-hd", label: "Video HD", icon: MonitorUp }, { to: "/projects", label: "Projects", icon: FolderGit2 }] },
   {
     sign: "System",
     items: [
@@ -127,6 +128,7 @@ const allGroups: { sign: string; items: NavItem[] }[] = [
   },
 ];
 const allMore: NavItem[] = [
+  { to: "/agents", label: "Agents", icon: Bot },
   { to: "/chat", label: "Chat", icon: MessagesSquare },
   { to: "/replay", label: "Replay", icon: History },
   { to: "/skills", label: "Skills", icon: Sparkles, badge: "skills" },
@@ -290,8 +292,8 @@ async function logout() {
       <RouterLink to="/jobs/new" class="flex flex-col items-center justify-center" aria-label="New job">
         <span class="flex size-10 items-center justify-center rounded-full bg-accent text-accent-ink shadow-card"><Plus :size="22" /></span>
       </RouterLink>
-      <RouterLink to="/agents" class="flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium" :class="isActive('/agents') ? 'text-accent' : 'text-muted'">
-        <Bot :size="20" :stroke-width="1.8" />Agents
+      <RouterLink to="/post" class="flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium" :class="isActive('/post') ? 'text-accent' : 'text-muted'">
+        <Send :size="20" :stroke-width="1.8" />Post
       </RouterLink>
       <button class="relative flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-muted" @click="moreOpen = true">
         <Ellipsis :size="20" :stroke-width="1.8" />More

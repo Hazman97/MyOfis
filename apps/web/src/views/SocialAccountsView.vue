@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { AlertTriangle, Check, LoaderCircle, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
-import type { Project } from "@agent-office/shared";
+import { useRoute, useRouter } from "vue-router";
+import { AlertTriangle, Check, ChevronDown, ExternalLink, Link2, LoaderCircle, Plus, RefreshCw, Trash2, X } from "lucide-vue-next";
+import { linkResultMessage, type Project } from "@agent-office/shared";
 import ConfirmButton from "../components/ConfirmButton.vue";
 import PageHeader from "../components/PageHeader.vue";
 import SettingsTabs from "../components/SettingsTabs.vue";
@@ -9,9 +10,11 @@ import { api, type SocialTarget, type ZernioConnection, type ZernioPlatform } fr
 import { fmtDateTime } from "../format.ts";
 
 /**
- * Settings → Social accounts (Task 042): connect Zernio once (or several keys) and
- * manage accounts across TikTok, Instagram, Facebook, Threads, and YouTube.
- * Also lets each project pick which connected account it posts to per platform.
+ * Settings → Social accounts (Tasks 042 & 047):
+ * - 3-step onboarding card when no Zernio key exists: 1. Zernio key -> 2. Link akaun -> 3. Pilih projek
+ * - One-click OAuth Link / Reconnect per platform (TikTok, Instagram, Facebook, Threads, YouTube)
+ * - Safe BM toast on OAuth return (?linked= / ?link=failed&reason=)
+ * - Collapsed "add another key" for advanced multi-key use
  */
 const PLATFORMS: { id: ZernioPlatform; label: string }[] = [
   { id: "tiktok", label: "TikTok" },
@@ -22,6 +25,9 @@ const PLATFORMS: { id: ZernioPlatform; label: string }[] = [
 ];
 const PLAT_LABEL = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.label])) as Record<ZernioPlatform, string>;
 
+const route = useRoute();
+const router = useRouter();
+
 const connections = ref<ZernioConnection[]>([]);
 const targets = ref<SocialTarget[]>([]);
 const projects = ref<Project[]>([]);
@@ -29,14 +35,36 @@ const projectMap = reactive<Record<string, Partial<Record<ZernioPlatform, string
 const savedProj = ref<string | null>(null);
 const error = ref("");
 const busy = ref<string | null>(null);
-const form = reactive({ label: "", api_key: "" });
-const adding = ref(false);
+const form = reactive({ label: "Zernio Utama", api_key: "" });
+const addingAnother = ref(false);
+const toastDismissed = ref(false);
+
+const allAccounts = computed(() => connections.value.flatMap((c) => c.accounts));
+const toast = computed(() => {
+  if (toastDismissed.value) return null;
+  const q = route.query;
+  return linkResultMessage(
+    {
+      linked: typeof q.linked === "string" ? q.linked : null,
+      link: typeof q.link === "string" ? q.link : null,
+      reason: typeof q.reason === "string" ? q.reason : null,
+    },
+    allAccounts.value,
+  );
+});
 
 const targetsByPlatform = computed(() => {
   const m: Record<ZernioPlatform, SocialTarget[]> = { tiktok: [], instagram: [], facebook: [], threads: [], youtube: [] };
   for (const t of targets.value) m[t.platform]?.push(t);
   return m;
 });
+
+function dismissToast() {
+  toastDismissed.value = true;
+  if (route.query.linked || route.query.link || route.query.reason) {
+    void router.replace({ path: route.path, query: {} });
+  }
+}
 
 async function load() {
   const [sa, pr] = await Promise.all([api.socialAccounts(), api.projects()]);
@@ -67,15 +95,29 @@ async function run(key: string, fn: () => Promise<unknown>) {
 
 const add = () =>
   run("add", async () => {
-    await api.addZernio(form.label.trim(), form.api_key.trim());
+    await api.addZernio(form.label.trim() || "Zernio Utama", form.api_key.trim());
     form.label = "";
     form.api_key = "";
-    adding.value = false;
+    addingAnother.value = false;
   });
 const refresh = (c: ZernioConnection) => run(`refresh:${c.id}`, () => api.refreshZernio(c.id));
 const remove = (c: ZernioConnection) => run(`remove:${c.id}`, () => api.removeZernio(c.id));
-const rename = (c: ZernioConnection, accId: string, label: string) => run(`acc:${accId}`, () => api.patchZernio(c.id, { accounts: { [accId]: { label: label.trim() } } }));
-const toggle = (c: ZernioConnection, accId: string, enabled: boolean) => run(`acc:${accId}`, () => api.patchZernio(c.id, { accounts: { [accId]: { enabled } } }));
+const rename = (c: ZernioConnection, accId: string, label: string) =>
+  run(`acc:${accId}`, () => api.patchZernio(c.id, { accounts: { [accId]: { label: label.trim() } } }));
+const toggle = (c: ZernioConnection, accId: string, enabled: boolean) =>
+  run(`acc:${accId}`, () => api.patchZernio(c.id, { accounts: { [accId]: { enabled } } }));
+
+async function linkPlatform(c: ZernioConnection, platform: ZernioPlatform) {
+  busy.value = `link:${c.id}:${platform}`;
+  error.value = "";
+  try {
+    const { url } = await api.linkZernio(c.id, platform);
+    window.location.assign(url);
+  } catch (e) {
+    error.value = (e as Error).message;
+    busy.value = null;
+  }
+}
 
 async function saveProject(projectId: string) {
   busy.value = `proj:${projectId}`;
@@ -105,15 +147,31 @@ async function saveProject(projectId: string) {
     <div class="space-y-6">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 class="text-base font-semibold text-fg">Social accounts</h2>
+          <h2 class="text-base font-semibold text-fg">Akaun sosial</h2>
           <p class="text-xs text-muted mt-0.5 leading-relaxed">
-            TikTok, Instagram, Facebook, Threads, and YouTube accounts managed through
+            Sambung TikTok, Instagram, Facebook, Threads dan YouTube terus dari MyOfis melalui
             <a href="https://zernio.com" target="_blank" rel="noopener" class="text-accent hover:underline">Zernio</a>.
-            Connect your accounts in Zernio first, then paste the API key here.
           </p>
         </div>
-        <button v-if="!adding" class="btn btn-primary btn-sm min-h-10 self-start sm:self-auto gap-1.5" @click="adding = true">
-          <Plus :size="14" /> Connect a Zernio key
+        <RouterLink v-if="targetsByPlatform.tiktok.length" to="/post" class="btn btn-primary btn-sm min-h-10 self-start sm:self-auto gap-1.5">
+          Buka Quick Post
+        </RouterLink>
+      </div>
+
+      <!-- OAuth Return Toast -->
+      <div
+        v-if="toast"
+        class="flex items-start justify-between gap-3 rounded-xl border p-3.5 text-sm"
+        :class="toast.kind === 'success' ? 'border-accent/40 bg-accent-soft text-accent' : 'border-danger/30 bg-danger-soft text-danger'"
+        role="status"
+      >
+        <div class="flex items-center gap-2 font-medium">
+          <Check v-if="toast.kind === 'success'" :size="16" class="shrink-0" />
+          <AlertTriangle v-else :size="16" class="shrink-0" />
+          <span>{{ toast.text }}</span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm p-1" aria-label="Tutup" @click="dismissToast">
+          <X :size="14" />
         </button>
       </div>
 
@@ -121,32 +179,75 @@ async function saveProject(projectId: string) {
         {{ error }}
       </div>
 
-      <!-- Add key form card -->
-      <form v-if="adding" class="card space-y-4 p-5" @submit.prevent="add">
-        <div class="flex items-center justify-between border-b border-line pb-3">
-          <span class="font-semibold text-sm text-fg">Connect a Zernio API key</span>
-          <button type="button" class="btn btn-ghost btn-sm" @click="adding = false">Cancel</button>
+      <!-- 3-Step Onboarding Card (shown when no Zernio connection exists yet) -->
+      <section v-if="!connections.length" class="card p-5 space-y-5">
+        <div>
+          <h3 class="text-sm font-semibold text-fg">Sambung akaun sosial dalam 3 langkah</h3>
+          <p class="text-xs text-muted mt-0.5">Tampal kunci Zernio sekali sahaja, kemudian tekan Link untuk log masuk TikTok atau platform lain.</p>
         </div>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label class="label" for="zr-label">Connection label</label>
-            <input id="zr-label" v-model="form.label" class="input text-sm" required maxlength="60" placeholder="e.g. My Zernio" />
-          </div>
-          <div>
-            <label class="label" for="zr-key">Zernio API key</label>
-            <input id="zr-key" v-model="form.api_key" class="input font-mono text-sm" type="password" autocomplete="off" required minlength="8" placeholder="sk_…" />
-          </div>
-        </div>
-        <p class="text-xs text-muted">Found in Zernio → Settings → API keys. The key is encrypted on the hub and never shown again.</p>
-        <div class="flex gap-2 pt-1">
-          <button class="btn btn-primary min-h-10 px-4" :disabled="busy === 'add'">
-            <LoaderCircle v-if="busy === 'add'" :size="14" class="motion-safe:animate-spin" /> Connect and list accounts
-          </button>
-          <button type="button" class="btn min-h-10" @click="adding = false">Cancel</button>
-        </div>
-      </form>
 
-      <!-- Connections list -->
+        <ol class="space-y-4">
+          <!-- Step 1 -->
+          <li class="rounded-xl border border-line bg-surface-2/30 p-4 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="flex size-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-ink">1</span>
+                <span class="text-sm font-semibold text-fg">Kunci API Zernio</span>
+              </div>
+              <a
+                href="https://zernio.com/dashboard"
+                target="_blank"
+                rel="noopener"
+                class="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+              >
+                Buka Zernio → API keys <ExternalLink :size="12" />
+              </a>
+            </div>
+            <form class="space-y-3" @submit.prevent="add">
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="label text-xs" for="zr-label-onboard">Label sambungan</label>
+                  <input id="zr-label-onboard" v-model="form.label" class="input text-sm" required maxlength="60" placeholder="cth. Zernio Utama" />
+                </div>
+                <div>
+                  <label class="label text-xs" for="zr-key-onboard">Kunci API Zernio</label>
+                  <input id="zr-key-onboard" v-model="form.api_key" class="input font-mono text-sm" type="password" autocomplete="off" required minlength="8" placeholder="sk_…" />
+                </div>
+              </div>
+              <p class="text-xs text-muted">Kunci disulitkan di hub dan tidak pernah dihantar semula ke pelayar.</p>
+              <button class="btn btn-primary min-h-10 px-4" :disabled="busy === 'add'">
+                <LoaderCircle v-if="busy === 'add'" :size="14" class="motion-safe:animate-spin" />
+                Simpan &amp; Uji kunci
+              </button>
+            </form>
+          </li>
+
+          <!-- Step 2 (preview until Step 1 done) -->
+          <li class="rounded-xl border border-line/70 bg-surface p-4 opacity-60 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="flex size-6 items-center justify-center rounded-full bg-surface-2 border border-line text-xs font-bold text-muted">2</span>
+              <span class="text-sm font-semibold text-fg">Link akaun</span>
+            </div>
+            <p class="text-xs text-muted">Selepas kunci disimpan, tekan butang platform di bawah untuk log masuk terus dari MyOfis:</p>
+            <div class="flex flex-wrap gap-2 pt-1">
+              <button v-for="p in PLATFORMS" :key="p.id" type="button" disabled class="btn btn-sm min-h-9 gap-1.5">
+                <Link2 :size="13" /> Link {{ p.label }}
+              </button>
+            </div>
+          </li>
+
+          <!-- Step 3 (preview until Step 2 done) -->
+          <li class="rounded-xl border border-line/70 bg-surface p-4 opacity-60 space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="flex size-6 items-center justify-center rounded-full bg-surface-2 border border-line text-xs font-bold text-muted">3</span>
+              <span class="text-sm font-semibold text-fg">Pilih projek</span>
+            </div>
+            <p class="text-xs text-muted">Padankan akaun yang baru disambung ke projek anda (atau terus guna di Quick Post).</p>
+          </li>
+        </ol>
+      </section>
+
+      <!-- Connections list (once Step 1 is done) -->
       <div v-if="connections.length" class="space-y-4">
         <section v-for="c in connections" :key="c.id" class="card overflow-hidden">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface-2/30 px-4 py-3">
@@ -155,22 +256,42 @@ async function saveProject(projectId: string) {
                 <span class="font-semibold text-sm text-fg truncate">{{ c.label }}</span>
                 <span class="chip chip-sm font-mono text-[10px] text-muted">key {{ c.key_hint }}</span>
               </div>
-              <div class="mt-0.5 text-xs text-muted">Checked {{ fmtDateTime(c.checked_at) }}</div>
+              <div class="mt-0.5 text-xs text-muted">Disemak {{ fmtDateTime(c.checked_at) }}</div>
             </div>
             <div class="flex items-center gap-2">
               <button
                 class="btn btn-sm min-h-9 gap-1.5"
                 :disabled="busy === `refresh:${c.id}`"
-                title="Ask Zernio for new or changed accounts"
+                title="Semak semula senarai akaun dari Zernio"
                 @click="refresh(c)"
               >
                 <LoaderCircle v-if="busy === `refresh:${c.id}`" :size="13" class="motion-safe:animate-spin" />
                 <RefreshCw v-else :size="13" />
                 <span>Refresh</span>
               </button>
-              <ConfirmButton small class="min-h-9" confirm-label="Remove key?" @confirm="remove(c)">
+              <ConfirmButton small class="min-h-9" confirm-label="Buang kunci?" @confirm="remove(c)">
                 <Trash2 :size="13" /> Remove
               </ConfirmButton>
+            </div>
+          </div>
+
+          <!-- Step 2: Direct Link buttons per platform -->
+          <div class="border-b border-line bg-surface px-4 py-3 space-y-2">
+            <div class="text-xs font-medium text-muted">Link akaun baru terus melalui Zernio:</div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="p in PLATFORMS"
+                :key="p.id"
+                type="button"
+                class="btn btn-sm min-h-9 gap-1.5"
+                :class="p.id === 'tiktok' ? 'btn-primary' : ''"
+                :disabled="busy === `link:${c.id}:${p.id}`"
+                @click="linkPlatform(c, p.id)"
+              >
+                <LoaderCircle v-if="busy === `link:${c.id}:${p.id}`" :size="13" class="motion-safe:animate-spin" />
+                <Link2 v-else :size="13" />
+                <span>Link {{ p.label }}</span>
+              </button>
             </div>
           </div>
 
@@ -192,18 +313,27 @@ async function saveProject(projectId: string) {
                     @change="rename(c, a.id, ($event.target as HTMLInputElement).value)"
                   />
                   <span v-if="a.needs_reconnection" class="chip chip-sm bg-signal-soft text-signal border border-signal/30 gap-1 text-[11px] font-medium">
-                    <AlertTriangle :size="12" /> Needs reconnecting in Zernio
+                    <AlertTriangle :size="12" /> Perlu sambung semula
                   </span>
+                  <button
+                    v-if="a.needs_reconnection"
+                    type="button"
+                    class="btn btn-sm btn-signal min-h-8 gap-1"
+                    :disabled="busy === `link:${c.id}:${a.platform}`"
+                    @click="linkPlatform(c, a.platform)"
+                  >
+                    <Link2 :size="12" /> Reconnect
+                  </button>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
                   <span class="font-medium text-fg">{{ PLAT_LABEL[a.platform] ?? a.platform }} @{{ a.username }}</span>
                   <span v-if="a.followers !== null" class="text-faint">·</span>
-                  <span v-if="a.followers !== null">{{ a.followers.toLocaleString() }} followers</span>
+                  <span v-if="a.followers !== null">{{ a.followers.toLocaleString() }} pengikut</span>
                 </div>
               </div>
 
               <div class="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-line/60 shrink-0">
-                <span class="text-xs font-medium text-muted sm:text-right">Agents may post</span>
+                <span class="text-xs font-medium text-muted sm:text-right">Aktif untuk post</span>
                 <label class="relative inline-flex items-center cursor-pointer select-none" :aria-label="`Enable @${a.username}`">
                   <input
                     type="checkbox"
@@ -218,25 +348,46 @@ async function saveProject(projectId: string) {
               </div>
             </li>
             <li v-if="!c.accounts.length" class="p-6 text-center text-xs text-muted">
-              No supported social accounts in this Zernio workspace yet. Connect them in Zernio, then press Refresh.
+              Belum ada akaun disambung. Tekan butang <strong>Link TikTok</strong> (atau platform lain) di atas.
             </li>
           </ul>
         </section>
+
+        <!-- Collapsed advanced "Add another Zernio key" -->
+        <div class="card overflow-hidden">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between px-4 py-3 text-left text-xs font-medium text-muted hover:text-fg transition-colors"
+            @click="addingAnother = !addingAnother"
+          >
+            <span class="inline-flex items-center gap-1.5"><Plus :size="14" /> Tambah kunci Zernio lain (lanjutan)</span>
+            <ChevronDown :size="14" class="transition-transform" :class="addingAnother ? 'rotate-180' : ''" />
+          </button>
+          <form v-if="addingAnother" class="border-t border-line p-4 space-y-3" @submit.prevent="add">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="label text-xs" for="zr-label-extra">Label sambungan</label>
+                <input id="zr-label-extra" v-model="form.label" class="input text-sm" required maxlength="60" placeholder="cth. Zernio Kedai 2" />
+              </div>
+              <div>
+                <label class="label text-xs" for="zr-key-extra">Kunci API Zernio</label>
+                <input id="zr-key-extra" v-model="form.api_key" class="input font-mono text-sm" type="password" autocomplete="off" required minlength="8" placeholder="sk_…" />
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-primary btn-sm min-h-9 px-4" :disabled="busy === 'add'">
+                <LoaderCircle v-if="busy === 'add'" :size="13" class="motion-safe:animate-spin" /> Tambah kunci
+              </button>
+              <button type="button" class="btn btn-sm min-h-9" @click="addingAnother = false">Batal</button>
+            </div>
+          </form>
+        </div>
       </div>
 
-      <!-- Empty State -->
-      <div v-else-if="!adding" class="card border-dashed p-8 text-center space-y-2">
-        <div class="font-semibold text-fg text-sm">No social accounts connected yet</div>
-        <p class="text-xs text-muted max-w-md mx-auto leading-relaxed">
-          Connect Zernio once to manage your TikTok, Instagram, Facebook, Threads, and YouTube accounts in one place.<br class="hidden sm:inline" />
-          Agents, schedules, projects, and drafts can then post directly to your selected accounts.
-        </p>
-      </div>
-
-      <!-- Per-project default accounts -->
+      <!-- Step 3: Per-project default accounts -->
       <section v-if="projects.length && targets.length" class="card p-5 space-y-4">
         <div>
-          <h3 class="text-sm font-semibold text-fg">Akaun lalai mengikut projek</h3>
+          <h3 class="text-sm font-semibold text-fg">Langkah 3 · Pilih akaun mengikut projek</h3>
           <p class="text-xs text-muted mt-0.5">
             Pilih akaun Zernio bagi setiap platform untuk setiap projek. Jika dibiarkan lalai, sistem menggunakan satu-satunya akaun aktif platform tersebut (atau sambungan Meta lama untuk foto/teks tunggal).
           </p>

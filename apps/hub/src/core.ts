@@ -1028,6 +1028,8 @@ Error: ${r.error}` : ""}` });
   #afterRun(run: typeof runs.$inferSelect, status: string, error: string | undefined): void {
     const job = getJob(this.db, run.job_id);
     if (job?.type === "video_render" && status === "done") this.studio?.afterRender(run.id, job);
+    if ((job?.type === "video_hd" || job?.type === "tiktok_hd") && status === "done") this.studio?.afterHd(run.id, job);
+    if (job?.type === "caption_only") this.studio?.afterCaption(run.id, job, status, error);
     if (job?.type === "consult") {
       const parentId = job.input.parent_run_id;
       const consultId = job.input.consult_id;
@@ -1210,15 +1212,19 @@ Error: ${r.error}` : ""}` });
     }
     // A release note is a fixed, small job: its own prompt and two safe tools, whatever the agent normally has.
     const featureNote = job.type === "feature_note";
+    // Quick Post caption_only: write ONLY the caption text, never call save_draft.
+    const captionOnly = job.type === "caption_only";
     // a consult answer is one level deep: no asking or handing off from there
     const tools = (
       direct
         ? [direct]
         : featureNote
           ? FEATURE_NOTE_TOOLS
-          : job.type === "consult"
-            ? agent.tools.filter((t) => t !== "consult_agent" && t !== "consult_team" && t !== "handoff")
-            : agent.tools
+          : captionOnly
+            ? agent.tools.filter((t) => !["save_draft", "draft_web_post", "update_web_post", "take_down_web_post", "handoff", "consult_agent", "consult_team"].includes(t))
+            : job.type === "consult"
+              ? agent.tools.filter((t) => t !== "consult_agent" && t !== "consult_team" && t !== "handoff")
+              : agent.tools
     )
       // members' own agents run on the owner's PC: only the safe tool set (checked on save too)
       .filter((t) => !memberAgent || MEMBER_TOOLS.has(t))
@@ -1246,9 +1252,13 @@ Error: ${r.error}` : ""}` });
         slug: agent.slug,
         name: agent.name,
         model: agent.model,
-        system_prompt: featureNote ? FEATURE_NOTE_PROMPT : agent.system_prompt,
+        system_prompt: featureNote
+          ? FEATURE_NOTE_PROMPT
+          : captionOnly
+            ? "You are a TikTok caption writer for MyOfis Quick Post. Write ONLY the final caption text (ready to paste, <= 2200 chars, natural Bahasa Melayu or matching the owner's notes, with 3-5 relevant hashtags). Do NOT call save_draft, do NOT wrap in quotes or JSON, and do NOT add preamble."
+            : agent.system_prompt,
         tools,
-        config: featureNote ? { ...config, max_steps: Math.min(config.max_steps, 8) } : config,
+        config: featureNote || captionOnly ? { ...config, max_steps: Math.min(config.max_steps, 6) } : config,
         permission_level: agent.permission_level,
       },
       provider: provider ? { slug: provider.slug, kind: provider.kind, base_url: provider.base_url, api_key: apiKey, models: provider.models } : { slug: "none", kind: "mock", base_url: null, api_key: null, models: [] },

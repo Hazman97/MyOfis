@@ -9,9 +9,9 @@ import {
   type ZernioMediaItem,
   type ZernioPlatform,
 } from "@agent-office/shared";
-import { keyHint, type Secrets } from "./crypto.ts";
+import { keyHint, randomToken, type Secrets } from "./crypto.ts";
 import type { Db } from "./db/client.ts";
-import { contentDrafts, projects, settings } from "./db/schema.ts";
+import { contentDrafts, projects, settings, workspaces } from "./db/schema.ts";
 import type { EventStore } from "./events.ts";
 import { HttpError, newId } from "./repo.ts";
 import { toDraft } from "./content.ts";
@@ -69,6 +69,7 @@ interface StoredZernio {
   label: string;
   key_enc: string;
   key_hint: string;
+  profile_id?: string | null;
   accounts: ZernioAccount[];
   checked_at: string;
 }
@@ -76,6 +77,7 @@ export interface ZernioConnectionPublic {
   id: string;
   label: string;
   key_hint: string;
+  profile_id: string | null;
   accounts: ZernioAccount[];
   checked_at: string;
 }
@@ -412,7 +414,218 @@ export class Social {
     this.db.insert(settings).values({ key: k, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
   }
 
-  #publicConn = (c: StoredZernio): ZernioConnectionPublic => ({ id: c.id, label: c.label, key_hint: c.key_hint, accounts: c.accounts, checked_at: c.checked_at });
+  #publicConn = (c: StoredZernio): ZernioConnectionPublic => ({
+    id: c.id,
+    label: c.label,
+    key_hint: c.key_hint,
+    profile_id: c.profile_id ?? null,
+    accounts: c.accounts,
+    checked_at: c.checked_at,
+  });
+
+  #roomName(ws: string): string {
+    const row = this.db.select({ name: workspaces.name }).from(workspaces).where(eq(workspaces.id, ws)).get();
+    return row?.name || (ws === "owner" ? "HQ" : ws);
+  }
+
+  /**
+   * Find or create a Zernio profile named `MyOfis – <room name>`.
+   * Reuses the default profile if the key has only one and it is not used by another room;
+   * otherwise creates a new profile (profiles are free and unlimited in Zernio).
+   */
+  async #ensureProfile(ws: string, apiKey: string, existingProfileId?: string | null): Promise<string> {
+    if (existingProfileId) return existingProfileId;
+    const targetName = `MyOfis – ${this.#roomName(ws)}`;
+    type ZProfile = { _id?: string; id?: string; name?: string; isDefault?: boolean };
+    const { body } = await this.#zernio<{ profiles?: ZProfile[] }>(apiKey, "/profiles");
+    const list = body.profiles ?? [];
+    const pid = (p: ZProfile) => p._id ?? p.id ?? "";
+
+    const byName = list.find((p) => (p.name ?? "").trim() === targetName && pid(p));
+    if (byName) return pid(byName);
+
+    if (list.length === 1 && pid(list[0]!)) {
+      const onlyId = pid(list[0]!);
+      // Check whether any other room already uses this profile or accounts from this key
+      const otherRows = this.db
+        .select()
+        .from(settings)
+        .all()
+        .filter((r) => r.key.startsWith("zernio.connections.") && r.key !== `zernio.connections.${ws}`);
+      const otherProfiles = new Set<string>();
+      const otherAccountIds = new Set<string>();
+      for (const r of otherRows) {
+        for (const c of r.value as StoredZernio[]) {
+          if (c.profile_id) otherProfiles.add(c.profile_id);
+          for (const a of c.accounts) otherAccountIds.add(a.id);
+        }
+      }
+      if (!otherProfiles.has(onlyId)) {
+        const keyAccounts = await this.#zernioAccounts(apiKey).catch(() => []);
+        const hasOtherRoomAccounts = keyAccounts.some((a) => otherAccountIds.has(a.id));
+        if (!hasOtherRoomAccounts) return onlyId;
+      }
+    }
+
+    const created = await this.#zernio<{ profile?: ZProfile; _id?: string; id?: string }>(apiKey, "/profiles", {
+      method: "POST",
+      body: { name: targetName },
+    });
+    const newProfileId = created.body.profile?._id ?? created.body.profile?.id ?? created.body._id ?? created.body.id;
+    if (!newProfileId) throw new HttpError(400, "Zernio did not return a profile id");
+    return newProfileId;
+  }
+
+  /** Connect a Zernio API key: all supported platform accounts are listed at once (all on). */
+  async addZernio(ws: string, input: z.input<typeof ZernioConnectInput>): Promise<ZernioConnectionPublic> {
+    const data = ZernioConnectInput.parse(input);
+    const conns = this.#conns(ws);
+    const found = await this.#zernioAccounts(data.api_key);
+    // Find or create a Zernio profile for this room (older fake servers without /profiles fall back to null and resolve lazily on first link).
+    const profile_id = await this.#ensureProfile(ws, data.api_key).catch(() => null);
+    // an account already listed under another key stays there (one account, one key)
+    const taken = new Set(conns.flatMap((c) => c.accounts.map((a) => a.id)));
+    const conn: StoredZernio = {
+      id: newId("zrn"),
+      label: data.label,
+      key_enc: this.secrets.encrypt(data.api_key),
+      key_hint: keyHint(data.api_key),
+      profile_id,
+      accounts: found.filter((a) => !taken.has(a.id)).map((a) => ({ ...a, label: a.display_name || a.username, enabled: true })),
+      checked_at: new Date().toISOString(),
+    };
+    this.#saveConns(ws, [...conns, conn]);
+    return this.#publicConn(conn);
+  }
+
+  /**
+   * Start Zernio OAuth linking for a platform (or reconnecting an expired account).
+   * Refuses unset or loopback PUBLIC_BASE_URL with 400 so Zernio can actually redirect back.
+   */
+  async startLink(ws: string, connId: string, platform: ZernioPlatform, publicBaseUrl: string): Promise<{ url: string }> {
+    if (!isZernioPlatform(platform)) throw new HttpError(400, `unsupported platform: ${platform}`);
+    const base = (publicBaseUrl ?? "").trim().replace(/\/+$/, "");
+    let parsed: URL;
+    try {
+      parsed = new URL(base);
+    } catch {
+      throw new HttpError(400, "set PUBLIC_BASE_URL first");
+    }
+    const host = parsed.hostname.toLowerCase();
+    const isLoopback =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host === "[::1]" ||
+      host === "0.0.0.0" ||
+      host.endsWith(".localhost");
+    if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || isLoopback) {
+      throw new HttpError(400, "set PUBLIC_BASE_URL first (must be a public non-loopback URL)");
+    }
+
+    const conns = this.#conns(ws);
+    const c = conns.find((x) => x.id === connId);
+    if (!c) throw new HttpError(404, "connection not found");
+    const apiKey = this.secrets.decrypt(c.key_enc);
+
+    // Lazily ensure profile_id for older connections
+    if (!c.profile_id) {
+      c.profile_id = await this.#ensureProfile(ws, apiKey);
+      this.#saveConns(ws, conns);
+    }
+
+    const nonce = randomToken(18);
+    const exp = Date.now() + 15 * 60_000;
+    const payload = Buffer.from(JSON.stringify({ conn: c.id, ws, platform, nonce, exp }), "utf8").toString("base64url");
+    const sig = this.secrets.sign(`zernio.link:${payload}`);
+    const state = `${payload}.${sig}`;
+
+    this.db
+      .insert(settings)
+      .values({ key: `zernio.link.${nonce}`, value: { conn: c.id, ws, platform, exp } })
+      .onConflictDoUpdate({ target: settings.key, set: { value: { conn: c.id, ws, platform, exp } } })
+      .run();
+
+    const redirectUrl = `${base}/api/social-accounts/link/callback?state=${encodeURIComponent(state)}`;
+    const { body } = await this.#zernio<{ authUrl?: string }>(
+      apiKey,
+      `/connect/${encodeURIComponent(platform)}?profileId=${encodeURIComponent(c.profile_id)}&redirect_url=${encodeURIComponent(redirectUrl)}`,
+    );
+    if (!body?.authUrl) throw new HttpError(400, "Zernio did not return an authUrl");
+    return { url: body.authUrl };
+  }
+
+  /**
+   * Handle Zernio OAuth callback (`GET /api/social-accounts/link/callback`).
+   * Verifies HMAC (timingSafeEqual), expiry, single-use nonce, and caller's access to `ws`.
+   * Always returns a safe relative redirect path (never echoes raw query text).
+   */
+  async handleLinkCallback(
+    query: { state?: string; error?: string; accountId?: string; connected?: string; username?: string },
+    canEnterWs: (ws: string) => boolean,
+  ): Promise<string> {
+    const fail = (reason: "missing_state" | "invalid" | "expired" | "used" | "forbidden" | "denied" | "failed") =>
+      `/settings/social?link=failed&reason=${reason}`;
+
+    const rawState = (query.state ?? "").trim();
+    if (!rawState) return fail("missing_state");
+    const dot = rawState.indexOf(".");
+    if (dot <= 0 || dot === rawState.length - 1) return fail("invalid");
+    const payloadB64 = rawState.slice(0, dot);
+    const sig = rawState.slice(dot + 1);
+    if (!this.secrets.verify(`zernio.link:${payloadB64}`, sig)) return fail("invalid");
+
+    let state: { conn?: string; ws?: string; platform?: string; nonce?: string; exp?: number };
+    try {
+      state = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+    } catch {
+      return fail("invalid");
+    }
+    if (!state.conn || !state.ws || !state.nonce || typeof state.exp !== "number") return fail("invalid");
+
+    const nonceKey = `zernio.link.${state.nonce}`;
+    const storedNonce = this.db.select().from(settings).where(eq(settings.key, nonceKey)).get();
+
+    if (Date.now() > state.exp) {
+      if (storedNonce) this.db.delete(settings).where(eq(settings.key, nonceKey)).run();
+      return fail("expired");
+    }
+    if (!storedNonce) return fail("used");
+    const nv = storedNonce.value as { conn?: string; ws?: string };
+    if (nv.conn !== state.conn || nv.ws !== state.ws) return fail("invalid");
+
+    // Delete single-use nonce before checking anything else
+    this.db.delete(settings).where(eq(settings.key, nonceKey)).run();
+
+    if (!canEnterWs(state.ws)) return fail("forbidden");
+
+    if (query.error) {
+      return /denied|cancel|access_denied/i.test(query.error) ? fail("denied") : fail("failed");
+    }
+
+    try {
+      const refreshed = await this.refreshZernio(state.ws, state.conn);
+      const accId = (query.accountId ?? "").trim();
+      if (accId) {
+        const conns = this.#conns(state.ws);
+        const c = conns.find((x) => x.id === state.conn);
+        const acc = c?.accounts.find((a) => a.id === accId);
+        if (c && acc) {
+          acc.enabled = true;
+          this.#saveConns(state.ws, conns);
+        }
+      }
+      const safeAccId =
+        accId && refreshed.accounts.some((a) => a.id === accId)
+          ? accId
+          : /^[a-zA-Z0-9_-]{1,100}$/.test(accId)
+            ? accId
+            : "";
+      return safeAccId ? `/settings/social?linked=${encodeURIComponent(safeAccId)}` : "/settings/social?linked=1";
+    } catch {
+      return fail("failed");
+    }
+  }
 
   zernioConnections(ws: string): ZernioConnectionPublic[] {
     return this.#conns(ws).map(this.#publicConn);
@@ -467,25 +680,6 @@ export class Social {
     const k = `${PROJECT_ACCOUNTS_PREFIX}${projectId}`;
     this.db.insert(settings).values({ key: k, value: next }).onConflictDoUpdate({ target: settings.key, set: { value: next } }).run();
     return next;
-  }
-
-  /** Connect a Zernio API key: all supported platform accounts are listed at once (all on). */
-  async addZernio(ws: string, input: z.input<typeof ZernioConnectInput>): Promise<ZernioConnectionPublic> {
-    const data = ZernioConnectInput.parse(input);
-    const conns = this.#conns(ws);
-    const found = await this.#zernioAccounts(data.api_key);
-    // an account already listed under another key stays there (one account, one key)
-    const taken = new Set(conns.flatMap((c) => c.accounts.map((a) => a.id)));
-    const conn: StoredZernio = {
-      id: newId("zrn"),
-      label: data.label,
-      key_enc: this.secrets.encrypt(data.api_key),
-      key_hint: keyHint(data.api_key),
-      accounts: found.filter((a) => !taken.has(a.id)).map((a) => ({ ...a, label: a.display_name || a.username, enabled: true })),
-      checked_at: new Date().toISOString(),
-    };
-    this.#saveConns(ws, [...conns, conn]);
-    return this.#publicConn(conn);
   }
 
   /** Ask Zernio again (new accounts appear, gone ones are dropped, labels and switches are kept). */

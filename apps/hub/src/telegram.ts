@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { AUDIO_TYPES, DOC_TYPES, MEDIA_TYPES, VIDEO_TYPES, freshFetch, groupDraftSets, redactString, type AgentEvent } from "@agent-office/shared";
 import type { Hub } from "./core.ts";
-import { agents, approvals, contentDrafts, projects, settings } from "./db/schema.ts";
+import { agents, approvals, contentDrafts, jobs, projects, settings } from "./db/schema.ts";
 import type { Integrations } from "./integrations.ts";
 import { getAgent, getJob, getRun } from "./repo.ts";
 import { OWNER_WORKSPACE, ownApproval, ownDraft } from "./scope.ts";
@@ -56,6 +56,7 @@ interface TgMessage {
   audio?: TgFile;
   voice?: TgFile;
   media_group_id?: string;
+  reply_to_message?: TgMessage;
 }
 interface TgUpdate {
   update_id: number;
@@ -100,6 +101,10 @@ export class TelegramBot {
 
   start(): void {
     this.#unsubscribe = this.hub.store.subscribe((e) => void this.#onEvent(e).catch((err) => console.error("[telegram] notify failed:", redactString(String(err)))));
+    if (this.hub.studio) {
+      this.hub.studio.onTelegramHdDone = (job, uploadId) => void this.#onTelegramHdDone(job, uploadId).catch((err) => console.error("[telegram] /post HD hook failed:", redactString(String(err))));
+      this.hub.studio.onTelegramCaptionDone = (job, caption, error) => void this.#onTelegramCaptionDone(job, caption, error).catch((err) => console.error("[telegram] /post caption hook failed:", redactString(String(err))));
+    }
     this.integrations.onTelegramChange(() => this.#restartPolling());
     this.#restartPolling();
   }
@@ -157,11 +162,11 @@ export class TelegramBot {
 
   // ---------------------------------------------------------------- signing
 
-  #sign(subject: string, d: "y" | "n"): string {
+  #sign(subject: string, d: string): string {
     return createHmac("sha256", this.secretsKey).update(`tg:${subject}:${d}`).digest("base64url").slice(0, 12);
   }
 
-  #verify(subject: string, d: "y" | "n", sig: string): boolean {
+  #verify(subject: string, d: string, sig: string): boolean {
     const want = Buffer.from(this.#sign(subject, d));
     const got = Buffer.from(sig);
     return want.length === got.length && timingSafeEqual(want, got);
@@ -169,15 +174,31 @@ export class TelegramBot {
 
   /**
    * `a:<approval id>:<y|n>:<sig>` (an approval), `d:<draft id>:<y|n>:<sig>` (a draft),
-   * or `s:<set id>:<y|n>:<sig>` (a post set) → decision, or null when malformed or forged.
+   * `s:<set id>:<y|n>:<sig>` (a post set), or `q:<draft id>:<now|8pm|cancel>:<sig>` (Telegram /post)
+   * → decision, or null when malformed or forged.
    */
-  parseCallback(data: string): { kind: "approval" | "draft" | "set"; id: string; yes: boolean } | null {
+  parseCallback(
+    data: string,
+  ):
+    | { kind: "approval" | "draft" | "set"; id: string; yes: boolean }
+    | { kind: "quickpost"; id: string; action: "now" | "8pm" | "cancel" }
+    | null {
+    const qm = data.match(/^q:([A-Za-z0-9_-]{3,40}):(now|8pm|cancel):([A-Za-z0-9_-]{12})$/);
+    if (qm) {
+      const [, id, action, sig] = qm as unknown as [string, string, "now" | "8pm" | "cancel", string];
+      if (!this.#verify(`q:${id}`, action, sig)) return null;
+      return { kind: "quickpost", id, action };
+    }
     const m = data.match(/^([ads]):([A-Za-z0-9_-]{3,40}):([yn]):([A-Za-z0-9_-]{12})$/);
     if (!m) return null;
     const [, k, id, d, sig] = m as unknown as [string, "a" | "d" | "s", string, "y" | "n", string];
     const subject = k === "a" ? id : `${k}:${id}`;
     if (!this.#verify(subject, d, sig)) return null;
     return { kind: k === "a" ? "approval" : k === "d" ? "draft" : "set", id, yes: d === "y" };
+  }
+
+  quickPostCallbackData(draftId: string, action: "now" | "8pm" | "cancel"): string {
+    return `q:${draftId}:${action}:${this.#sign(`q:${draftId}`, action)}`;
   }
 
   callbackData(approvalId: string, d: "y" | "n"): string {
@@ -395,6 +416,7 @@ export class TelegramBot {
         return;
       }
       if (chat !== owner) return;
+      if (cmd === "/post") return this.#handlePostCommand(token, msg, text.slice(cmd.length).trim());
       if (cmd) return this.#command(cmd, text.slice(cmd.length).trim());
       const file = fileOf(msg);
       if (file && msg.media_group_id) return this.#collectAlbum(token, msg, file);
@@ -411,6 +433,7 @@ export class TelegramBot {
     }
     if (parsed.kind === "draft") return this.#decideDraft(token, cq.id, cq.message, parsed.id, parsed.yes);
     if (parsed.kind === "set") return this.#decideSet(token, cq.id, cq.message, parsed.id, parsed.yes);
+    if (parsed.kind === "quickpost") return this.#decideQuickPost(token, cq.id, cq.message, parsed.id, parsed.action);
     let reply: string;
     try {
       ownApproval(this.hub.db, parsed.id, OWNER_WORKSPACE);
@@ -462,6 +485,130 @@ export class TelegramBot {
       }
     } catch (err) {
       reply = `Not changed: ${(err as Error).message}`;
+    }
+    await this.#call(token, "answerCallbackQuery", { callback_query_id: callbackId, text: reply.slice(0, 190) }).catch(() => {});
+    if (message) {
+      await this.#call(token, "editMessageReplyMarkup", { chat_id: message.chat.id, message_id: message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      await this.notify(reply, { reply_to_message_id: message.message_id });
+    }
+  }
+
+  // ---------------------------------------------------------------- Telegram /post shortcut (Task 047 Part D)
+
+  async #handlePostCommand(token: string, msg: TgMessage, arg: string): Promise<void> {
+    const file = fileOf(msg) ?? (msg.reply_to_message ? fileOf(msg.reply_to_message) : null);
+    if (!file || !file.type.startsWith("video/")) {
+      await this.notify("🎬 Hantar video dengan kapsyen /post (atau balas /post pada video).\nContoh: /post @kedai Promo baru hari ni!");
+      return;
+    }
+    const targets = this.hub.social.tiktokTargets(OWNER_WORKSPACE);
+    if (!targets.length) {
+      await this.notify("⚠️ Tiada akaun TikTok aktif. Sambung dahulu di Settings → Social accounts.");
+      return;
+    }
+    let rest = arg.trim();
+    let chosen = targets[0]!;
+    const labelMatch = rest.match(/^@(\S+)(?:\s+([\s\S]*))?$/);
+    if (labelMatch) {
+      const want = labelMatch[1]!.toLowerCase();
+      const found = targets.find((t) => t.label.toLowerCase() === want || t.username.toLowerCase().replace(/^@/, "") === want);
+      if (!found) {
+        await this.notify(`⚠️ Akaun "${labelMatch[1]}" tidak dijumpai. Akaun aktif: ${targets.map((t) => `@${t.username || t.label}`).join(", ")}`);
+        return;
+      }
+      chosen = found;
+      rest = (labelMatch[2] ?? "").trim();
+    }
+    if ((file.file_size ?? 0) > TG_DOWNLOAD_MAX) {
+      await this.notify("⚠️ Video melebihi 20 MB (had muat turun bot Telegram). Guna halaman /post di MyOfis (sehingga 2 GB).");
+      return;
+    }
+    try {
+      const f = await this.#call<{ file_path?: string }>(token, "getFile", { file_id: file.file_id });
+      if (!f.file_path) throw new Error("Telegram tidak memulangkan fail");
+      const res = await freshFetch(`${this.apiBase}/file/bot${token}/${f.file_path}`, { timeoutMs: 5 * 60_000 });
+      if (!res.ok) throw new Error(`muat turun gagal (${res.status})`);
+      const tmp = join(this.hub.config.filesDir, "uploads", `tg-${randomUUID()}.part`);
+      mkdirSync(dirname(tmp), { recursive: true });
+      await Bun.write(tmp, res);
+      const upload = this.hub.publisher.adoptUpload(file.name, file.type, tmp);
+      const studio = this.hub.studio;
+      if (!studio) throw new Error("Video Studio tidak aktif");
+      const [hdJob] = studio.videoHd(upload.id, ["tiktok"], "auto", OWNER_WORKSPACE);
+      if (hdJob) {
+        const nextInput = { ...hdJob.input, telegram_post: { account_id: chosen.id, account_label: chosen.label || chosen.username, caption: rest } };
+        this.hub.db.update(jobs).set({ input: nextInput }).where(eq(jobs.id, hdJob.id)).run();
+      }
+      await this.notify(`🎬 Memproses video untuk TikTok (${chosen.label || chosen.username})${rest ? "" : " + jana kapsyen AI"}…`);
+    } catch (err) {
+      await this.notify(`⚠️ /post gagal: ${(err as Error).message}`);
+    }
+  }
+
+  async #onTelegramHdDone(job: { id: string; workspace_id: string; input: Record<string, unknown> }, hdUploadId: string): Promise<void> {
+    const tp = job.input.telegram_post as { account_id?: string; account_label?: string; caption?: string } | undefined;
+    if (!tp?.account_id || !this.hub.studio) return;
+    const caption = (tp.caption ?? "").trim();
+    if (!caption) {
+      this.hub.studio.captionOnly(hdUploadId, "", job.workspace_id, {
+        telegram_post: { account_id: tp.account_id, account_label: tp.account_label ?? "TikTok", hd_upload_id: hdUploadId },
+      });
+      return;
+    }
+    const draft = this.hub.studio.createOwnerDraft(job.workspace_id, hdUploadId, tp.account_id, caption);
+    await this.#sendQuickPostCard(draft.id, tp.account_label ?? "TikTok", caption);
+  }
+
+  async #onTelegramCaptionDone(job: { id: string; workspace_id: string; input: Record<string, unknown> }, caption: string, error: string | null): Promise<void> {
+    const tp = job.input.telegram_post as { account_id?: string; account_label?: string; hd_upload_id?: string } | undefined;
+    if (!tp?.account_id || !tp.hd_upload_id || !this.hub.studio) return;
+    const finalCaption = caption.trim() || (error ? "(kapsyen AI gagal — sunting di MyOfis)" : "Video baru!");
+    const draft = this.hub.studio.createOwnerDraft(job.workspace_id, tp.hd_upload_id, tp.account_id, finalCaption);
+    await this.#sendQuickPostCard(draft.id, tp.account_label ?? "TikTok", finalCaption);
+  }
+
+  async #sendQuickPostCard(draftId: string, accountLabel: string, caption: string): Promise<void> {
+    const preview = caption.replace(/\s+/g, " ").slice(0, 260);
+    const text = `🎬 Siap untuk TikTok (${accountLabel})\n\n${preview}${caption.length > 260 ? "…" : ""}\n\nPilih tindakan:`;
+    await this.notify(text, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🚀 Post sekarang", callback_data: this.quickPostCallbackData(draftId, "now") },
+            { text: "🕗 Jadual malam ni 8pm", callback_data: this.quickPostCallbackData(draftId, "8pm") },
+          ],
+          [{ text: "❌ Batal", callback_data: this.quickPostCallbackData(draftId, "cancel") }],
+        ],
+      },
+    });
+  }
+
+  async #decideQuickPost(
+    token: string,
+    callbackId: string,
+    message: { message_id: number; chat: { id: number } } | undefined,
+    draftId: string,
+    action: "now" | "8pm" | "cancel",
+  ): Promise<void> {
+    let reply: string;
+    try {
+      ownDraft(this.hub.db, draftId, OWNER_WORKSPACE);
+      if (action === "cancel") {
+        this.hub.content.decideDraft(draftId, { decision: "reject", feedback: "Telegram /post Batal" });
+        reply = "❌ Dibatalkan — tiada apa-apa disiarkan.";
+      } else if (action === "8pm") {
+        const publishAt = next8pmMytIso();
+        this.hub.content.decideDraft(draftId, { decision: "approve", publish_at: publishAt });
+        reply = `🕗 Dijadualkan untuk 8:00 malam (${publishAt.slice(0, 10)}).`;
+      } else {
+        const draft = this.hub.content.decideDraft(draftId, { decision: "approve" });
+        const after = await this.hub.afterApprove(draft);
+        if (after.published_url?.startsWith("http")) reply = `✅ Disiarkan: ${after.published_url}`;
+        else if (after.publish_error) reply = `⚠️ Diluluskan tetapi gagal disiarkan: ${after.publish_error}`;
+        else reply = "✅ Diluluskan dan sedang dihantar ke TikTok.";
+      }
+    } catch (err) {
+      reply = `Tidak berubah: ${(err as Error).message}`;
     }
     await this.#call(token, "answerCallbackQuery", { callback_query_id: callbackId, text: reply.slice(0, 190) }).catch(() => {});
     if (message) {
@@ -632,3 +779,11 @@ function fileOf(msg: TgMessage): InFile | null {
 }
 
 const clip = (s: string) => (s.length > MESSAGE_MAX ? `${s.slice(0, MESSAGE_MAX)}…` : s);
+
+/** Next 8:00 PM Asia/Kuala_Lumpur (+08:00) that is at least 2 minutes in the future. */
+function next8pmMytIso(now = new Date()): string {
+  const mytDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" }).format(now);
+  let target = Date.parse(`${mytDate}T20:00:00+08:00`);
+  if (target <= now.getTime() + 120_000) target += 86_400_000;
+  return new Date(target).toISOString();
+}

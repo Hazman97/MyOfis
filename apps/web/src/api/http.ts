@@ -484,10 +484,18 @@ export const api = {
   scheduleDraftSet: (setId: string, publish_at: string | null) =>
     request<{ drafts: ContentDraft[] }>(`/drafts/sets/${encodeURIComponent(setId)}/schedule`, { body: { publish_at } }),
   addZernio: (label: string, api_key: string) => request<{ connection: ZernioConnection }>("/social-accounts/zernio", { body: { label, api_key } }),
+  linkZernio: (id: string, platform: ZernioPlatform) => request<{ url: string }>(`/social-accounts/${id}/link`, { body: { platform } }),
   refreshZernio: (id: string) => request<{ connection: ZernioConnection }>(`/social-accounts/${id}/refresh`, { method: "POST" }),
   patchZernio: (id: string, body: { label?: string; accounts?: Record<string, { label?: string; enabled?: boolean }> }) =>
     request<{ connection: ZernioConnection }>(`/social-accounts/${id}`, { method: "PATCH", body }),
   removeZernio: (id: string) => request<{ ok: true }>(`/social-accounts/${id}`, { method: "DELETE" }),
+  quickPost: (body: { upload_id: string; accounts: string[]; caption: string; compress: boolean; when: "now" | "schedule" | "draft"; publish_at?: string | null; project_id?: string | null }) =>
+    request<{ job_id?: string; drafts?: ContentDraft[]; posting?: boolean }>("/quick-post", { body }),
+  quickPostStatus: (jobId: string) =>
+    request<{ job_id: string; status: string; upload_id: string | null; drafts: ContentDraft[]; error: string | null }>(`/quick-post/${encodeURIComponent(jobId)}`),
+  quickPostCaption: (upload_id: string, notes = "") => request<{ job_id: string }>("/quick-post/caption", { body: { upload_id, notes } }),
+  quickPostCaptionStatus: (jobId: string) =>
+    request<{ job_id: string; status: string; caption: string; error: string | null }>(`/quick-post/caption/${encodeURIComponent(jobId)}`),
   setDraftAccount: (id: string, account: string | null) => request<{ draft: ContentDraft }>(`/drafts/${id}/account`, { method: "PATCH", body: { account } }),
   storage: (wait = false) => request<{ items: StoragePlace[]; measured_at: string | null; measuring?: boolean }>(`/storage${wait ? "?wait=1" : ""}`),
   openStorage: (key: string) => request<{ opened: string }>("/storage/open", { body: { key } }),

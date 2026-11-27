@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: "/runs/:id", name: "run", component: () => import("./views/RunView.vue"), props: true },
     { path: "/approvals", name: "approvals", component: () => import("./views/ApprovalsView.vue") },
     { path: "/drafts", name: "drafts", component: () => import("./views/DraftsView.vue") },
+    { path: "/post", name: "quick-post", component: () => import("./views/QuickPostView.vue") },
     { path: "/chat", name: "chat", component: () => import("./views/ChatView.vue") },
     { path: "/replay", name: "replay", component: () => import("./views/ReplayView.vue") },
     { path: "/agents", name: "agents", component: () => import("./views/AgentsView.vue") },

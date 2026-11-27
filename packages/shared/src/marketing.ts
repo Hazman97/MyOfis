@@ -216,6 +216,8 @@ export const WebPost = z.object({
   fact_sheet: z.array(WebPostFactItem).max(20).optional(),
   /** True when the video script was pasted without fact-sheet verification. */
   unverified: z.boolean().optional(),
+  /** Who authored the draft: "owner" (Quick Post / Telegram /post) or "agent". */
+  source: z.enum(["owner", "agent"]).optional(),
 });
 export type WebPost = z.infer<typeof WebPost>;
 

@@ -1,11 +1,46 @@
+import { join } from "node:path";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { EditPlan, EditSuggestionsInput, HD_TARGETS, RenderInfo, Transcript, VIDEO_PRESETS, VideoShotIndex, ClipCandidateSchema, type ClipCandidate, type EditSuggestions, type HdOutputGroup, type HdTarget, type Job, type SocialPlacement, type TikTokHdMode } from "@agent-office/shared";
+import {
+  CAPTION_MAX_CHARS,
+  ClipCandidateSchema,
+  EditPlan,
+  EditSuggestionsInput,
+  HD_TARGETS,
+  RenderInfo,
+  Transcript,
+  VIDEO_PRESETS,
+  VideoShotIndex,
+  WebPost,
+  checkTikTokOriginalFit,
+  type ClipCandidate,
+  type ContentDraft,
+  type EditSuggestions,
+  type HdOutputGroup,
+  type HdTarget,
+  type Job,
+  type SocialPlacement,
+  type TikTokHdMode,
+} from "@agent-office/shared";
+import { ffprobeBin, parseProbe } from "@agent-office/tools";
 import { z } from "zod";
 import type { Hub } from "./core.ts";
-import { contentDrafts, editSuggestions, events, jobs, runs, settings, uploads } from "./db/schema.ts";
+import { contentDrafts, editSuggestions, events, jobs, projects, runs, settings, uploads } from "./db/schema.ts";
 import { HttpError, getRun, newId } from "./repo.ts";
 import { visibleAgents } from "./scope.ts";
 import { toDraft } from "./content.ts";
+
+export const CAPTION_ONLY_JOB = "caption_only";
+
+export const QuickPostInput = z.object({
+  upload_id: z.string().min(1),
+  accounts: z.array(z.string().min(1)).min(1).max(20),
+  caption: z.string().max(CAPTION_MAX_CHARS.tiktok).default(""),
+  compress: z.boolean().default(true),
+  when: z.enum(["now", "schedule", "draft"]).default("now"),
+  publish_at: z.string().nullable().optional(),
+  project_id: z.string().nullable().optional(),
+});
+export type QuickPostRequest = z.infer<typeof QuickPostInput>;
 
 /**
  * Video Studio (owner request): open a video, see how Editor made it (clips, captions, preset),
@@ -19,6 +54,10 @@ export const TIKTOK_HD_JOB = "tiktok_hd";
 export const VIDEO_HD_JOB = "video_hd";
 
 export class Studio {
+  /** Optional hooks registered by TelegramBot for `/post` HD and caption jobs. */
+  onTelegramHdDone: ((job: { id: string; workspace_id: string; input: Record<string, unknown> }, uploadId: string) => void) | null = null;
+  onTelegramCaptionDone: ((job: { id: string; workspace_id: string; input: Record<string, unknown> }, caption: string, error: string | null) => void) | null = null;
+
   constructor(private readonly hub: Hub) {}
 
   /** Everything the studio page needs about one video upload (of this workspace). */
@@ -355,6 +394,316 @@ export class Studio {
       // decided meanwhile: the new video stays in the studio, the draft keeps its old one
       console.error(`[studio] draft ${draftId} not updated: ${(err as Error).message}`);
     }
+  }
+
+  // ---------------------------------------------------------------- Quick Post (Task 047)
+
+  async #probeLocalVideo(pathOnDisk: string): Promise<{ codec: string; duration: number }> {
+    const bin = ffprobeBin();
+    if (!bin) throw new HttpError(400, "ffprobe tiada pada pelayan; aktifkan Compress untuk semak & tukar video");
+    const proc = Bun.spawn(
+      [bin, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", pathOnDisk],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    if (code !== 0) throw new HttpError(400, `ffprobe gagal membaca video: ${err.trim().slice(0, 160) || `exit ${code}`}`);
+    try {
+      const probe = parseProbe(JSON.parse(out));
+      return { codec: probe.video_codec, duration: probe.duration };
+    } catch (e) {
+      throw new HttpError(400, `Fail video tidak sah: ${(e as Error).message}`);
+    }
+  }
+
+  #pickQuickPostProject(ws: string, accountId: string, explicitProjectId?: string | null): string {
+    const all = this.hub.db.select().from(projects).where(eq(projects.workspace_id, ws)).all();
+    if (explicitProjectId) {
+      const hit = all.find((p) => p.id === explicitProjectId);
+      if (!hit) throw new HttpError(404, "project not found");
+      return hit.id;
+    }
+    for (const p of all) {
+      if (this.hub.social.projectAccounts(p.id).tiktok === accountId) return p.id;
+    }
+    const first = all.find((p) => p.enabled) ?? all[0];
+    if (!first) throw new HttpError(400, "cipta sekurang-kurangnya satu projek dahulu sebelum Quick Post");
+    return first.id;
+  }
+
+  #pickQuickPostAgent(ws: string): string {
+    const all = visibleAgents(this.hub.db, ws);
+    const pick =
+      all.find((a) => a.slug === "tiktok-poster" && a.enabled) ??
+      all.find((a) => a.slug === "social-manager" && a.enabled) ??
+      all.find((a) => a.slug === "editor" && a.enabled) ??
+      all.find((a) => a.enabled) ??
+      all[0];
+    if (!pick) throw new HttpError(409, "tiada ejen tersedia dalam ruang ini");
+    return pick.id;
+  }
+
+  #validateScheduleTime(publishAt: string): string {
+    const t = Date.parse(publishAt);
+    if (Number.isNaN(t)) throw new HttpError(400, "masa jadual tidak sah");
+    if (t < Date.now() + 60_000) throw new HttpError(400, "masa jadual mesti sekurang-kurangnya 1 minit dari sekarang");
+    if (t > Date.now() + 60 * 86_400_000) throw new HttpError(400, "masa jadual mesti dalam tempoh 60 hari");
+    return new Date(t).toISOString();
+  }
+
+  #createQuickPostDrafts(
+    ws: string,
+    videoUploadId: string,
+    data: Pick<QuickPostRequest, "accounts" | "caption" | "when" | "publish_at" | "project_id">,
+    runId: string | null,
+  ): ContentDraft[] {
+    const up = this.hub.publisher.upload(videoUploadId);
+    const agentId = this.#pickQuickPostAgent(ws);
+    const title = (data.caption.split(/\r?\n/)[0] || up?.name || "Quick Post").trim().slice(0, 120);
+    const body = data.caption.trim() || title;
+    const out: ContentDraft[] = [];
+
+    for (const accId of data.accounts) {
+      const projectId = this.#pickQuickPostProject(ws, accId, data.project_id);
+      const row = this.hub.store.transact((tx, emit) =>
+        this.hub.content.insertDraft(tx, emit, {
+          project_id: projectId,
+          agent_id: agentId,
+          run_id: runId ?? "",
+          platform: "tiktok",
+          kind: "video",
+          title,
+          body,
+          self_check: {
+            facts_match_brief: true,
+            only_released_features: true,
+            no_overclaims: true,
+            tone_and_language_match: true,
+            notes: "Quick Post (owner)",
+          },
+          feature_id: null,
+          meta: WebPost.parse({
+            post_type: "social",
+            video_upload_id: videoUploadId,
+            social_account: accId,
+            placement: "tiktok",
+            source: "owner",
+          }),
+        }),
+      );
+      let draft = toDraft(row);
+      if (data.when === "now") {
+        draft = this.hub.content.decideDraft(draft.id, { decision: "approve" });
+        void this.hub.afterApprove(draft).catch((err) => console.error(`[quick-post] posting ${draft.id} failed: ${(err as Error).message}`));
+      } else if (data.when === "schedule" && data.publish_at) {
+        draft = this.hub.content.decideDraft(draft.id, { decision: "approve", publish_at: data.publish_at });
+      }
+      out.push(draft);
+    }
+    return out;
+  }
+
+  /** Create a pending owner-authored TikTok video draft (used by Telegram /post after HD). */
+  createOwnerDraft(ws: string, videoUploadId: string, accountId: string, caption: string, runId: string | null = null): ContentDraft {
+    return this.#createQuickPostDrafts(
+      ws,
+      videoUploadId,
+      { accounts: [accountId], caption, when: "draft", publish_at: null, project_id: null },
+      runId,
+    )[0]!;
+  }
+
+  /**
+   * Quick Post (Part C): upload/recent video -> optional TikTok HD compress -> 1 video draft per account -> now / schedule / draft.
+   */
+  async quickPost(
+    input: z.input<typeof QuickPostInput>,
+    ws = "owner",
+  ): Promise<{ job_id?: string; drafts?: ContentDraft[]; posting?: boolean }> {
+    const data = QuickPostInput.parse(input);
+    const up = this.hub.publisher.upload(data.upload_id);
+    if (!up || up.workspace_id !== ws || !up.content_type.startsWith("video/")) {
+      throw new HttpError(404, "video not found");
+    }
+    const targets = this.hub.social.tiktokTargets(ws);
+    const validIds = new Set(targets.map((t) => t.id));
+    for (const acc of data.accounts) {
+      if (!validIds.has(acc)) throw new HttpError(400, `akaun TikTok "${acc}" tidak disambung atau dimatikan`);
+    }
+    let publishAt: string | null = null;
+    if (data.when === "schedule") {
+      if (!data.publish_at) throw new HttpError(400, "pilih tarikh dan masa jadual dahulu");
+      publishAt = this.#validateScheduleTime(data.publish_at);
+    }
+    // Validate project & agent exist before doing work
+    this.#pickQuickPostProject(ws, data.accounts[0]!, data.project_id);
+    this.#pickQuickPostAgent(ws);
+
+    if (!data.compress) {
+      const fullPath = join(this.hub.config.filesDir, up.path);
+      const probed = await this.#probeLocalVideo(fullPath);
+      const fit = checkTikTokOriginalFit({ codec: probed.codec, duration_s: probed.duration, size_bytes: up.size });
+      if (!fit.ok) {
+        throw new HttpError(400, `Fail asal tidak sesuai untuk TikTok: ${fit.reasons.join(" ")}`);
+      }
+      const drafts = this.#createQuickPostDrafts(ws, up.id, { ...data, publish_at: publishAt }, null);
+      return { drafts, posting: data.when === "now" };
+    }
+
+    const agent = this.#editor(null, ws, "video_hd");
+    const job = this.hub.createJob(
+      {
+        agent_id: agent.id,
+        project_id: data.project_id ?? null,
+        type: VIDEO_HD_JOB,
+        title: `Quick Post HD: ${up.name}`.slice(0, 200),
+        input: {
+          text: `Prepare "${up.name}" for TikTok HD (Quick Post)`,
+          attachments: [{ id: up.id, name: up.name, content_type: up.content_type }],
+          source_upload_id: up.id,
+          target: "tiktok",
+          mode: "auto",
+          quick_post: {
+            accounts: data.accounts,
+            caption: data.caption,
+            when: data.when,
+            publish_at: publishAt,
+            project_id: data.project_id ?? null,
+          },
+        },
+        trigger: "manual",
+      },
+      ws,
+    );
+    return { job_id: job.id };
+  }
+
+  /** Called by Hub.#afterRun when a video_hd / tiktok_hd run finishes. */
+  afterHd(runId: string, job: { id: string; workspace_id: string; input: Record<string, unknown> }): void {
+    const made = this.hub.db.select().from(uploads).where(eq(uploads.run_id, runId)).orderBy(desc(uploads.created_at)).get();
+    if (!made) return;
+
+    const qp = job.input.quick_post as
+      | { accounts?: string[]; caption?: string; when?: "now" | "schedule" | "draft"; publish_at?: string | null; project_id?: string | null }
+      | undefined;
+    if (qp && Array.isArray(qp.accounts) && qp.accounts.length > 0) {
+      try {
+        const drafts = this.#createQuickPostDrafts(
+          job.workspace_id,
+          made.id,
+          {
+            accounts: qp.accounts,
+            caption: qp.caption ?? "",
+            when: qp.when ?? "now",
+            publish_at: qp.publish_at ?? null,
+            project_id: qp.project_id ?? null,
+          },
+          runId,
+        );
+        const k = `quickpost.job.${job.id}`;
+        this.hub.db
+          .insert(settings)
+          .values({ key: k, value: { draft_ids: drafts.map((d) => d.id), upload_id: made.id } })
+          .onConflictDoUpdate({ target: settings.key, set: { value: { draft_ids: drafts.map((d) => d.id), upload_id: made.id } } })
+          .run();
+      } catch (err) {
+        console.error(`[studio] afterHd quick_post for ${job.id} failed: ${(err as Error).message}`);
+      }
+    }
+
+    if (job.input.telegram_post) {
+      try {
+        this.onTelegramHdDone?.(job, made.id);
+      } catch (err) {
+        console.error(`[studio] onTelegramHdDone for ${job.id} failed: ${(err as Error).message}`);
+      }
+    }
+  }
+
+  /** Status of a Quick Post HD job and any drafts created when it finished. */
+  quickPostStatus(jobId: string, ws = "owner") {
+    const job = this.hub.db.select().from(jobs).where(and(eq(jobs.id, jobId), eq(jobs.workspace_id, ws))).get();
+    if (!job) throw new HttpError(404, "job not found");
+    const rec = this.hub.db.select().from(settings).where(eq(settings.key, `quickpost.job.${job.id}`)).get()?.value as
+      | { draft_ids?: string[]; upload_id?: string }
+      | undefined;
+    const drafts = (rec?.draft_ids ?? [])
+      .map((id) => this.hub.content.draft(id))
+      .filter((d): d is ContentDraft => !!d);
+    const runIds = this.hub.db.select({ id: runs.id }).from(runs).where(eq(runs.job_id, job.id)).all().map((r) => r.id);
+    const failed = runIds.length
+      ? this.hub.db
+          .select({ payload: events.payload })
+          .from(events)
+          .where(and(inArray(events.run_id, runIds), eq(events.type, "run.failed")))
+          .orderBy(desc(events.id))
+          .get()
+      : undefined;
+    return {
+      job_id: job.id,
+      status: job.status,
+      upload_id: rec?.upload_id ?? null,
+      drafts,
+      error: job.status === "failed" ? String((failed?.payload as { error?: string } | undefined)?.error ?? "gagal") : null,
+    };
+  }
+
+  /** Start a chat-less `caption_only` job on `tiktok-poster` that returns only caption text (never calls save_draft). */
+  captionOnly(uploadId: string, notes = "", ws = "owner", extraInput: Record<string, unknown> = {}): Job {
+    const up = this.hub.publisher.upload(uploadId);
+    if (!up || up.workspace_id !== ws || !up.content_type.startsWith("video/")) {
+      throw new HttpError(404, "video not found");
+    }
+    const agentId = this.#pickQuickPostAgent(ws);
+    return this.hub.createJob(
+      {
+        agent_id: agentId,
+        project_id: null,
+        type: CAPTION_ONLY_JOB,
+        title: `Caption: ${up.name}`.slice(0, 200),
+        input: {
+          text: `Write a TikTok caption for video "${up.name}".${notes.trim() ? `\nOwner notes: ${notes.trim()}` : ""}`,
+          upload_id: up.id,
+          notes: notes.trim(),
+          attachments: [{ id: up.id, name: up.name, content_type: up.content_type }],
+          ...extraInput,
+        },
+        trigger: "manual",
+      },
+      ws,
+    );
+  }
+
+  /** Called by Hub.#afterRun when a `caption_only` run finishes. */
+  afterCaption(runId: string, job: { id: string; workspace_id: string; input: Record<string, unknown> }, status: string, error?: string): void {
+    if (!job.input.telegram_post) return;
+    const text = (this.hub.store.state.runs[runId]?.output ?? "").trim();
+    this.onTelegramCaptionDone?.(job, text, status === "done" ? null : (error ?? status));
+  }
+
+  /** Read the generated caption text for a `caption_only` job. */
+  captionStatus(jobId: string, ws = "owner") {
+    const job = this.hub.db.select().from(jobs).where(and(eq(jobs.id, jobId), eq(jobs.workspace_id, ws))).get();
+    if (!job) throw new HttpError(404, "job not found");
+    const runIds = this.hub.db.select({ id: runs.id }).from(runs).where(eq(runs.job_id, job.id)).all().map((r) => r.id);
+    const evs = runIds.length
+      ? this.hub.db
+          .select({ type: events.type, payload: events.payload })
+          .from(events)
+          .where(and(inArray(events.run_id, runIds), inArray(events.type, ["agent.message", "run.failed"])))
+          .orderBy(events.id)
+          .all()
+      : [];
+    const caption = evs
+      .filter((e) => e.type === "agent.message")
+      .map((e) => String((e.payload as { text?: string }).text ?? ""))
+      .join("")
+      .trim()
+      .slice(0, CAPTION_MAX_CHARS.tiktok);
+    const err = evs
+      .filter((e) => e.type === "run.failed")
+      .map((e) => String((e.payload as { error?: string }).error ?? ""))
+      .pop() ?? null;
+    return { job_id: job.id, status: job.status, caption, error: job.status === "failed" ? err : null };
   }
 
   /** The agent that runs it: the one that made the video, else any enabled agent with the tool (Editor first). */

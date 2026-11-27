@@ -2,12 +2,14 @@
 
 Panduan ini menerangkan cara menghubungkan akaun sosial melalui **Zernio**, keperluan setiap placement, penggunaan set pos (`set_id`), penjadualan, dan pelan mingguan (`content_week`).
 
-## 1. Menyambung Akaun dalam Zernio
-1. Sambungkan akaun **TikTok, Instagram, Facebook Page, Threads, dan YouTube** di papan pemuka Zernio (`zernio.com`).
-2. Salin **API Key** daripada Zernio → Settings → API Keys.
-3. Dalam MyOfis, buka **Settings → Social accounts** dan klik **Connect a Zernio key**.
-4. Semua akaun merentas 5 platform akan disenaraikan secara automatik. Anda boleh menukar label dan suis **on/off** bagi setiap akaun.
-5. Di bahagian **Akaun lalai mengikut projek**, pilih akaun mana yang digunakan oleh setiap projek.
+## 1. Menyambung Akaun dalam 3 Langkah (Terus dari MyOfis)
+1. **Kunci Zernio:** Salin **API Key** daripada Zernio → Settings → API Keys, kemudian tampal di **Settings → Social accounts** dalam MyOfis. Hub akan mencari atau mencipta profil Zernio (`MyOfis – <nama bilik>`) secara automatik.
+2. **Link akaun:** Tekan butang **Link TikTok / Instagram / Facebook / Threads / YouTube** terus di halaman tersebut untuk log masuk OAuth dan kembali ke MyOfis dengan akaun sedia digunakan (memerlukan `PUBLIC_BASE_URL` awam, bukan `localhost`). Jika sambungan tamat tempoh, tekan **Reconnect** pada baris akaun.
+3. **Pilih projek:** Di bahagian **Langkah 3 · Pilih akaun mengikut projek**, pilih akaun Zernio bagi setiap platform untuk setiap projek. Anda juga boleh terus menyiarkan video melalui **Quick Post (`/post`)** atau arahan Telegram `/post`.
+
+- **Had TikTok:** ~15 pos setiap 24 jam melalui API (had bergulir); kandungan pendua ditolak (`Duplicate content detected`).
+- **Nota bil Zernio:** Bermula **2026-12-01**, Zernio memindahkan item bayar-ikut-guna (SMS, panggilan, X API) kepada baki prabayar (`docs.zernio.com/pricing/balance`), manakala akaun sosial yang disambung kekal pada pelan bulanan.
+- **Buang kunci:** Butang **Remove** hanya membuang kunci daripada MyOfis (jika mahu putuskan akaun daripada Zernio juga, putuskan di papan pemuka Zernio).
 
 ### Peraturan Laluan (Routing)
 Apabila draf diluluskan, hub memilih akaun mengikut urutan berikut:

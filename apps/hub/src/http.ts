@@ -13,6 +13,7 @@ import {
   MAX_SKILL_CHARS,
   MEMORY_LIMITS,
   DraftDecision,
+  ZERNIO_PLATFORMS,
   isZernioPlatform,
   placementCheck,
   EXAMPLE_BRIEF,
@@ -1378,12 +1379,40 @@ export function createHttpApp(hub: Hub, auth: Authenticator, scheduler: Schedule
     }),
   );
   api.post("/social-accounts/zernio", async (c) => c.json({ connection: await hub.social.addZernio(W(c), await c.req.json()) }, 201));
+  api.get("/social-accounts/link/callback", async (c) => {
+    const allowed = new Set(rooms.list(c.get("me")).map((r) => r.id));
+    const redirectTo = await hub.social.handleLinkCallback(
+      {
+        state: c.req.query("state"),
+        error: c.req.query("error"),
+        accountId: c.req.query("accountId"),
+        connected: c.req.query("connected"),
+        username: c.req.query("username"),
+      },
+      (ws) => allowed.has(ws),
+    );
+    return c.redirect(redirectTo, 302);
+  });
+  api.post("/social-accounts/:id/link", async (c) => {
+    const { platform } = z.object({ platform: z.enum(ZERNIO_PLATFORMS) }).parse(await c.req.json());
+    return c.json(await hub.social.startLink(W(c), c.req.param("id"), platform, config.publicBaseUrl));
+  });
   api.post("/social-accounts/:id/refresh", async (c) => c.json({ connection: await hub.social.refreshZernio(W(c), c.req.param("id")) }));
   api.patch("/social-accounts/:id", async (c) => c.json({ connection: hub.social.patchZernio(W(c), c.req.param("id"), await c.req.json()) }));
   api.delete("/social-accounts/:id", (c) => {
     hub.social.removeZernio(W(c), c.req.param("id"));
     return c.json({ ok: true });
   });
+
+  // Quick Post (Task 047): compress -> caption -> post
+  api.post("/quick-post", async (c) => c.json(await hub.studio!.quickPost(await c.req.json(), W(c)), 201));
+  api.get("/quick-post/:jobId", (c) => c.json(hub.studio!.quickPostStatus(c.req.param("jobId"), W(c))));
+  api.post("/quick-post/caption", async (c) => {
+    const body = z.object({ upload_id: z.string().min(1), notes: z.string().max(1000).optional() }).parse(await c.req.json());
+    const job = hub.studio!.captionOnly(body.upload_id, body.notes ?? "", W(c));
+    return c.json({ job_id: job.id }, 201);
+  });
+  api.get("/quick-post/caption/:jobId", (c) => c.json(hub.studio!.captionStatus(c.req.param("jobId"), W(c))));
 
   api.post("/drafts/:id/decide", async (c) => {
     const decision = DraftDecision.parse(await c.req.json());

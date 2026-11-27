@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   CAPTION_MAX_CHARS,
+  TIKTOK_MAX_BYTES,
   buildZernioPostBody,
+  captionCounter,
+  checkTikTokOriginalFit,
   defaultPlacementFor,
   groupDraftSets,
+  linkResultMessage,
   placementCheck,
 } from "../src/social.ts";
 
@@ -117,5 +121,55 @@ describe("Task 042 Step 1: placementCheck, set grouping & Zernio payload builder
       publishNow: true,
     });
     expect(defaultPlacementFor({ platform: "instagram", body: "x", meta: { images: ["1", "2"] } })).toBe("ig_carousel");
+  });
+});
+
+describe("Task 047: linkResultMessage, captionCounter, checkTikTokOriginalFit", () => {
+  test("linkResultMessage formats linked success and safe BM failure messages", () => {
+    const accounts = [{ id: "acc_1", platform: "tiktok", username: "kedai.kopi", label: "Kedai Kopi" }];
+    expect(linkResultMessage({ linked: "acc_1" }, accounts)).toEqual({
+      kind: "success",
+      text: "TikTok @kedai.kopi dah disambung",
+    });
+    expect(linkResultMessage({ linked: "acc_missing" }, accounts)).toEqual({
+      kind: "success",
+      text: "Akaun sosial dah disambung",
+    });
+    expect(linkResultMessage({ link: "failed", reason: "denied" })).toEqual({
+      kind: "error",
+      text: "Sambungan dibatalkan — tiada kebenaran diberikan.",
+    });
+    expect(linkResultMessage({ link: "failed", reason: "expired" })?.kind).toBe("error");
+    // Unknown reason must NEVER echo raw query text
+    const xss = linkResultMessage({ link: "failed", reason: "<script>alert(1)</script>" });
+    expect(xss?.kind).toBe("error");
+    expect(xss?.text).not.toContain("<script>");
+    expect(xss?.text).toBe("Sambungan akaun gagal. Cuba lagi sebentar.");
+    expect(linkResultMessage({})).toBeNull();
+  });
+
+  test("captionCounter tracks length, remaining, and overflow", () => {
+    expect(captionCounter("Hello")).toEqual({ count: 5, max: 2200, remaining: 2195, over: false });
+    expect(captionCounter("x".repeat(2200))).toEqual({ count: 2200, max: 2200, remaining: 0, over: false });
+    expect(captionCounter("x".repeat(2205))).toEqual({ count: 2205, max: 2200, remaining: -5, over: true });
+    expect(captionCounter("abc", 2)).toEqual({ count: 3, max: 2, remaining: -1, over: true });
+  });
+
+  test("checkTikTokOriginalFit enforces H.264, 3s-10min, <= 4GB", () => {
+    expect(checkTikTokOriginalFit({ codec: "h264", duration_s: 15, size_bytes: 50_000_000 })).toEqual({
+      ok: true,
+      reasons: [],
+    });
+    const tooShort = checkTikTokOriginalFit({ codec: "h264", duration_s: 2, size_bytes: 1_000_000 });
+    expect(tooShort.ok).toBe(false);
+    expect(tooShort.reasons[0]).toContain("minimum 3 s");
+
+    const wrongCodec = checkTikTokOriginalFit({ codec: "hevc", duration_s: 30, size_bytes: 1_000_000 });
+    expect(wrongCodec.ok).toBe(false);
+    expect(wrongCodec.reasons[0]).toContain("H.264");
+
+    const tooBig = checkTikTokOriginalFit({ codec: "h264", duration_s: 30, size_bytes: TIKTOK_MAX_BYTES + 1 });
+    expect(tooBig.ok).toBe(false);
+    expect(tooBig.reasons[0]).toContain("4 GB");
   });
 });
