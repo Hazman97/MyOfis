@@ -34,7 +34,9 @@ runner `runtimes/vision.ts` (`describeImages`), `memoryContentProblem`, "Members
 - Tables (migration): `collections {id, workspace_id, name, group_jid, amount_sen, currency "MYR", due_day (1–28),
   cycle "monthly", payee_names[] (names/accounts that count as the right recipient, e.g. wife's name, her bank,
   "DuitNow"), admins[] (phone numbers), status_msg_id?, remind: {days_before: [3,1,0], after_due_every_days: 2,
-  quiet_hours "22:00-08:00"}, enabled}`, `collection_members {id, collection_id, name, phone, active}`,
+  quiet_hours "22:00-08:00"}, enabled}`, `collection_members {id, collection_id, name, phone, active, paid_until (date: prepaid months, e.g. one receipt of
+  3 × amount → +3 months; "Valid till" in the list)}`, plus on `collections`: `payee_line`, `template`,
+  `batch_minutes`, `last_list_msg_id`, `last_list_at`,
   `collection_periods {id, collection_id, period "2026-12", due_date}`, `collection_payments {id, period_id,
   member_id, status: paid|pending_review|rejected|waived, amount_sen, paid_at, ref_no, receipt_upload_id,
   receipt_hash, confidence, decided_by: ai|admin, note}`.
@@ -58,9 +60,27 @@ runner `runtimes/vision.ts` (`describeImages`), `memoryContentProblem`, "Members
 ## Part D — Bot behaviour in the group (keep the group clean)
 - Receipt image/PDF from a member → react ⏳ at once → after reading: react ✅ (paid) or ❓ (review). No text reply
   in the group except the status list.
-- Status list: post the new list, then **delete the previous list** (delete for everyone, only if < 48 h old; else
-  leave it) and **pin** the new one if Baileys supports pinning (check; skip if not). Within 15 min of the last list,
-  **edit** it instead of posting a new one.
+- Status list (owner, after seeing real groups: **never delete** — "This message was deleted" leaves a trace):
+  - WhatsApp allows editing only for **15 min**. If the last list is < 15 min old → **edit** it. Otherwise post a
+    **new** list. Never delete old lists.
+  - **Batch**: after a change, wait `batch_minutes` (default 10) for more payments before posting, so several
+    payments make one new list. Post only when something changed.
+  - Pin the newest list if Baileys supports pinning (check; skip if not).
+  - Format follows the owner's examples (template editable per collection, pure + tested):
+    ```
+    *Netflix Family* — RM14.14 seorang
+    Tarikh akhir: setiap 5hb
+
+    1. Man (Valid till 5 Jan 27) ✅
+    2. Nurlis (Valid till 5 Dis 26) ✅
+    3. Siti ⏳
+    4. Mira ⏳
+
+    Bayar ke: <payee_line>
+    Hantar screenshot resit dalam group ni ya 🙏
+    ```
+  - `payee_line` is free text set by the admin (bank + account + name). It lives only in the DB, never in fixtures,
+    tests or docs (use placeholders).
 - Review → DM to each admin: `"Siti hantar resit RM10.00 (patut RM11.25), penerima: X. Balas 1 = sah, 2 = tolak,
   3 = sah untuk bulan depan"` + the receipt image. The reply decides (only from admin numbers; reply must quote or
   follow within 24 h; idempotent).
@@ -88,8 +108,9 @@ stored. Logs never contain phone numbers in full.
 ## Tests (no real WhatsApp: fake worker over the same message protocol)
 `statusText`, `matchReceipt` (right, short amount, wrong payee, reused ref, reused image hash, old date, non-member,
 already paid), period roll-over, reminder schedule with quiet hours and once-a-day, admin command parsing (fake LLM)
-+ non-admin ignored, review reply flow (1/2/3, wrong number, double reply), delete/edit/post decision by message
-age, messages from non-enabled groups never reach the hub, rate limiter.
++ non-admin ignored, review reply flow (1/2/3, wrong number, double reply), edit-vs-new decision by message age (< 15 min edit,
+else new, never delete) and batching, `paid_until` (multi-month payment, list "Valid till", no reminder while
+prepaid), messages from non-enabled groups never reach the hub, rate limiter.
 
 ## Docs
 `docs/kutipan.md` in plain BM: what you need (spare SIM, phone to scan once), ban-risk warning, linking, adding the
